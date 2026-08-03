@@ -1147,6 +1147,8 @@ def job_status(job_id: str):
     state = JOBS.get(job_id) or recover_nutrition_job(job_id)
     if not state:
         raise HTTPException(status_code=404, detail="任务不存在或本地服务已重启")
+    if state.get("kind") == "nutrition":
+        restore_unmatched_body_composition_records(state)
     return {key: value for key, value in state.items() if key not in {"job_dir", "output_relative", "template_path"}}
 
 
@@ -2092,6 +2094,43 @@ def process_appended_body_composition_reports(job_id: str, ocr_url: str, source_
         persist_nutrition_job(job_id)
 
 
+def restore_unmatched_body_composition_records(state: dict[str, Any]) -> None:
+    """Rebuild editable rows for older jobs that stored only unmatched filenames."""
+    if state.get("body_composition_pending_matches") or state.get("body_composition_status") != "completed":
+        return
+    filenames = [clean(item) for item in state.get("body_composition_unmatched") or [] if clean(item)]
+    if not filenames:
+        return
+    job_dir = Path(state["job_dir"])
+    job_id = clean(state.get("job_id")) or job_dir.name
+    records: list[dict[str, Any]] = []
+    for filename in filenames:
+        stem = Path(filename).stem
+        markdown_paths = sorted((job_dir / "body_composition_append").rglob(f"*_{stem}_ocr.md"))
+        if not markdown_paths:
+            continue
+        markdown_path = markdown_paths[-1]
+        text = markdown_path.read_text(encoding="utf-8")
+        name_candidates = extract_body_composition_name_candidates(text)
+        records.append({
+            "id": f"restored-{uuid.uuid5(uuid.NAMESPACE_URL, f'{job_id}:{filename}').hex}",
+            "name": choose_person_name(name_candidates),
+            "fat_free_mass": extract_fat_free_mass(text),
+            "filename": filename,
+            "file_url": file_url(job_id, markdown_path.relative_to(job_dir)),
+        })
+    if not records:
+        return
+    pending_matches = attach_body_composition_match_candidates(records, state.get("people") or [])
+    state.update(
+        body_composition_status="awaiting_match",
+        body_composition_pending_matches=pending_matches,
+        body_composition_assignments={record["id"]: record.get("suggested_person_id", "") for record in pending_matches},
+        message=f"发现 {len(pending_matches)} 份未写入的体成分报告，已恢复到黄色补录表。",
+    )
+    persist_nutrition_job(job_id)
+
+
 def process_nutrition_job(
     job_id: str,
     ocr_url: str,
@@ -2307,20 +2346,23 @@ def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
         raise HTTPException(status_code=409, detail="当前没有等待确认的体成分配对")
     people = payload.get("people")
     assignments = payload.get("assignments")
-    if not isinstance(people, list) or not isinstance(assignments, dict):
+    pending_matches = payload.get("body_composition_pending_matches", state.get("body_composition_pending_matches") or [])
+    if not isinstance(people, list) or not isinstance(assignments, dict) or not isinstance(pending_matches, list):
         raise HTTPException(status_code=400, detail="配对确认数据不完整")
     people_by_id = {clean(person.get("id")): person for person in people if isinstance(person, dict) and clean(person.get("id"))}
     if not people_by_id:
         raise HTTPException(status_code=400, detail="当前人员数据不完整")
 
-    applied, skipped = 0, []
-    for record in state.get("body_composition_pending_matches") or []:
+    applied, remaining = 0, []
+    for record in pending_matches:
+        if not isinstance(record, dict):
+            continue
         record_id = clean(record.get("id"))
         person_id = clean(assignments.get(record_id))
         person = people_by_id.get(person_id)
-        fat_free_mass = clean(record.get("fat_free_mass"))
+        fat_free_mass = clean(record.get("corrected_fat_free_mass")) or clean(record.get("fat_free_mass"))
         if person is None or not fat_free_mass:
-            skipped.append(clean(record.get("filename")) or "未命名体成分报告")
+            remaining.append(record)
             continue
         person.setdefault("general", {})["去脂体重"] = fat_free_mass
         source_files = person.setdefault("body_composition_files", [])
@@ -2328,17 +2370,18 @@ def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
             source_files.append(record["file_url"])
         applied += 1
 
+    remaining_assignments = {clean(record.get("id")): clean(assignments.get(clean(record.get("id")))) for record in remaining if clean(record.get("id"))}
     state["people"] = list(people_by_id.values())
     state.update(
-        body_composition_status="completed",
-        body_composition_pending_matches=[],
-        body_composition_assignments={},
-        body_composition_unmatched=skipped,
-        message=f"已追加 {applied} 项去脂体重。" + (f" {len(skipped)} 份未写入，请人工补充。" if skipped else ""),
+        body_composition_status="awaiting_match" if remaining else "completed",
+        body_composition_pending_matches=remaining,
+        body_composition_assignments=remaining_assignments,
+        body_composition_unmatched=[clean(record.get("filename")) or "未命名体成分报告" for record in remaining],
+        message=f"已追加 {applied} 项去脂体重。" + (f" 仍有 {len(remaining)} 份保留在黄色补录表。" if remaining else ""),
     )
     write_nutrition_workbook(state, state["people"])
     persist_nutrition_job(job_id)
-    return {"success": True, "people": state["people"], "applied": applied, "skipped": skipped, "message": state["message"]}
+    return {"success": True, "people": state["people"], "applied": applied, "pending_matches": remaining, "assignments": remaining_assignments, "message": state["message"]}
 
 
 @app.post("/nutrition/jobs/{job_id}/save-review")
@@ -2371,6 +2414,7 @@ def latest_nutrition_job():
     for job_dir in candidates:
         state = JOBS.get(job_dir.name) or recover_nutrition_job(job_dir.name)
         if state and state.get("kind") == "nutrition" and state.get("status") == "completed":
+            restore_unmatched_body_composition_records(state)
             snapshot = {key: value for key, value in state.items() if key not in {"job_dir", "output_relative", "template_path"}}
             return {"success": True, "job_id": job_dir.name, **snapshot}
     raise HTTPException(status_code=404, detail="没有可恢复的本地营养任务")
