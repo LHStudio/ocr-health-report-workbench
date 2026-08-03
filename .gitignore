@@ -1,0 +1,28 @@
+# Build and dependency outputs
+node_modules/
+dist/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local configuration and runtime state
+.env
+.env.*
+!.env.example
+/data/
+/tmp/
+*.log
+
+# Source documents and generated reports: never commit participant data
+/体成分分析/
+/体检报告单/
+/扫描*.pdf
+/检验结果_*.xlsx
+/server_backups/
+/服务器配置/
+*.pdf
+
+# Local-only deployment copies and editor state
+docker_deployment/runtime/
+.vscode/

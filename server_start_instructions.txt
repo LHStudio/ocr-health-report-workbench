@@ -1,0 +1,51 @@
+OCR 服务器一键启动说明
+====================
+
+说明：密码不会写入此文件。执行 SSH 命令后按提示输入服务器密码即可。
+
+一、从本机连接服务器并直接启动（推荐）
+
+ssh -p 26626 root@connect.bjb2.seetacloud.com "bash /root/start_ocr_stack.sh start"
+
+脚本会依次显示：模型服务是否已就绪、FastAPI 是否已就绪、等待进度、失败时应查看的日志位置。
+第一次启动模型可能需要数分钟；脚本每 5 秒输出一次等待状态，不会静默卡住。
+
+二、先登录服务器，再执行启动命令
+
+ssh -p 26626 root@connect.bjb2.seetacloud.com
+bash /root/start_ocr_stack.sh start
+
+三、查看状态
+
+bash /root/start_ocr_stack.sh status
+
+四、代码更新后，仅重启 OCR API（模型不重启）
+
+bash /root/start_ocr_stack.sh restart-api
+
+五、查看最近日志
+
+bash /root/start_ocr_stack.sh logs
+
+六、接口健康检查
+
+curl http://127.0.0.1:6006/
+
+服务端接口调用说明
+================
+
+主接口：POST /parse-file
+请求格式：multipart/form-data
+必填字段：file
+可选字段（旧版和增强版均支持）：
+- processing_mode：fast 或 accurate；省略时为 accurate
+- document_kind：auto、medical 或 nutrition；省略时为 auto
+- page_index：页码；省略时为 1
+- include_assets：true 或 false；省略时为 true
+
+因此，只传 file 的新调用方式可直接调用当前增强版服务，无需把服务器替换为新 app.py。
+当前服务器模型地址为 http://127.0.0.1:8118/v1。Docker 部署时可设置：
+- PADDLEOCR_VL_SERVER_URL=http://172.18.0.2:8118/v1
+- OCR_SERVICE_BASE_DIR=/app/pdf_to_excel_service
+
+上述 Docker 参数已保留在增强版 app.py 的注释和环境变量配置中；当前服务器不设置它们，继续使用本机默认配置。

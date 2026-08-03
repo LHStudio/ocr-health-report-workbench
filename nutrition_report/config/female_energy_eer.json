@@ -1,0 +1,197 @@
+{
+  "title": "表 5-0-2 中国女性膳食能量需要量 (EER)",
+  "activity_levels": {
+    "1": { "label": "低强度", "description": "PAL I" },
+    "2": { "label": "中等强度", "description": "PAL II" },
+    "3": { "label": "高强度", "description": "PAL III" }
+  },
+  "age_groups": [
+    {
+      "age_min": 0,
+      "age_max": 0.5,
+      "label": "0岁~",
+      "levels": {
+        "2": { "type": "per_kg", "kcal": 90, "mj": 0.38 }
+      }
+    },
+    {
+      "age_min": 0.5,
+      "age_max": 1,
+      "label": "0.5岁~",
+      "levels": {
+        "2": { "type": "per_kg", "kcal": 75, "mj": 0.31 }
+      }
+    },
+    {
+      "age_min": 1,
+      "age_max": 2,
+      "label": "1岁~",
+      "levels": { "2": { "type": "fixed", "kcal": 800, "mj": 3.35 } }
+    },
+    {
+      "age_min": 2,
+      "age_max": 3,
+      "label": "2岁~",
+      "levels": { "2": { "type": "fixed", "kcal": 1000, "mj": 4.18 } }
+    },
+    {
+      "age_min": 3,
+      "age_max": 4,
+      "label": "3岁~",
+      "levels": { "2": { "type": "fixed", "kcal": 1150, "mj": 4.81 } }
+    },
+    {
+      "age_min": 4,
+      "age_max": 5,
+      "label": "4岁~",
+      "levels": { "2": { "type": "fixed", "kcal": 1250, "mj": 5.23 } }
+    },
+    {
+      "age_min": 5,
+      "age_max": 6,
+      "label": "5岁~",
+      "levels": { "2": { "type": "fixed", "kcal": 1300, "mj": 5.44 } }
+    },
+    {
+      "age_min": 6,
+      "age_max": 7,
+      "label": "6岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1300, "mj": 5.44 },
+        "2": { "type": "fixed", "kcal": 1450, "mj": 6.07 },
+        "3": { "type": "fixed", "kcal": 1650, "mj": 6.90 }
+      }
+    },
+    {
+      "age_min": 7,
+      "age_max": 8,
+      "label": "7岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1350, "mj": 5.65 },
+        "2": { "type": "fixed", "kcal": 1550, "mj": 6.49 },
+        "3": { "type": "fixed", "kcal": 1750, "mj": 7.32 }
+      }
+    },
+    {
+      "age_min": 8,
+      "age_max": 9,
+      "label": "8岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1450, "mj": 6.07 },
+        "2": { "type": "fixed", "kcal": 1700, "mj": 7.11 },
+        "3": { "type": "fixed", "kcal": 1900, "mj": 7.95 }
+      }
+    },
+    {
+      "age_min": 9,
+      "age_max": 10,
+      "label": "9岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1550, "mj": 6.49 },
+        "2": { "type": "fixed", "kcal": 1800, "mj": 7.53 },
+        "3": { "type": "fixed", "kcal": 2000, "mj": 8.37 }
+      }
+    },
+    {
+      "age_min": 10,
+      "age_max": 11,
+      "label": "10岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1650, "mj": 6.90 },
+        "2": { "type": "fixed", "kcal": 1900, "mj": 7.95 },
+        "3": { "type": "fixed", "kcal": 2100, "mj": 8.79 }
+      }
+    },
+    {
+      "age_min": 11,
+      "age_max": 12,
+      "label": "11岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1750, "mj": 7.32 },
+        "2": { "type": "fixed", "kcal": 2000, "mj": 8.37 },
+        "3": { "type": "fixed", "kcal": 2250, "mj": 9.41 }
+      }
+    },
+    {
+      "age_min": 12,
+      "age_max": 15,
+      "label": "12岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1950, "mj": 8.16 },
+        "2": { "type": "fixed", "kcal": 2200, "mj": 9.20 },
+        "3": { "type": "fixed", "kcal": 2450, "mj": 10.25 }
+      }
+    },
+    {
+      "age_min": 15,
+      "age_max": 18,
+      "label": "15岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 2100, "mj": 8.79 },
+        "2": { "type": "fixed", "kcal": 2350, "mj": 9.83 },
+        "3": { "type": "fixed", "kcal": 2650, "mj": 11.09 }
+      }
+    },
+    {
+      "age_min": 18,
+      "age_max": 30,
+      "label": "18岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1700, "mj": 7.11 },
+        "2": { "type": "fixed", "kcal": 2100, "mj": 8.79 },
+        "3": { "type": "fixed", "kcal": 2450, "mj": 10.25 }
+      }
+    },
+    {
+      "age_min": 30,
+      "age_max": 50,
+      "label": "30岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1700, "mj": 7.11 },
+        "2": { "type": "fixed", "kcal": 2050, "mj": 8.58 },
+        "3": { "type": "fixed", "kcal": 2400, "mj": 10.04 }
+      }
+    },
+    {
+      "age_min": 50,
+      "age_max": 65,
+      "label": "50岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1600, "mj": 6.69 },
+        "2": { "type": "fixed", "kcal": 1950, "mj": 8.16 },
+        "3": { "type": "fixed", "kcal": 2300, "mj": 9.62 }
+      }
+    },
+    {
+      "age_min": 65,
+      "age_max": 75,
+      "label": "65岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1550, "mj": 6.49 },
+        "2": { "type": "fixed", "kcal": 1850, "mj": 7.74 }
+      }
+    },
+    {
+      "age_min": 75,
+      "age_max": 150,
+      "label": "75岁~",
+      "levels": {
+        "1": { "type": "fixed", "kcal": 1500, "mj": 6.28 },
+        "2": { "type": "fixed", "kcal": 1750, "mj": 7.32 }
+      }
+    }
+  ],
+  "physiological_stages": {
+    "early_pregnancy": { "label": "孕早期", "bonus_kcal": 0, "bonus_mj": 0 },
+    "mid_pregnancy": { "label": "孕中期", "bonus_kcal": 250, "bonus_mj": 1.05 },
+    "late_pregnancy": { "label": "孕晚期", "bonus_kcal": 400, "bonus_mj": 1.67 },
+    "lactating": { "label": "乳母", "bonus_kcal": 400, "bonus_mj": 1.67 }
+  },
+  "evaluation_rules": {
+    "under_ratio": 0.9,
+    "over_ratio": 1.1,
+    "under_label": "不足",
+    "adequate_label": "适宜",
+    "over_label": "偏高"
+  }
+}

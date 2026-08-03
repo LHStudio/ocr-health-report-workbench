@@ -1,0 +1,21 @@
+services:
+  ocr-api:
+    build:
+      context: .
+      args:
+        PADDLE_PACKAGE: ${PADDLE_PACKAGE:-paddlepaddle-gpu==3.2.0}
+    container_name: ocr-api-6006
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PADDLEOCR_VL_SERVER_URL: ${PADDLEOCR_VL_SERVER_URL}
+      OCR_SERVICE_BASE_DIR: ${OCR_SERVICE_BASE_DIR:-/app/pdf_to_excel_service}
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./runtime:/app/pdf_to_excel_service
+    # Linux Docker 20.10+：可用 host.docker.internal 访问宿主机模型服务。
+    # 若模型服务是独立容器，改 PADDLEOCR_VL_SERVER_URL 为其容器服务名，例如 http://ocr-model:8118/v1。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
