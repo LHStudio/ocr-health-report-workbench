@@ -1149,6 +1149,7 @@ def job_status(job_id: str):
         raise HTTPException(status_code=404, detail="任务不存在或本地服务已重启")
     if state.get("kind") == "nutrition":
         restore_unmatched_body_composition_records(state)
+        ensure_body_composition_match_history(state)
     return {key: value for key, value in state.items() if key not in {"job_dir", "output_relative", "template_path"}}
 
 
@@ -2078,7 +2079,12 @@ def process_appended_body_composition_reports(job_id: str, ocr_url: str, source_
             progress_key="body_composition_completed_files",
         )
         pending_matches = attach_body_composition_match_candidates(records, state["people"])
+        for record in pending_matches:
+            record["assigned_person_id"] = ""
+            record["match_status"] = "pending"
+        history = [record for record in state.get("body_composition_match_history") or [] if isinstance(record, dict)] + pending_matches
         state["body_composition_pending_matches"] = pending_matches
+        state["body_composition_match_history"] = history
         state["body_composition_assignments"] = {
             clean(record.get("id")): clean(record.get("suggested_person_id"))
             for record in pending_matches
@@ -2128,6 +2134,63 @@ def restore_unmatched_body_composition_records(state: dict[str, Any]) -> None:
         body_composition_assignments={record["id"]: record.get("suggested_person_id", "") for record in pending_matches},
         message=f"发现 {len(pending_matches)} 份未写入的体成分报告，已恢复到黄色补录表。",
     )
+    persist_nutrition_job(job_id)
+
+
+def ensure_body_composition_match_history(state: dict[str, Any]) -> None:
+    """Build an audit list for every appended body report, including already-applied rows."""
+    if state.get("body_composition_match_history"):
+        return
+    job_dir = Path(state["job_dir"])
+    markdown_root = job_dir / "body_composition_append"
+    if not markdown_root.is_dir():
+        return
+    job_id = clean(state.get("job_id")) or job_dir.name
+    owner_by_url: dict[str, str] = {}
+    for person in state.get("people") or []:
+        person_id = clean(person.get("id"))
+        for source_url in person.get("body_composition_files") or []:
+            if person_id and clean(source_url):
+                owner_by_url[clean(source_url)] = person_id
+    pending_by_file = {
+        clean(record.get("filename")): record
+        for record in state.get("body_composition_pending_matches") or []
+        if isinstance(record, dict) and clean(record.get("filename"))
+    }
+    history: list[dict[str, Any]] = []
+    for markdown_path in sorted(markdown_root.rglob("*_ocr.md")):
+        match = re.match(r"^\d+_(.+)_ocr\.md$", markdown_path.name)
+        filename = f"{match.group(1)}.pdf" if match else markdown_path.stem
+        file_url_value = file_url(job_id, markdown_path.relative_to(job_dir))
+        previous = pending_by_file.get(filename) or {}
+        text = markdown_path.read_text(encoding="utf-8")
+        assigned_person_id = owner_by_url.get(file_url_value, "")
+        record = {
+            "id": previous.get("id") or f"history-{uuid.uuid5(uuid.NAMESPACE_URL, f'{job_id}:{filename}').hex}",
+            "name": previous.get("name") or choose_person_name(extract_body_composition_name_candidates(text)),
+            "fat_free_mass": previous.get("fat_free_mass") or extract_fat_free_mass(text),
+            "corrected_name": previous.get("corrected_name", ""),
+            "corrected_fat_free_mass": previous.get("corrected_fat_free_mass", ""),
+            "filename": filename,
+            "file_url": file_url_value,
+            "assigned_person_id": assigned_person_id,
+            "match_status": "applied" if assigned_person_id else "pending",
+        }
+        history.append(record)
+    if not history:
+        return
+    attach_body_composition_match_candidates(history, state.get("people") or [])
+    pending = [record for record in history if record["match_status"] != "applied"]
+    state.update(
+        body_composition_match_history=history,
+        body_composition_pending_matches=pending,
+        body_composition_assignments={
+            record["id"]: record.get("assigned_person_id") or record.get("suggested_person_id", "")
+            for record in history
+        },
+    )
+    if pending:
+        state["body_composition_status"] = "awaiting_match"
     persist_nutrition_job(job_id)
 
 
@@ -2353,7 +2416,7 @@ def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
     if not people_by_id:
         raise HTTPException(status_code=400, detail="当前人员数据不完整")
 
-    applied, remaining = 0, []
+    applied, remaining, applied_records = 0, [], []
     for record in pending_matches:
         if not isinstance(record, dict):
             continue
@@ -2368,20 +2431,30 @@ def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
         source_files = person.setdefault("body_composition_files", [])
         if record.get("file_url") and record["file_url"] not in source_files:
             source_files.append(record["file_url"])
+        record["assigned_person_id"] = person_id
+        record["match_status"] = "applied"
+        applied_records.append(record)
         applied += 1
 
     remaining_assignments = {clean(record.get("id")): clean(assignments.get(clean(record.get("id")))) for record in remaining if clean(record.get("id"))}
+    for record in remaining:
+        record["assigned_person_id"] = ""
+        record["match_status"] = "pending"
+    previous_history = [record for record in state.get("body_composition_match_history") or [] if isinstance(record, dict)]
+    current_ids = {clean(record.get("id")) for record in pending_matches if isinstance(record, dict)}
+    retained_history = [record for record in previous_history if clean(record.get("id")) not in current_ids]
+    history = retained_history + applied_records + remaining
     state["people"] = list(people_by_id.values())
     state.update(
         body_composition_status="awaiting_match" if remaining else "completed",
         body_composition_pending_matches=remaining,
         body_composition_assignments=remaining_assignments,
+        body_composition_match_history=history,
         body_composition_unmatched=[clean(record.get("filename")) or "未命名体成分报告" for record in remaining],
         message=f"已追加 {applied} 项去脂体重。" + (f" 仍有 {len(remaining)} 份保留在黄色补录表。" if remaining else ""),
     )
-    write_nutrition_workbook(state, state["people"])
     persist_nutrition_job(job_id)
-    return {"success": True, "people": state["people"], "applied": applied, "pending_matches": remaining, "assignments": remaining_assignments, "message": state["message"]}
+    return {"success": True, "people": state["people"], "applied": applied, "pending_matches": remaining, "history": history, "assignments": remaining_assignments, "message": state["message"]}
 
 
 @app.post("/nutrition/jobs/{job_id}/save-review")
@@ -2398,14 +2471,28 @@ def save_nutrition_review(job_id: str, payload: dict[str, Any]):
         raise HTTPException(status_code=400, detail="体成分配对草稿格式不正确")
     if assignments is not None and not isinstance(assignments, dict):
         raise HTTPException(status_code=400, detail="体成分配对选择格式不正确")
-    write_nutrition_workbook(state, people)
+    write_output = payload.get("write_output", True)
+    if not isinstance(write_output, bool):
+        raise HTTPException(status_code=400, detail="保存模式格式不正确")
+    if write_output:
+        write_nutrition_workbook(state, people)
     state["people"] = people
     if pending_matches is not None:
         state["body_composition_pending_matches"] = pending_matches
+        history_by_id = {
+            clean(record.get("id")): record
+            for record in state.get("body_composition_match_history") or []
+            if isinstance(record, dict) and clean(record.get("id"))
+        }
+        for record in pending_matches:
+            if isinstance(record, dict) and clean(record.get("id")):
+                history_by_id[clean(record.get("id"))] = record
+        if history_by_id:
+            state["body_composition_match_history"] = list(history_by_id.values())
     if assignments is not None:
         state["body_composition_assignments"] = {clean(key): clean(value) for key, value in assignments.items() if clean(key)}
     persist_nutrition_job(job_id)
-    return {"success": True, "message": "食物频率调查汇总表已保存", "output_url": state["output_url"]}
+    return {"success": True, "message": "食物频率调查汇总表已保存" if write_output else "当前核对信息已保存", "output_url": state["output_url"]}
 
 
 @app.get("/nutrition/latest-job")
@@ -2415,6 +2502,7 @@ def latest_nutrition_job():
         state = JOBS.get(job_dir.name) or recover_nutrition_job(job_dir.name)
         if state and state.get("kind") == "nutrition" and state.get("status") == "completed":
             restore_unmatched_body_composition_records(state)
+            ensure_body_composition_match_history(state)
             snapshot = {key: value for key, value in state.items() if key not in {"job_dir", "output_relative", "template_path"}}
             return {"success": True, "job_id": job_dir.name, **snapshot}
     raise HTTPException(status_code=404, detail="没有可恢复的本地营养任务")
