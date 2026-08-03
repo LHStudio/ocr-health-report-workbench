@@ -2075,7 +2075,13 @@ def process_appended_body_composition_reports(job_id: str, ocr_url: str, source_
             artifact_root=Path("body_composition_append") / append_id,
             progress_key="body_composition_completed_files",
         )
-        state["body_composition_pending_matches"] = attach_body_composition_match_candidates(records, state["people"])
+        pending_matches = attach_body_composition_match_candidates(records, state["people"])
+        state["body_composition_pending_matches"] = pending_matches
+        state["body_composition_assignments"] = {
+            clean(record.get("id")): clean(record.get("suggested_person_id"))
+            for record in pending_matches
+            if clean(record.get("id"))
+        }
         state.update(
             body_composition_status="awaiting_match",
             message=f"已识别 {len(records)} 份体成分报告，请确认姓名配对后写入去脂体重。",
@@ -2283,6 +2289,7 @@ def append_body_composition_reports(
         body_composition_total_files=len(source_paths),
         body_composition_completed_files=0,
         body_composition_pending_matches=[],
+        body_composition_assignments={},
         message=f"已保留当前食物问卷核对结果，正在追加识别 {len(source_paths)} 份体成分报告…",
     )
     persist_nutrition_job(job_id)
@@ -2325,6 +2332,7 @@ def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
     state.update(
         body_composition_status="completed",
         body_composition_pending_matches=[],
+        body_composition_assignments={},
         body_composition_unmatched=skipped,
         message=f"已追加 {applied} 项去脂体重。" + (f" {len(skipped)} 份未写入，请人工补充。" if skipped else ""),
     )
@@ -2341,8 +2349,18 @@ def save_nutrition_review(job_id: str, payload: dict[str, Any]):
     people = payload.get("people")
     if not isinstance(people, list):
         raise HTTPException(status_code=400, detail="缺少核对数据")
+    pending_matches = payload.get("body_composition_pending_matches")
+    assignments = payload.get("body_composition_assignments")
+    if pending_matches is not None and not isinstance(pending_matches, list):
+        raise HTTPException(status_code=400, detail="体成分配对草稿格式不正确")
+    if assignments is not None and not isinstance(assignments, dict):
+        raise HTTPException(status_code=400, detail="体成分配对选择格式不正确")
     write_nutrition_workbook(state, people)
     state["people"] = people
+    if pending_matches is not None:
+        state["body_composition_pending_matches"] = pending_matches
+    if assignments is not None:
+        state["body_composition_assignments"] = {clean(key): clean(value) for key, value in assignments.items() if clean(key)}
     persist_nutrition_job(job_id)
     return {"success": True, "message": "食物频率调查汇总表已保存", "output_url": state["output_url"]}
 
