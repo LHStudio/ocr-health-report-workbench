@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import difflib
 import json
 import math
 import re
@@ -1825,6 +1826,39 @@ def merge_body_composition_records(
     return matched, unmatched
 
 
+def body_composition_match_candidates(record_name: object, people: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return reviewable name-pairing candidates without auto-merging fuzzy names."""
+    source_name = valid_person_name(record_name)
+    if not source_name:
+        return []
+    candidates: list[dict[str, Any]] = []
+    for person in people:
+        general = person.get("general") if isinstance(person.get("general"), dict) else {}
+        target_name = valid_person_name(general.get("姓名"))
+        person_id = clean(person.get("id"))
+        if not target_name or not person_id:
+            continue
+        if source_name == target_name:
+            score = 100
+        else:
+            score = round(difflib.SequenceMatcher(a=source_name, b=target_name).ratio() * 100)
+            if source_name[:1] == target_name[:1]:
+                score = min(99, score + 12)
+        if score >= 45:
+            candidates.append({"person_id": person_id, "name": target_name, "score": score})
+    return sorted(candidates, key=lambda item: (-item["score"], item["name"]))[:5]
+
+
+def attach_body_composition_match_candidates(records: list[dict[str, Any]], people: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach suggestions; only an exact, unique name match is preselected."""
+    for record in records:
+        candidates = body_composition_match_candidates(record.get("name"), people)
+        exact = [item for item in candidates if item["score"] == 100]
+        record["match_candidates"] = candidates
+        record["suggested_person_id"] = exact[0]["person_id"] if len(exact) == 1 else ""
+    return records
+
+
 def parse_nutrition_markdown(markdown: str) -> dict[str, Any]:
     """Markdown 保留了食物频率各列，是此问卷的推荐解析模式。"""
     soup = BeautifulSoup(markdown or "", "html.parser")
@@ -1967,14 +2001,16 @@ def write_nutrition_workbook(state: dict[str, Any], people: list[dict[str, Any]]
     return output
 
 
-def process_body_composition_reports(
+def recognize_body_composition_reports(
     state: dict[str, Any],
     ocr_url: str,
     source_paths: list[Path],
-    people: list[dict[str, Any]],
-) -> tuple[int, list[str]]:
-    """OCR optional InBody-style reports and merge only unambiguous name matches."""
-    records: list[dict[str, str]] = []
+    *,
+    artifact_root: Path,
+    progress_key: str = "completed_files",
+) -> list[dict[str, Any]]:
+    """OCR body-composition reports and retain results for a later pairing review."""
+    records: list[dict[str, Any]] = []
     for index, source_path in enumerate(source_paths, start=1):
         state.update(current_file=source_path.name, message=f"正在识别体成分报告 {index}/{len(source_paths)}：{source_path.name}")
         response = request_cloud_ocr(
@@ -1993,21 +2029,58 @@ def process_body_composition_reports(
 
         markdown_text = str(data.get("markdown") or "")
         ocr_text = "\n".join((markdown_text, str(data.get("json_text") or "")))
-        relative = Path("body_composition_markdown") / f"{index:03d}_{source_path.stem}_ocr.md"
+        relative = artifact_root / f"{index:03d}_{source_path.stem}_ocr.md"
         markdown_path = state["job_dir"] / relative
         markdown_path.parent.mkdir(parents=True, exist_ok=True)
         markdown_path.write_text(markdown_text, encoding="utf-8")
         candidates = extract_body_composition_name_candidates(ocr_text)
         candidates.extend(cloud_name_candidates(data))
         records.append({
+            "id": uuid.uuid4().hex,
             "name": choose_person_name(candidates),
             "fat_free_mass": extract_fat_free_mass(ocr_text),
             "filename": source_path.name,
             "file_url": file_url(state["job_id"], relative),
         })
-        state["completed_files"] += 1
+        state[progress_key] = int(state.get(progress_key, 0)) + 1
+
+    return records
+
+
+def process_body_composition_reports(
+    state: dict[str, Any],
+    ocr_url: str,
+    source_paths: list[Path],
+    people: list[dict[str, Any]],
+) -> tuple[int, list[str]]:
+    """OCR optional initial reports and merge only an unambiguous exact name match."""
+    records = recognize_body_composition_reports(
+        state, ocr_url, source_paths, artifact_root=Path("body_composition_markdown")
+    )
 
     return merge_body_composition_records(people, records)
+
+
+def process_appended_body_composition_reports(job_id: str, ocr_url: str, source_paths: list[Path], append_id: str) -> None:
+    """Recognise only newly added body reports; leave existing food data untouched."""
+    state = JOBS[job_id]
+    try:
+        records = recognize_body_composition_reports(
+            state,
+            ocr_url,
+            source_paths,
+            artifact_root=Path("body_composition_append") / append_id,
+            progress_key="body_composition_completed_files",
+        )
+        state["body_composition_pending_matches"] = attach_body_composition_match_candidates(records, state["people"])
+        state.update(
+            body_composition_status="awaiting_match",
+            message=f"已识别 {len(records)} 份体成分报告，请确认姓名配对后写入去脂体重。",
+        )
+        persist_nutrition_job(job_id)
+    except Exception as error:
+        state.update(body_composition_status="failed", message=f"体成分追加失败：{error}")
+        persist_nutrition_job(job_id)
 
 
 def process_nutrition_job(
@@ -2158,9 +2231,101 @@ def process_nutrition_reports(
         template_path = job_dir / "input" / Path(template.filename).name
         with template_path.open("wb") as target:
             shutil.copyfileobj(template.file, target)
-    JOBS[job_id] = {"kind": "nutrition", "parse_mode": parse_mode, "processing_mode": processing_mode, "template_path": template_path, "output_filename": timestamped_filename("食物频率调查_自动汇总"), "status": "queued", "job_dir": job_dir, "total_files": len(files) + len(body_composition_paths), "completed_files": 0, "current_file": "", "current_person": "", "message": "文件已上传到本机，等待开始识别…", "people": []}
+    JOBS[job_id] = {"job_id": job_id, "kind": "nutrition", "parse_mode": parse_mode, "processing_mode": processing_mode, "template_path": template_path, "output_filename": timestamped_filename("食物频率调查_自动汇总"), "status": "queued", "job_dir": job_dir, "total_files": len(files) + len(body_composition_paths), "completed_files": 0, "current_file": "", "current_person": "", "message": "文件已上传到本机，等待开始识别…", "people": []}
     background_tasks.add_task(process_nutrition_job, job_id, ocr_url, dict(groups), parse_mode, processing_mode, body_composition_paths)
     return {"success": True, "job_id": job_id, "total_files": len(files) + len(body_composition_paths), "people_count": len(groups), "body_composition_count": len(body_composition_paths)}
+
+
+@app.post("/nutrition/jobs/{job_id}/body-composition", status_code=202)
+def append_body_composition_reports(
+    job_id: str,
+    background_tasks: BackgroundTasks,
+    ocr_url: Annotated[str, Form()],
+    people_json: Annotated[str, Form()],
+    files: Annotated[list[UploadFile], File()],
+    relative_paths: Annotated[list[str], Form()],
+):
+    """Append body-composition OCR to a completed nutrition job without rerunning food OCR."""
+    state = JOBS.get(job_id) or recover_nutrition_job(job_id)
+    if not state or state.get("kind") != "nutrition" or state.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="营养问卷任务尚未完成，无法追加体成分报告")
+    if state.get("body_composition_status") == "processing":
+        raise HTTPException(status_code=409, detail="体成分报告正在识别，请等待当前任务完成")
+    if not files or len(files) != len(relative_paths):
+        raise HTTPException(status_code=400, detail="体成分报告与目录信息不一致，请重新选择 PDF")
+    try:
+        people = json.loads(people_json)
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=400, detail="当前人员数据格式不正确") from error
+    if not isinstance(people, list) or not all(isinstance(person, dict) and clean(person.get("id")) for person in people):
+        raise HTTPException(status_code=400, detail="当前人员数据不完整，无法保留人工核对结果")
+
+    append_id = uuid.uuid4().hex
+    input_dir = Path(state["job_dir"]) / "input" / "body_composition_append" / append_id
+    source_paths: list[Path] = []
+    for index, pdf in enumerate(files):
+        relative = relative_paths[index] or pdf.filename or f"body_composition_{index + 1}.pdf"
+        safe_path = safe_relative(relative, pdf.filename or f"body_composition_{index + 1}.pdf")
+        source_path = input_dir / safe_path
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        with source_path.open("wb") as target:
+            shutil.copyfileobj(pdf.file, target)
+        source_paths.append(source_path)
+
+    state["people"] = people
+    state.update(
+        body_composition_status="processing",
+        body_composition_total_files=len(source_paths),
+        body_composition_completed_files=0,
+        body_composition_pending_matches=[],
+        message=f"已保留当前食物问卷核对结果，正在追加识别 {len(source_paths)} 份体成分报告…",
+    )
+    persist_nutrition_job(job_id)
+    background_tasks.add_task(process_appended_body_composition_reports, job_id, ocr_url, source_paths, append_id)
+    return {"success": True, "body_composition_count": len(source_paths)}
+
+
+@app.post("/nutrition/jobs/{job_id}/body-composition/apply-matches")
+def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
+    """Apply user-confirmed body-report pairings to the existing reviewed people."""
+    state = JOBS.get(job_id) or recover_nutrition_job(job_id)
+    if not state or state.get("kind") != "nutrition" or state.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="营养问卷任务不可用")
+    if state.get("body_composition_status") != "awaiting_match":
+        raise HTTPException(status_code=409, detail="当前没有等待确认的体成分配对")
+    people = payload.get("people")
+    assignments = payload.get("assignments")
+    if not isinstance(people, list) or not isinstance(assignments, dict):
+        raise HTTPException(status_code=400, detail="配对确认数据不完整")
+    people_by_id = {clean(person.get("id")): person for person in people if isinstance(person, dict) and clean(person.get("id"))}
+    if not people_by_id:
+        raise HTTPException(status_code=400, detail="当前人员数据不完整")
+
+    applied, skipped = 0, []
+    for record in state.get("body_composition_pending_matches") or []:
+        record_id = clean(record.get("id"))
+        person_id = clean(assignments.get(record_id))
+        person = people_by_id.get(person_id)
+        fat_free_mass = clean(record.get("fat_free_mass"))
+        if person is None or not fat_free_mass:
+            skipped.append(clean(record.get("filename")) or "未命名体成分报告")
+            continue
+        person.setdefault("general", {})["去脂体重"] = fat_free_mass
+        source_files = person.setdefault("body_composition_files", [])
+        if record.get("file_url") and record["file_url"] not in source_files:
+            source_files.append(record["file_url"])
+        applied += 1
+
+    state["people"] = list(people_by_id.values())
+    state.update(
+        body_composition_status="completed",
+        body_composition_pending_matches=[],
+        body_composition_unmatched=skipped,
+        message=f"已追加 {applied} 项去脂体重。" + (f" {len(skipped)} 份未写入，请人工补充。" if skipped else ""),
+    )
+    write_nutrition_workbook(state, state["people"])
+    persist_nutrition_job(job_id)
+    return {"success": True, "people": state["people"], "applied": applied, "skipped": skipped, "message": state["message"]}
 
 
 @app.post("/nutrition/jobs/{job_id}/save-review")

@@ -14,7 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from nutrition_report import FOOD_REFERENCE_MAP, NutritionReportService, build_payload_from_ocr_person  # noqa: E402
-from local_service import extract_fat_free_mass, merge_body_composition_records  # noqa: E402
+from local_service import body_composition_match_candidates, extract_fat_free_mass, merge_body_composition_records  # noqa: E402
 
 
 def sample_person() -> dict:
@@ -194,6 +194,19 @@ class NutritionReportServiceTest(unittest.TestCase):
         self.assertEqual(["unknown.pdf"], unmatched)
         self.assertEqual("46.6", people[0]["general"]["去脂体重"])
         self.assertNotIn("去脂体重", people[1]["general"])
+
+    def test_body_composition_name_pairing_suggests_similar_names_without_auto_match(self) -> None:
+        people = [
+            {"id": "A", "general": {"姓名": "刘紫玉"}},
+            {"id": "B", "general": {"姓名": "刘子玉"}},
+            {"id": "C", "general": {"姓名": "陈晨"}},
+        ]
+        exact = body_composition_match_candidates("刘紫玉", people)
+        similar = body_composition_match_candidates("刘紫雨", people)
+        self.assertEqual("A", exact[0]["person_id"])
+        self.assertEqual(100, exact[0]["score"])
+        self.assertTrue(any(item["person_id"] == "A" for item in similar))
+        self.assertTrue(all(item["score"] < 100 for item in similar))
 
     def test_manual_review_replaces_machine_evaluation_and_exports_disclaimer(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

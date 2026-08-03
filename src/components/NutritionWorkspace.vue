@@ -28,6 +28,16 @@
   <section v-if="people.length" class="card people-card">
     <div class="section-title"><div><span class="step">3</span><h2>逐人核对食物与勾选信息</h2></div><button class="primary-button" :disabled="saving" @click="save">{{ saving ? '正在保存…' : '保存人工修改并下载 Excel' }}</button></div>
     <p class="hint">OCR 未能可靠识别手写勾选的位置时，“频率周期”和就餐/日照选项会保持空白；请在此补充。“不吃”由频率周期自动确定，已选择每天/每周等频率时保持空白。</p>
+    <section class="nutrition-report-launch body-composition-append">
+      <div><h4>补充体成分报告</h4><p>只识别新上传的 InBody 等体成分报告，不会重新识别食物问卷，也不会清除当前已核对内容。识别完成后请确认姓名配对。</p></div>
+      <div class="append-actions"><label class="secondary-button file-button"><input type="file" accept=".pdf,application/pdf" multiple @change="selectAppendBodyCompositionFiles" />选择体成分 PDF</label><button class="primary-button" type="button" :disabled="appendingBodyComposition || !appendBodyCompositionFiles.length" @click="appendBodyComposition">{{ appendingBodyComposition ? '正在识别…' : '追加并识别' }}</button></div>
+    </section>
+    <p v-if="appendBodyCompositionFiles.length" class="hint">已选 {{ appendBodyCompositionFiles.length }} 份体成分报告；会保留当前食物与人工核对数据。</p>
+    <p v-if="bodyCompositionMessage" :class="['server-state', bodyCompositionError ? 'error' : 'ok']">{{ bodyCompositionMessage }}</p>
+    <section v-if="bodyCompositionMatches.length" class="body-composition-match-panel">
+      <div class="subsection-title"><div><h4>确认体成分姓名配对</h4><p>仅完全一致的姓名已默认预选；相似姓名请根据原报告确认。选择“暂不写入”即可保留该报告而不改变人员数据。</p></div><button class="primary-button" type="button" :disabled="applyingBodyCompositionMatches" @click="applyBodyCompositionMatches">{{ applyingBodyCompositionMatches ? '正在写入…' : '确认配对并写入' }}</button></div>
+      <div class="mapping-wrap"><table class="mapping-table nutrition-table"><thead><tr><th>体成分文件</th><th>OCR 姓名</th><th>去脂体重</th><th>配对人员</th></tr></thead><tbody><tr v-for="record in bodyCompositionMatches" :key="record.id"><td><a v-if="record.file_url" :href="record.file_url" download>{{ record.filename }}</a><span v-else>{{ record.filename }}</span></td><td>{{ record.name || '未识别' }}</td><td>{{ record.fat_free_mass ? `${record.fat_free_mass} kg` : '未识别' }}</td><td><select v-model="bodyCompositionAssignments[record.id]"><option value="">暂不写入</option><option v-for="person in people" :key="person.id" :value="person.id">{{ person.general?.姓名 || person.id }}<template v-if="matchScore(record, person.id)">（候选 {{ matchScore(record, person.id) }}%）</template></option></select></td></tr></tbody></table></div>
+    </section>
     <div class="review-layout nutrition-review">
       <aside class="person-list"><button v-for="person in people" :key="person.id" type="button" :class="['person-item', { active: selectedId === person.id, 'has-review-items': personReviewCount(person) > 0 }]" @click="selectPerson(person)"><strong>{{ person.general.姓名 || person.id }}</strong><span>{{ person.id }} · {{ person.page_count || person.ocr_files.length }} 页 · {{ person.food_rows.length }} 类食物</span><span :class="['person-review-count', { clear: personReviewCount(person) === 0 }]">需核对 {{ personReviewCount(person) }} 项</span></button></aside>
       <div v-if="selected" class="person-detail">
@@ -125,6 +135,8 @@ const reportGenerating = ref(''); const reportProfiles = ref({}); const reportPr
 const nutritionPreview = ref(null); const previewLoading = ref(false); const previewError = ref(''); const previewUsableFoodCount = ref(0)
 const reportErrorMessage = ref(''); const reportSuccessMessage = ref('')
 const nutritionReviewOpen = ref(false)
+const appendBodyCompositionFiles = ref([]); const appendingBodyComposition = ref(false); const applyingBodyCompositionMatches = ref(false)
+const bodyCompositionMatches = ref([]); const bodyCompositionAssignments = ref({}); const bodyCompositionMessage = ref(''); const bodyCompositionError = ref(false)
 const canProcess = computed(() => !!(serverUrl.value && nutritionFiles.value.length && !processing.value))
 const personFolders = computed(() => [...new Set(nutritionFiles.value.map(folderFor))].sort((a, b) => a.localeCompare(b, 'zh-CN')))
 const selected = computed(() => people.value.find((person) => person.id === selectedId.value) || people.value[0])
@@ -167,6 +179,7 @@ function setFiles(files, nextMode) { mode.value = nextMode; nutritionFiles.value
 function selectFiles(event) { setFiles(event.target.files, 'files') }
 function selectFolder(event) { setFiles(event.target.files, 'folder') }
 function selectBodyCompositionFiles(event) { bodyCompositionFiles.value = Array.from(event.target.files || []).filter((file) => /\.pdf$/i.test(file.name)); errorMessage.value = ''; successMessage.value = '' }
+function selectAppendBodyCompositionFiles(event) { appendBodyCompositionFiles.value = Array.from(event.target.files || []).filter((file) => /\.pdf$/i.test(file.name)); bodyCompositionMessage.value = ''; bodyCompositionError.value = false }
 function emptyReportProfile() { return { name: '', age: '', projectType: '', trainingYears: '', currentStatus: '', gender: '', height: '', weight: '', fatFreeMass: '', activityLevel: '' } }
 function emptyReportReview() { return { categoryEvaluations: {}, energyEvaluation: '', calciumEvaluation: '', overallSuggestions: '', interpretation: '', machineSeeded: false, manualEntryFields: {} } }
 function copyReportReview(review) { return { ...emptyReportReview(), ...(review || {}), categoryEvaluations: { ...(review?.categoryEvaluations || {}) }, manualEntryFields: { ...(review?.manualEntryFields || {}) } } }
@@ -212,7 +225,7 @@ function selectPerson(person) {
   nutritionPreview.value = null
   scheduleNutritionPreview()
 }
-function clear() { nutritionFiles.value = []; bodyCompositionFiles.value = []; people.value = []; selectedId.value = ''; errorMessage.value = ''; successMessage.value = ''; reportProfiles.value = {}; reportProfile.value = emptyReportProfile(); reportReviews.value = {}; reportReview.value = emptyReportReview(); nutritionPreview.value = null; nutritionReviewOpen.value = false; previewError.value = ''; reportErrorMessage.value = ''; reportSuccessMessage.value = '' }
+function clear() { nutritionFiles.value = []; bodyCompositionFiles.value = []; appendBodyCompositionFiles.value = []; bodyCompositionMatches.value = []; bodyCompositionAssignments.value = {}; bodyCompositionMessage.value = ''; bodyCompositionError.value = false; people.value = []; selectedId.value = ''; errorMessage.value = ''; successMessage.value = ''; reportProfiles.value = {}; reportProfile.value = emptyReportProfile(); reportReviews.value = {}; reportReview.value = emptyReportReview(); nutritionPreview.value = null; nutritionReviewOpen.value = false; previewError.value = ''; reportErrorMessage.value = ''; reportSuccessMessage.value = '' }
 function hasText(value) { return String(value ?? '').trim().length > 0 }
 function actionableFoodNote(value) { return String(value ?? '').split('；').map((part) => part.trim()).filter(Boolean).some((part) => !part.startsWith('OCR项目原文：')) }
 function rowNeedsReview(row, noteKey) { return String(row?.['频率周期(请核对)'] ?? '').trim() === '未识别' || hasText(row?.[noteKey]) }
@@ -238,6 +251,34 @@ function personReviewCount(person) {
 async function testOcr() { testing.value = true; try { const form = new FormData(); form.append('ocr_url', serverUrl.value); const r = await fetch('/local-api/test-ocr', { method: 'POST', body: form }); const d = await r.json(); if (!r.ok) throw new Error(d.detail); serverOk.value = true; serverMessage.value = d.message; saveUrl() } catch (e) { serverOk.value = false; serverMessage.value = `连接失败：${e.message}` } finally { testing.value = false } }
 async function process() { processing.value = true; errorMessage.value = ''; successMessage.value = ''; people.value = []; reportReviews.value = {}; progress.value = { completed: 0, total: nutritionFiles.value.length + bodyCompositionFiles.value.length, currentFile: '' }; try { saveProcessingMode(); const form = new FormData(); form.append('ocr_url', serverUrl.value); form.append('parse_mode', parseMode.value); form.append('processing_mode', processingMode.value); if (templateFile.value) form.append('template', templateFile.value); nutritionFiles.value.forEach((file) => { form.append('files', file); form.append('relative_paths', mode.value === 'folder' ? (file.webkitRelativePath || file.name) : file.name) }); bodyCompositionFiles.value.forEach((file) => { form.append('body_composition_files', file); form.append('body_composition_relative_paths', file.webkitRelativePath || file.name) }); const r = await fetch('/local-api/nutrition/process', { method: 'POST', body: form }); const d = await r.json(); if (!r.ok || !d.success) throw new Error(d.detail || '任务创建失败'); jobId.value = d.job_id; localStorage.setItem('nutrition-last-job-id', d.job_id); poll() } catch (e) { errorMessage.value = e.message; processing.value = false } }
 async function poll() { try { const r = await fetch(`/local-api/jobs/${jobId.value}`); const d = await r.json(); if (!r.ok) throw new Error(d.detail); progress.value = { completed: d.completed_files, total: d.total_files, currentFile: d.current_file }; if (d.status === 'completed') { people.value = d.people; reportProfiles.value = {}; reportReviews.value = {}; selectPerson(d.people[0] || { id: '', general: {} }); successMessage.value = d.message; processing.value = false; return } if (d.status === 'failed') throw new Error(d.message); window.setTimeout(poll, 700) } catch (e) { errorMessage.value = e.message; processing.value = false } }
+function matchScore(record, personId) { return (record.match_candidates || []).find((candidate) => candidate.person_id === personId)?.score || '' }
+function loadBodyCompositionMatches(data) { bodyCompositionMatches.value = Array.isArray(data.body_composition_pending_matches) ? data.body_composition_pending_matches : []; bodyCompositionAssignments.value = Object.fromEntries(bodyCompositionMatches.value.map((record) => [record.id, record.suggested_person_id || ''])) }
+function replacePeople(nextPeople) { const currentId = selectedId.value; people.value = Array.isArray(nextPeople) ? nextPeople : people.value; reportProfiles.value = {}; reportReviews.value = {}; selectedId.value = ''; selectPerson(people.value.find((person) => person.id === currentId) || people.value[0] || { id: '', general: {} }) }
+async function pollAppendedBodyComposition() {
+  try {
+    const response = await fetch(`/local-api/jobs/${jobId.value}`); const data = await response.json(); if (!response.ok) throw new Error(data.detail || '无法读取体成分追加状态')
+    const status = data.body_composition_status
+    if (status === 'processing') { bodyCompositionMessage.value = `正在识别体成分报告 ${data.body_composition_completed_files || 0}/${data.body_composition_total_files || appendBodyCompositionFiles.value.length}…`; window.setTimeout(pollAppendedBodyComposition, 700); return }
+    appendingBodyComposition.value = false
+    if (status === 'awaiting_match') { bodyCompositionMessage.value = data.message || '识别完成，请确认姓名配对。'; bodyCompositionError.value = false; loadBodyCompositionMatches(data); return }
+    if (status === 'failed') throw new Error(data.message || '体成分追加失败')
+  } catch (error) { appendingBodyComposition.value = false; bodyCompositionError.value = true; bodyCompositionMessage.value = error.message || '体成分追加失败' }
+}
+async function appendBodyComposition() {
+  if (!jobId.value || !appendBodyCompositionFiles.value.length) return
+  appendingBodyComposition.value = true; bodyCompositionError.value = false; bodyCompositionMessage.value = '正在上传并保留当前食物问卷核对结果…'; bodyCompositionMatches.value = []; bodyCompositionAssignments.value = {}
+  try {
+    const form = new FormData(); form.append('ocr_url', serverUrl.value); form.append('people_json', JSON.stringify(people.value)); appendBodyCompositionFiles.value.forEach((file) => { form.append('files', file); form.append('relative_paths', file.webkitRelativePath || file.name) })
+    const response = await fetch(`/local-api/nutrition/jobs/${jobId.value}/body-composition`, { method: 'POST', body: form }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.detail || '体成分追加任务创建失败'); pollAppendedBodyComposition()
+  } catch (error) { appendingBodyComposition.value = false; bodyCompositionError.value = true; bodyCompositionMessage.value = error.message || '体成分追加失败' }
+}
+async function applyBodyCompositionMatches() {
+  applyingBodyCompositionMatches.value = true; bodyCompositionError.value = false
+  try {
+    const response = await fetch(`/local-api/nutrition/jobs/${jobId.value}/body-composition/apply-matches`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ people: people.value, assignments: bodyCompositionAssignments.value }) }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.detail || '体成分配对写入失败')
+    replacePeople(data.people); bodyCompositionMatches.value = []; bodyCompositionAssignments.value = {}; appendBodyCompositionFiles.value = []; bodyCompositionMessage.value = data.message || '去脂体重已追加。'
+  } catch (error) { bodyCompositionError.value = true; bodyCompositionMessage.value = error.message || '体成分配对写入失败' } finally { applyingBodyCompositionMatches.value = false }
+}
 function addFood() { selected.value.food_rows.push({ 食物编号: '', 食物名称: '', 平均每次食用量: '', 次数: '', '频率周期(请核对)': '未识别', 是否不吃: '', OCR原始行: '', 人工核对备注: '' }) }
 function addSupplement() { selected.value.supplement_rows.push({ 保健品种类: '', 保健品名称: '', 平均每次服用量: '', 次数: '', '频率周期(请核对)': '未识别', 是否不吃: '', 备注: '' }) }
 function syncNotEat(row) { const period = row['频率周期(请核对)']; const notEat = period === '不吃'; row.是否不吃 = notEat ? '是' : ''; if (notEat) row.次数 = '0'; else if (!period) row.次数 = '' }
@@ -296,7 +337,7 @@ async function resumeLatestNutritionJob() {
     if (!data) { response = await fetch('/local-api/nutrition/latest-job'); if (!response.ok) return; data = await response.json(); jobId.value = data.job_id }
     else jobId.value = savedId
     if (data.status !== 'completed' || !Array.isArray(data.people)) return
-    people.value = data.people; localStorage.setItem('nutrition-last-job-id', jobId.value); reportProfiles.value = {}; reportReviews.value = {}; selectPerson(data.people[0] || { id: '', general: {} }); successMessage.value = data.message || '已恢复最近一次本地营养任务。'
+    people.value = data.people; localStorage.setItem('nutrition-last-job-id', jobId.value); reportProfiles.value = {}; reportReviews.value = {}; selectPerson(data.people[0] || { id: '', general: {} }); if (data.body_composition_status === 'awaiting_match') loadBodyCompositionMatches(data); successMessage.value = data.message || '已恢复最近一次本地营养任务。'
   } catch (_) { /* 没有可恢复任务时保持新任务页面 */ }
 }
 async function generateReport(format) {
