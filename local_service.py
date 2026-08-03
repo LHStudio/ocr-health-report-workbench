@@ -1488,7 +1488,7 @@ def finalize_nutrition_person(person: dict[str, Any]) -> None:
 def nutrition_blank_person(person_id: str) -> dict[str, Any]:
     general = {column: "" for column in NUTRITION_GENERAL_COLUMNS}
     general["人员文件夹"] = person_id
-    return {"id": person_id, "general": general, "food_rows": [], "supplement_rows": [], "ocr_files": [], "markdown_files": [], "json_files": [], "checkbox_review": []}
+    return {"id": person_id, "general": general, "food_rows": [], "supplement_rows": [], "source_files": [], "ocr_files": [], "markdown_files": [], "json_files": [], "checkbox_review": []}
 
 
 def nutrition_job_state_path(job_dir: Path) -> Path:
@@ -1552,6 +1552,9 @@ def recover_nutrition_job(job_id: str) -> dict[str, Any] | None:
         name_candidates: list[tuple[str, str]] = []
         for page_number, excel_path in enumerate(excel_paths, start=1):
             relative = excel_path.relative_to(excel_root)
+            source_name = re.sub(r"^\d+_(.+)_ocr\.xlsx$", r"\1.pdf", excel_path.name)
+            if source_name and source_name not in person["source_files"]:
+                person["source_files"].append(source_name)
             markdown_relative = relative.with_suffix(".md")
             markdown_path = markdown_root / markdown_relative
             markdown_text = markdown_path.read_text(encoding="utf-8") if markdown_path.is_file() else ""
@@ -2100,6 +2103,8 @@ def process_nutrition_job(
             person_name_candidates: list[tuple[str, str]] = []
             for page_number, source_path in enumerate(page_paths, start=1):
                 state.update(current_file=source_path.name, current_person=person_id, message=f"正在识别 {person_id} / {source_path.name}")
+                if source_path.name not in person["source_files"]:
+                    person["source_files"].append(source_path.name)
                 response = request_cloud_ocr(
                     state,
                     ocr_url,
