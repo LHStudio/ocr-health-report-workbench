@@ -1,7 +1,3 @@
-Exit code: 0
-Wall time: 0.3 seconds
-Total output lines: 390
-Output:
 <template>
   <header v-if="people.length" class="nutrition-workbar">
     <div class="nutrition-workbar-context"><strong>食物频率核对</strong><span>{{ people.length }} 名人员 · {{ saving ? '正在保存当前核对信息…' : '修改内容会保存在当前任务中' }}</span></div>
@@ -107,7 +103,148 @@ Output:
           </section>
         </section>
         <h4>人员与问卷信息</h4>
-        <div class="general-grid"><label v-for="(value, key) in selected.general" :key="key">{{ k…4540 tokens truncated…频率周期(请核对)'] ?? '').trim() === '未识别') reasons.push('频率周期未识别')
+        <div class="general-grid"><label v-for="(value, key) in selected.general" :key="key">{{ key }}<input v-model="selected.general[key]" class="value-input" :placeholder="key.includes('地点') || key.includes('时段') || key.includes('部位') ? '请根据勾选补充' : ''" /></label></div>
+        <section v-if="checkboxReview.length" class="checkbox-review-panel" aria-label="纸质勾选识别核对">
+          <div class="checkbox-review-head"><div><h4>纸质勾选识别核对</h4><p>点击“已选 / 未选 / 不确定”即可人工修改；设为已选后会同步更新上方对应餐次，保存时写入 Excel。</p></div><span>{{ checkboxReview.length }} 项</span></div>
+          <div class="checkbox-review-grid">
+            <div v-for="item in checkboxReview" :key="item.key" :class="['checkbox-review-item', item.stateClass]">
+              <div class="checkbox-review-name"><strong>{{ item.meal }}</strong><span>{{ item.option }}</span></div>
+              <span :class="['checkbox-review-status', item.stateClass]">{{ item.stateLabel }}</span>
+              <span class="checkbox-review-confidence">自动置信度 {{ item.confidenceLabel }}<template v-if="item.source.manual_override"> · 已人工修改</template></span>
+              <div class="checkbox-review-actions" :aria-label="`${item.meal}-${item.option}人工复核`">
+                <button type="button" :class="{ active: item.source.selected === true }" @click="setCheckboxState(item, true)">已选</button>
+                <button type="button" :class="{ active: item.source.selected === false }" @click="setCheckboxState(item, false)">未选</button>
+                <button type="button" :class="{ active: item.source.selected == null }" @click="setCheckboxState(item, null)">不确定</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <div class="subsection-title"><h4>食物频率明细</h4><button class="secondary-button mini-button" @click="addFood">添加食物</button></div>
+        <div class="mapping-wrap"><table class="mapping-table nutrition-table"><thead><tr><th>食物</th><th>每次量</th><th>次数</th><th>频率周期</th><th>不吃</th><th>备注</th></tr></thead><tbody><tr v-for="(row, index) in selected.food_rows" :key="`${row.食物编号}-${index}`" :class="{ 'needs-review-row': foodRowNeedsReview(row) }" :title="foodRowReviewReason(row)"><td><input v-model="row.食物名称" class="cell-input" /></td><td><input v-model="row.平均每次食用量" class="cell-input" /></td><td><input v-model="row.次数" class="cell-input" /></td><td><select v-model="row['频率周期(请核对)']" @change="syncNotEat(row)"><option value="">原件空白</option><option value="未识别">未识别</option><option value="每天">每天</option><option value="每周">每周</option><option value="每月">每月</option><option value="每年">每年</option><option value="不吃">不吃（次数归零）</option></select></td><td>{{ row.是否不吃 || '—' }}</td><td><input v-model="row.人工核对备注" class="cell-input" /></td></tr></tbody></table></div>
+        <div class="subsection-title"><h4>营养保健品</h4><button class="secondary-button mini-button" @click="addSupplement">添加保健品</button></div>
+        <div class="mapping-wrap"><table class="mapping-table nutrition-table"><thead><tr><th>种类</th><th>名称</th><th>每次量</th><th>次数</th><th>频率周期</th><th>不吃</th><th>备注</th></tr></thead><tbody><tr v-for="(row, index) in selected.supplement_rows" :key="`${row.保健品种类}-${index}`" :class="{ 'needs-review-row': supplementRowNeedsReview(row) }" :title="supplementRowReviewReason(row)"><td><input v-model="row.保健品种类" class="cell-input" /></td><td><input v-model="row.保健品名称" class="cell-input" /></td><td><input v-model="row.平均每次服用量" class="cell-input" /></td><td><input v-model="row.次数" class="cell-input" /></td><td><select v-model="row['频率周期(请核对)']" @change="syncNotEat(row)"><option value="">原件空白</option><option value="未识别">未识别</option><option value="每天">每天</option><option value="每周">每周</option><option value="每月">每月</option><option value="每年">每年</option><option value="不吃">不吃（次数归零）</option></select></td><td>{{ row.是否不吃 || '—' }}</td><td><input v-model="row.备注" class="cell-input" /></td></tr></tbody></table></div>
+      </div>
+    </div>
+  </section>
+</template>
+
+<script setup>
+import { computed, onMounted, ref, watch } from 'vue'
+
+const serverUrl = ref(localStorage.getItem('medical-ocr-api-url') || '')
+const serverMessage = ref(''); const serverOk = ref(false); const testing = ref(false)
+const nutritionFiles = ref([]); const bodyCompositionFiles = ref([]); const mode = ref('folder'); const templateFile = ref(null); const parseMode = ref(localStorage.getItem('ocr-parse-mode') || 'markdown'); const processingMode = ref(localStorage.getItem('ocr-processing-mode') || 'fast'); const processing = ref(false); const saving = ref(false)
+const progress = ref({ completed: 0, total: 0, currentFile: '' }); const errorMessage = ref(''); const successMessage = ref('')
+const people = ref([]); const selectedId = ref(''); const jobId = ref('')
+const reportGenerating = ref(''); const reportProfiles = ref({}); const reportProfile = ref(emptyReportProfile()); const reportReviews = ref({}); const reportReview = ref(emptyReportReview())
+const nutritionPreview = ref(null); const previewLoading = ref(false); const previewError = ref(''); const previewUsableFoodCount = ref(0)
+const reportErrorMessage = ref(''); const reportSuccessMessage = ref('')
+const nutritionReviewOpen = ref(false)
+const appendBodyCompositionFiles = ref([]); const appendingBodyComposition = ref(false); const applyingBodyCompositionMatches = ref(false)
+const bodyCompositionMatches = ref([]); const bodyCompositionHistory = ref([]); const bodyCompositionAssignments = ref({}); const bodyCompositionMessage = ref(''); const bodyCompositionError = ref(false); const bodyCompositionMatchFilter = ref('all'); const bodyCompositionPanelOpen = ref(true)
+const canProcess = computed(() => !!(serverUrl.value && nutritionFiles.value.length && !processing.value))
+const personFolders = computed(() => [...new Set(nutritionFiles.value.map(folderFor))].sort((a, b) => a.localeCompare(b, 'zh-CN')))
+const selected = computed(() => people.value.find((person) => person.id === selectedId.value) || people.value[0])
+const bmiValue = computed(() => { const height = Number(reportProfile.value.height); const weight = Number(reportProfile.value.weight); if (!(height > 0 && weight > 0)) return ''; return (weight / ((height / 100) ** 2)).toFixed(1) })
+const bmiStatus = computed(() => { const bmi = Number(bmiValue.value); if (!bmi) return ''; if (bmi < 18.5) return '偏瘦'; if (bmi < 24) return '正常'; if (bmi < 28) return '超重'; return '肥胖' })
+const energyStandardNote = computed(() => { const standard = nutritionPreview.value?.nutrition?.energy?.standard; if (standard) return 'kcal/天'; if (reportProfile.value.gender === 'male') return '当前迁移的 EER 表仅含女性标准'; return '补全年龄、性别和活动量后显示' })
+const nutritionDataSource = computed(() => nutritionPreview.value?.food_data_source || {})
+const categoryReviewRows = computed(() => Object.entries(nutritionPreview.value?.category_result || {}).map(([key, info]) => ({ key, label: key, value: info?.value ?? 0, machineEvaluation: machineEvaluationText(info?.evaluation) })))
+const nutrientReviewRows = computed(() => {
+  const nutrition = nutritionPreview.value?.nutrition || {}
+  return [
+    { key: 'energyEvaluation', label: '总能量', value: nutrition.energy?.value ?? '—', unit: 'kcal/天', machineEvaluation: machineEvaluationText(nutrition.energy?.evaluation) },
+    { key: 'calciumEvaluation', label: '钙', value: nutrition.calcium?.value ?? '—', unit: 'mg/天', machineEvaluation: machineEvaluationText(nutrition.calcium?.evaluation) },
+  ]
+})
+const canExportReviewedReport = computed(() => !!(selected.value && nutritionPreview.value && !previewLoading.value))
+const visibleBodyCompositionMatches = computed(() => bodyCompositionHistory.value.filter((record) => {
+  const paired = Boolean(bodyCompositionAssignments.value[record.id]); const missingName = !String(record.corrected_name || record.name || '').trim()
+  if (bodyCompositionMatchFilter.value === 'pending') return !paired
+  if (bodyCompositionMatchFilter.value === 'paired') return record.match_status === 'applied' || paired
+  if (bodyCompositionMatchFilter.value === 'missing-name') return missingName
+  return true
+}))
+const checkboxReview = computed(() => {
+  const items = Array.isArray(selected.value?.checkbox_review) ? selected.value.checkbox_review : []
+  return items.filter((item) => item && typeof item === 'object').map((item, index) => {
+    const explicitMeal = String(item.meal_label || item.question_label || item.question || '').trim()
+    const explicitOption = String(item.option_label || item.option || '').trim()
+    const rawLabel = String(item.label || '').trim()
+    const labelParts = rawLabel.split(/[-－—]/).map((part) => part.trim()).filter(Boolean)
+    const meal = explicitMeal || labelParts[0] || '勾选项'
+    const option = explicitOption || labelParts.slice(1).join('-') || (explicitMeal ? rawLabel : '') || '未命名选项'
+    const stateLabel = item.selected === true ? '已选' : item.selected === false ? '未选' : '不确定'
+    const stateClass = item.selected === true ? 'is-selected' : item.selected === false ? 'is-unselected' : 'is-uncertain'
+    const confidence = Number(item.confidence)
+    const confidenceLabel = Number.isFinite(confidence) ? `${Math.round(Math.max(0, Math.min(100, confidence <= 1 ? confidence * 100 : confidence)))}%` : '—'
+    return { key: `${rawLabel || meal}-${index}`, meal, option, stateLabel, stateClass, confidenceLabel, multiSelect: item.multi_select === true, source: item }
+  })
+})
+const progressPercent = computed(() => progress.value.total ? Math.round(progress.value.completed / progress.value.total * 100) : 0)
+function folderFor(file) { if (mode.value === 'files') return file.name.replace(/\.pdf$/i, ''); const parts = (file.webkitRelativePath || file.name).split('/').filter(Boolean); return parts.length > 1 ? parts.slice(0, -1).join('/') : file.name.replace(/\.pdf$/i, '') }
+function saveUrl() { localStorage.setItem('medical-ocr-api-url', serverUrl.value); serverOk.value = true; serverMessage.value = '云端地址已保存。' }
+function saveParseMode() { localStorage.setItem('ocr-parse-mode', parseMode.value) }
+function saveProcessingMode() { localStorage.setItem('ocr-processing-mode', processingMode.value) }
+function selectTemplate(event) { templateFile.value = event.target.files?.[0] || null }
+function setFiles(files, nextMode) { mode.value = nextMode; nutritionFiles.value = Array.from(files || []).filter((file) => /\.pdf$/i.test(file.name)); errorMessage.value = ''; successMessage.value = '' }
+function selectFiles(event) { setFiles(event.target.files, 'files') }
+function selectFolder(event) { setFiles(event.target.files, 'folder') }
+function selectBodyCompositionFiles(event) { bodyCompositionFiles.value = Array.from(event.target.files || []).filter((file) => /\.pdf$/i.test(file.name)); errorMessage.value = ''; successMessage.value = '' }
+function selectAppendBodyCompositionFiles(event) { appendBodyCompositionFiles.value = Array.from(event.target.files || []).filter((file) => /\.pdf$/i.test(file.name)); bodyCompositionMessage.value = ''; bodyCompositionError.value = false }
+function emptyReportProfile() { return { name: '', age: '', projectType: '', trainingYears: '', currentStatus: '', gender: '', height: '', weight: '', fatFreeMass: '', activityLevel: '' } }
+function emptyReportReview() { return { categoryEvaluations: {}, energyEvaluation: '', calciumEvaluation: '', overallSuggestions: '', interpretation: '', machineSeeded: false, manualEntryFields: {} } }
+function copyReportReview(review) { return { ...emptyReportReview(), ...(review || {}), categoryEvaluations: { ...(review?.categoryEvaluations || {}) }, manualEntryFields: { ...(review?.manualEntryFields || {}) } } }
+function machineEvaluationText(value) { const text = String(value || '').trim(); if (text === '不足') return '偏少'; if (text === '偏高') return '偏多'; if (text === '适宜') return '适中'; return '' }
+function machineInterpretation(preview) {
+  const nutrition = preview?.nutrition || {}; const lines = []
+  if (nutrition.energy?.evaluation === '不足') lines.push('能量摄入偏少，建议结合训练量补充主食等碳水化合物来源。')
+  else if (nutrition.energy?.evaluation === '偏高') lines.push('能量摄入偏多，建议结合训练量调整总能量摄入。')
+  if (nutrition.calcium?.evaluation === '不足') lines.push('钙摄入偏少，建议优先从奶类、豆制品等食物补充。')
+  return lines.join('\n') || '请结合受访者训练、疾病和补充剂使用情况进行最终解读。'
+}
+function seedReportReviewFromPreview() {
+  if (!selected.value || !nutritionPreview.value || reportReview.value.machineSeeded) return
+  const preview = nutritionPreview.value; const categoryEvaluations = {}
+  Object.entries(preview.category_result || {}).forEach(([category, info]) => { categoryEvaluations[category] = machineEvaluationText(info?.evaluation) })
+  reportReview.value = { ...reportReview.value, categoryEvaluations, energyEvaluation: machineEvaluationText(preview.nutrition?.energy?.evaluation), calciumEvaluation: machineEvaluationText(preview.nutrition?.calcium?.evaluation), overallSuggestions: (preview.suggestions || []).join('\n') || '请结合实际饮食、训练与健康状况给出建议。', interpretation: machineInterpretation(preview), machineSeeded: true }
+  reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
+}
+function resetReportReviewFromMachine() { reportReview.value = emptyReportReview(); seedReportReviewFromPreview() }
+function evaluationSelection(value, fieldKey) { const text = String(value || '').trim(); if (reportReview.value.manualEntryFields?.[fieldKey] || (text && !['偏少', '适中', '偏多'].includes(text))) return 'other'; return text }
+function isManualEvaluation(value, fieldKey) { return evaluationSelection(value, fieldKey) === 'other' }
+function setEvaluation(kind, key, selection) {
+  const fieldKey = `${kind === 'category' ? 'category' : 'nutrition'}:${key}`
+  const target = kind === 'category' ? reportReview.value.categoryEvaluations : reportReview.value
+  if (selection === 'other') {
+    reportReview.value.manualEntryFields[fieldKey] = true
+    if (['偏少', '适中', '偏多'].includes(String(target[key] || '').trim())) target[key] = ''
+    return
+  }
+  delete reportReview.value.manualEntryFields[fieldKey]
+  target[key] = selection
+}
+function manualEvaluationsPayload() { return { categoryEvaluations: { ...reportReview.value.categoryEvaluations }, energyEvaluation: String(reportReview.value.energyEvaluation || '').trim(), calciumEvaluation: String(reportReview.value.calciumEvaluation || '').trim(), overallSuggestions: String(reportReview.value.overallSuggestions || '').trim(), interpretation: String(reportReview.value.interpretation || '').trim() } }
+function openNutritionReview() { reportErrorMessage.value = ''; reportSuccessMessage.value = ''; nutritionReviewOpen.value = true; scheduleNutritionPreview() }
+function closeNutritionReview() { nutritionReviewOpen.value = false }
+function formatSourceTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString('zh-CN', { hour12: false }) }
+function genderForReport(value) { const text = String(value || '').trim().toLowerCase(); return ['女', '女性', 'female', 'f'].includes(text) ? 'female' : ['男', '男性', 'male', 'm'].includes(text) ? 'male' : '' }
+function selectPerson(person) {
+  if (selectedId.value) { reportProfiles.value[selectedId.value] = { ...reportProfile.value }; reportReviews.value[selectedId.value] = copyReportReview(reportReview.value) }
+  selectedId.value = person.id
+  reportProfile.value = { ...(reportProfiles.value[person.id] || { name: person.general?.姓名 || '', age: person.general?.年龄 || '', projectType: person.general?.项目种类 || '', trainingYears: person.general?.训练年限 || '', currentStatus: person.general?.当前状态 || '', gender: genderForReport(person.general?.性别), height: person.general?.身高 || '', weight: person.general?.体重 || '', fatFreeMass: person.general?.去脂体重 || '', activityLevel: person.general?.运动量 || '' }) }
+  reportReview.value = copyReportReview(reportReviews.value[person.id])
+  nutritionPreview.value = null
+  scheduleNutritionPreview()
+}
+function clear() { nutritionFiles.value = []; bodyCompositionFiles.value = []; appendBodyCompositionFiles.value = []; bodyCompositionMatches.value = []; bodyCompositionHistory.value = []; bodyCompositionAssignments.value = {}; bodyCompositionMessage.value = ''; bodyCompositionError.value = false; people.value = []; selectedId.value = ''; errorMessage.value = ''; successMessage.value = ''; reportProfiles.value = {}; reportProfile.value = emptyReportProfile(); reportReviews.value = {}; reportReview.value = emptyReportReview(); nutritionPreview.value = null; nutritionReviewOpen.value = false; previewError.value = ''; reportErrorMessage.value = ''; reportSuccessMessage.value = '' }
+function hasText(value) { return String(value ?? '').trim().length > 0 }
+function actionableFoodNote(value) { return String(value ?? '').split('；').map((part) => part.trim()).filter(Boolean).some((part) => !part.startsWith('OCR项目原文：')) }
+function rowNeedsReview(row, noteKey) { return String(row?.['频率周期(请核对)'] ?? '').trim() === '未识别' || hasText(row?.[noteKey]) }
+function foodRowNeedsReview(row) { return String(row?.['频率周期(请核对)'] ?? '').trim() === '未识别' || actionableFoodNote(row?.人工核对备注) }
+function foodRowReviewReason(row) {
+  const reasons = []
+  if (String(row?.['频率周期(请核对)'] ?? '').trim() === '未识别') reasons.push('频率周期未识别')
   if (actionableFoodNote(row?.人工核对备注)) reasons.push(`风险备注：${row.人工核对备注}`)
   return reasons.length ? `需核对：${reasons.join('；')}` : ''
 }
@@ -250,4 +387,3 @@ watch(reportProfile, scheduleNutritionPreview, { deep: true })
 watch(selected, scheduleNutritionPreview, { deep: true })
 onMounted(resumeLatestNutritionJob)
 </script>
-

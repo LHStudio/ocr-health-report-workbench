@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.3 seconds
-Output:
 <template>
   <main class="page-shell">
     <header v-if="activeWorkspace === 'medical'" class="hero">
@@ -170,4 +167,3 @@ async function loadLastTemplate() {
 }
 onMounted(() => { loadLastTemplate(); loadMedicalNormalRanges() })
 </script>
-

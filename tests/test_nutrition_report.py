@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.3 seconds
-Output:
 from __future__ import annotations
 
 import sys
@@ -328,4 +325,3 @@ class NutritionReportServiceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
