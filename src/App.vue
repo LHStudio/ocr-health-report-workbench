@@ -1,6 +1,9 @@
+Exit code: 0
+Wall time: 0.3 seconds
+Output:
 <template>
   <main class="page-shell">
-    <header class="hero">
+    <header v-if="activeWorkspace === 'medical'" class="hero">
       <div><p class="eyebrow">本地 Python 批处理 · 云端 OCR</p><h1>{{ activeWorkspace === 'medical' ? '体检报告自动录入' : '食物频率调查自动汇总' }}</h1><p class="hero-copy">{{ activeWorkspace === 'medical' ? 'OCR 自动匹配，人工只需逐人核对和必要时修改。' : '文字、表格和手写问卷统一汇总；勾选项保留人工核对入口。' }}</p></div>
       <span class="local-tag">OCR Excel 自动留存</span>
     </header>
@@ -167,3 +170,4 @@ async function loadLastTemplate() {
 }
 onMounted(() => { loadLastTemplate(); loadMedicalNormalRanges() })
 </script>
+

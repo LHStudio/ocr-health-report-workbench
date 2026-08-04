@@ -1,9 +1,13 @@
+Exit code: 0
+Wall time: 0.3 seconds
+Output:
 from __future__ import annotations
 
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import fitz
 from openpyxl import load_workbook
@@ -14,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from nutrition_report import FOOD_REFERENCE_MAP, NutritionReportService, build_payload_from_ocr_person  # noqa: E402
-from local_service import body_composition_match_candidates, extract_fat_free_mass, merge_body_composition_records  # noqa: E402
+from local_service import JOBS, apply_body_composition_matches, body_composition_match_candidates, extract_fat_free_mass, merge_body_composition_records  # noqa: E402
 
 
 def sample_person() -> dict:
@@ -208,6 +212,79 @@ class NutritionReportServiceTest(unittest.TestCase):
         self.assertTrue(any(item["person_id"] == "A" for item in similar))
         self.assertTrue(all(item["score"] < 100 for item in similar))
 
+    def test_confirmed_body_composition_pairing_corrects_questionnaire_name(self) -> None:
+        job_id = "body-composition-name-correction"
+        people = [{"id": "ocr/1", "general": {"姓名": "刘紫雨"}}]
+        JOBS[job_id] = {
+            "job_id": job_id,
+            "kind": "nutrition",
+            "status": "completed",
+            "body_composition_status": "awaiting_match",
+            "people": people,
+            "body_composition_match_history": [],
+        }
+        payload = {
+            "people": people,
+            "assignments": {"body-1": "ocr/1"},
+            "body_composition_pending_matches": [{
+                "id": "body-1",
+                "name": "刘紫玉",
+                "corrected_name": "刘紫玉",
+                "fat_free_mass": "46.6",
+                "filename": "inbody.pdf",
+            }],
+        }
+        try:
+            with patch("local_service.persist_nutrition_job"):
+                result = apply_body_composition_matches(job_id, payload)
+        finally:
+            JOBS.pop(job_id, None)
+
+        self.assertEqual("刘紫玉", result["people"][0]["general"]["姓名"])
+        self.assertEqual("46.6", result["people"][0]["general"]["去脂体重"])
+        self.assertIn("同步修正 1 名", result["message"])
+
+    def test_saved_body_composition_pairing_can_be_reassigned(self) -> None:
+        job_id = "body-composition-reassignment"
+        source_file = "/local-files/demo/inbody.md"
+        people = [
+            {"id": "A", "general": {"姓名": "旧配对", "去脂体重": "46.6"}, "body_composition_files": [source_file]},
+            {"id": "B", "general": {"姓名": "新配对"}, "body_composition_files": []},
+        ]
+        original_record = {
+            "id": "body-1",
+            "name": "正确姓名",
+            "fat_free_mass": "46.6",
+            "filename": "inbody.pdf",
+            "file_url": source_file,
+            "assigned_person_id": "A",
+            "match_status": "applied",
+        }
+        JOBS[job_id] = {
+            "job_id": job_id,
+            "kind": "nutrition",
+            "status": "completed",
+            "body_composition_status": "completed",
+            "people": people,
+            "body_composition_match_history": [original_record],
+        }
+        payload = {
+            "people": people,
+            "assignments": {"body-1": "B"},
+            "body_composition_matches": [original_record],
+        }
+        try:
+            with patch("local_service.persist_nutrition_job"):
+                result = apply_body_composition_matches(job_id, payload)
+        finally:
+            JOBS.pop(job_id, None)
+
+        by_id = {person["id"]: person for person in result["people"]}
+        self.assertNotIn("去脂体重", by_id["A"]["general"])
+        self.assertEqual([], by_id["A"]["body_composition_files"])
+        self.assertEqual("46.6", by_id["B"]["general"]["去脂体重"])
+        self.assertEqual("正确姓名", by_id["B"]["general"]["姓名"])
+
     def test_manual_review_replaces_machine_evaluation_and_exports_disclaimer(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)
@@ -251,3 +328,4 @@ class NutritionReportServiceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

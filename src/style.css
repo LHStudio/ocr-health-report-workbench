@@ -1,3 +1,6 @@
+Exit code: 0
+Wall time: 0.3 seconds
+Output:
 .body-composition-match-table .body-match-applied td { background: #e8f6ef; }.body-composition-match-table .body-match-applied td:first-child { box-shadow: inset 3px 0 #21866f; }.applied-match { color: #14705a; font-size: .84rem; }
 :root { font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; color: #162c3c; background: #f3f7f9; font-synthesis: none; }
 * { box-sizing: border-box; }
@@ -50,3 +53,56 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
 .review-table .abnormal-row td { background: #fff0f0; color: #a51f28; }.review-table .abnormal-row td:first-child { box-shadow: inset 3px 0 #d5464c; }.abnormal-badge { display: inline-block; border-radius: 999px; padding: 4px 7px; background: #ffe1e1; color: #b4232c; font-weight: 700; font-size: .76rem; white-space: nowrap; }.normal-state { color: #70848c; font-size: .8rem; }.person-abnormal-count { width: fit-content; margin-top: 7px !important; padding: 3px 7px; border-radius: 999px; background: #ffe0e0; color: #ad2630 !important; font-weight: 700; }.person-item.has-abnormal-items:not(.active) { background: #fff8f8; }.review-table .abnormal-row .value-input { border-color: #dc777b; background: #fffafa; color: #a51f28; }
 .settings-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(17, 39, 52, .42); }.settings-dialog { display: flex; flex-direction: column; width: min(780px, 100%); max-height: min(760px, calc(100vh - 40px)); padding: 22px; border: 1px solid #d7e5e8; border-radius: 14px; background: #fff; box-shadow: 0 22px 60px rgba(15, 40, 53, .25); }.settings-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }.settings-head h2 { margin: 0; color: #173c50; font-size: 1.12rem; }.settings-head p { max-width: 600px; margin: 7px 0 14px; color: #6b818b; font-size: .82rem; line-height: 1.55; }.normal-range-wrap { overflow: auto; border: 1px solid #dfe8eb; border-radius: 9px; }.normal-range-table { width: 100%; min-width: 530px; border-collapse: collapse; font-size: .88rem; }.normal-range-table th, .normal-range-table td { padding: 9px 11px; border-bottom: 1px solid #e5edef; text-align: left; }.normal-range-table th { position: sticky; top: 0; background: #f1f8f6; color: #31505f; }.normal-range-table tr:last-child td { border-bottom: 0; }.normal-range-table input { width: 100%; min-width: 120px; padding: 7px 8px; border: 1px solid #cbdadd; border-radius: 6px; outline-color: #16867a; }.settings-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 16px; }
 @media (max-width: 650px) { .page-shell { width: min(100% - 22px, 1180px); padding-top: 26px; }.hero, .input-row, .upload-actions, .nutrition-report-launch { flex-direction: column; }.local-tag { align-self: flex-start; }.card { padding: 18px; }.input-row .secondary-button { width: 100%; }.upload-actions .drop-zone { width: 100%; }.section-title { align-items: flex-start; }.file-pill { max-width: 55%; overflow: hidden; text-overflow: ellipsis; }.primary-button { width: 100%; }.review-layout { grid-template-columns: 1fr; }.person-list { border-right: 0; border-bottom: 1px solid #dce8eb; max-height: 220px; }.detail-head { flex-direction: column; }.general-grid, .report-review-textareas { grid-template-columns: 1fr; }.nutrition-report-launch .primary-button { width: 100%; }.nutrition-report-dialog { padding: 16px; }.workspace-tabs { overflow: auto; }.workspace-tabs button { white-space: nowrap; } }
+
+/* Nutrition review is a desktop work area: one command bar, one navigation pane, one editor pane. */
+.page-shell { width: min(1360px, calc(100% - 48px)); }
+.nutrition-workbar { position: sticky; z-index: 16; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 64px; margin: 0 0 16px; padding: 10px 0; border-bottom: 1px solid #cfe0e2; background: rgba(243, 247, 249, .97); backdrop-filter: blur(8px); }
+.nutrition-workbar-context { display: flex; align-items: baseline; min-width: 0; gap: 10px; color: #607984; font-size: .82rem; }
+.nutrition-workbar-context strong { flex: 0 0 auto; color: #173c50; font-size: 1rem; }
+.nutrition-workbar-context span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nutrition-workbar-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.nutrition-workbar-actions .primary-button, .nutrition-workbar-actions .secondary-button { min-width: 132px; padding: 10px 14px; }
+.nutrition-workspace { padding: 20px; }
+.nutrition-section-head { display: flex; align-items: center; min-height: 42px; margin-bottom: 14px; }
+.nutrition-section-head h2 { margin: 0; color: #173c50; font-size: 1.05rem; }
+.nutrition-section-head p { margin: 5px 0 0; color: #718690; font-size: .82rem; }
+.nutrition-workspace > .hint { margin-bottom: 16px; }
+.nutrition-review { grid-template-columns: minmax(340px, 38%) minmax(0, 62%); align-items: start; min-height: 0; }
+.nutrition-review .person-list, .nutrition-review .person-detail { height: auto; max-height: none; overflow: visible; }
+.nutrition-review .person-list { border-right: 1px solid #dce8eb; border-bottom: 0; }
+.nutrition-review .person-detail { padding: 22px 24px 32px; }
+.person-list-head { position: sticky; z-index: 2; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; border-bottom: 1px solid #dce8eb; background: #edf5f4; color: #52707a; font-size: .8rem; }
+.person-list-head strong { color: #176f63; font-size: .86rem; }
+.nutrition-review .person-item { padding: 14px 18px; }
+.nutrition-review .detail-head { position: static; margin: 0 0 16px; padding: 0 0 13px; border-bottom: 1px solid #e1eaec; background: transparent; }
+.nutrition-workspace .nutrition-report-launch, .nutrition-workspace .body-composition-match-panel { border-radius: 8px; }
+.body-composition-match-panel { padding: 0; overflow: hidden; }
+.body-composition-panel-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border: 0; border-bottom: 1px solid #d1e3df; background: #f7fbfa; color: #244c5f; text-align: left; }
+.body-composition-panel-toggle:hover { background: #eef7f4; }
+.body-composition-panel-toggle strong, .body-composition-panel-toggle small { display: block; }
+.body-composition-panel-toggle strong { font-size: .94rem; }
+.body-composition-panel-toggle small { margin-top: 4px; color: #718690; font-size: .77rem; font-weight: 400; }
+.panel-chevron { flex: 0 0 auto; color: #176f63; font-size: 1.5rem; line-height: 1; transform: rotate(-90deg); transition: transform .16s ease; }
+.panel-chevron.open { transform: rotate(0); }
+.body-composition-panel-content { padding: 0 14px 14px; background: #f8fbfa; }
+.body-composition-panel-content .subsection-title { margin-top: 0; padding-top: 16px; }
+.body-composition-match-table .applied-match { display: block; margin-bottom: 6px; }
+
+@media (max-width: 900px) {
+  .page-shell { width: min(100% - 32px, 1180px); }
+  .nutrition-review { grid-template-columns: minmax(280px, 36%) minmax(0, 64%); }
+}
+
+@media (max-width: 650px) {
+  .nutrition-workbar { align-items: stretch; flex-direction: column; gap: 9px; padding: 10px 0; }
+  .nutrition-workbar-context { display: block; }
+  .nutrition-workbar-context span { display: block; margin-top: 3px; }
+  .nutrition-workbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nutrition-workbar-actions .primary-button, .nutrition-workbar-actions .secondary-button { width: 100%; min-width: 0; }
+  .nutrition-workspace { padding: 18px; }
+  .nutrition-review { display: block; height: auto; min-height: 0; }
+  .nutrition-review .person-list { height: auto; border-right: 0; border-bottom: 1px solid #dce8eb; }
+  .nutrition-review .person-detail { height: auto; overflow: visible; padding: 18px; }
+  .nutrition-review .detail-head { position: static; margin: 0 0 16px; padding: 0 0 13px; backdrop-filter: none; }
+}
+

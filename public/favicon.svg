@@ -1,0 +1,10 @@
+Exit code: 0
+Wall time: 0.3 seconds
+Output:
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="4" y="4" width="56" height="56" rx="28" fill="#0f766e"/>
+  <path d="M17 16h30v34H17z" fill="#f0fdfa"/>
+  <rect x="24" y="10" width="16" height="10" rx="5" fill="#99f6e4"/>
+  <path d="M23 27h18M23 34h18M23 41h11" fill="none" stroke="#0f766e" stroke-width="3"/>
+</svg>
+
