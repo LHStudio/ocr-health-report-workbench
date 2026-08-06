@@ -5,9 +5,9 @@
 ## 迁移内容
 
 - `nutrition.py`：原 `services/nutrition_service.py` 的营养计算、分类评价、女性 EER 和手动评价逻辑；资源路径改为包内绝对路径，并显式返回未匹配食物。
-- `builders/pdf.py`：原 PDF 构建逻辑；修复硬编码工作目录、固定临时文件名及并发覆盖问题，支持环境变量 `NUTRITION_REPORT_FONT` 指定中文字体，并在 PDF 中展示人员、日期和 OCR 换算告警。
+- `builders/pdf.py`：原 PDF 构建逻辑；三大营养素供能占比使用 PDF 原生矢量饼图，修复硬编码工作目录、固定临时文件名及并发覆盖问题，支持环境变量 `NUTRITION_REPORT_FONT` 指定中文字体，并在 PDF 中展示人员、日期和 OCR 换算告警。
 - `builders/excel.py`：原五张营养分析工作表，并新增 `OCR换算说明` 工作表。
-- `config/`、`data/food_db.json`、`assets/images/`：报告计算配置、食物营养数据和保留的历史图片资源；当前紧凑 PDF 不再嵌入图片。
+- `config/`、`data/food_db.json`、`assets/images/`：报告计算配置、食物营养数据和保留的历史图片资源；当前紧凑 PDF 不嵌入食物照片，营养素占比图以矢量方式绘制。
 - `adapter.py`：新增 OCR 食物频率问卷到原报告 `user + meals` 模型的自动适配。
 - `service.py`：不依赖 Flask/FastAPI 的纯 Python 门面，可由当前 `local_service.py` 直接导入。
 

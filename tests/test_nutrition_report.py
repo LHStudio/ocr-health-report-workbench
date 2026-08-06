@@ -143,7 +143,13 @@ class NutritionReportServiceTest(unittest.TestCase):
             self.assertTrue(all(category in page_texts[0] for category in ("谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类")))
             self.assertTrue(all(category in page_texts[1] for category in ("豆类", "坚果", "奶类", "零食", "运动营养", "饮料", "酒类")))
             self.assertIn("能量及钙摄入量评估报告", page_texts[2])
+            self.assertIn("三大营养素供能占比", page_texts[2])
+            expected_percentages = NutritionReportServiceTest.service.pdf_builder._build_macro_energy_chart(
+                pdf_result["report_data"]["nutrition"]
+            ).contents[0].labels
+            self.assertTrue(all(percentage in page_texts[2] for percentage in expected_percentages))
             self.assertNotIn("食物图片", pdf_text)
+            # 饼图直接写成 PDF 矢量绘图，不应重新产生位图或临时 PNG。
             self.assertFalse(any(image_counts))
             self.assertNotIn("营养数据来源", page_texts[0])
             self.assertIn("本地食物营养库", pdf_text)

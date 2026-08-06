@@ -12,6 +12,8 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.shapes import Drawing
 from reportlab.platypus import (
     PageBreak,
     Paragraph,
@@ -28,7 +30,7 @@ def _as_text(value: object) -> str:
 
 class NutritionPDFBuilder:
     def __init__(self, image_dir: str | Path | None = None, font_path: str | Path | None = None):
-        # image_dir 保留为兼容旧调用；报告已不再嵌入食物或图表图片。
+        # image_dir 保留为兼容旧调用；占比图使用 PDF 原生矢量图，不依赖图片目录。
         _ = image_dir
         self.font_path = self._find_font(font_path)
         self.font_name = "NutritionReportCJK"
@@ -171,6 +173,21 @@ class NutritionPDFBuilder:
         nutrition = data.get("nutrition") or {}
         energy = nutrition.get("energy") or {}
         calcium = nutrition.get("calcium") or {}
+        macro_summary = Table(
+            [[
+                Paragraph(self._format_macro_energy(nutrition), left),
+                self._build_macro_energy_chart(nutrition),
+            ]],
+            colWidths=[58 * mm, 78 * mm],
+            rowHeights=[30 * mm],
+        )
+        macro_summary.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
         energy_table = [
             [Paragraph("能量及钙摄入量评估报告", header), "", ""],
             [Paragraph("项目", header), Paragraph("摄入量", header), Paragraph("评价", header)],
@@ -179,7 +196,7 @@ class NutritionPDFBuilder:
                 Paragraph(self._format_energy_intake(energy), normal),
                 Paragraph(escape(_as_text(energy.get("evaluation", "-"))), normal),
             ],
-            [Paragraph("三大营养素供能占比", category_style), Paragraph(self._format_macro_energy(nutrition), left), Paragraph("-", normal)],
+            [Paragraph("三大营养素供能占比", category_style), macro_summary, ""],
             [
                 Paragraph("钙", category_style),
                 Paragraph(f"{escape(_as_text(calcium.get('value', 0)))} mg/day", normal),
@@ -319,19 +336,53 @@ class NutritionPDFBuilder:
 
     @staticmethod
     def _format_macro_energy(nutrition: dict) -> str:
-        protein = float(nutrition.get("protein") or 0)
-        fat = float(nutrition.get("fat") or 0)
-        carbohydrate = float(nutrition.get("carbohydrate") or 0)
-        calories = [protein * 4, fat * 9, carbohydrate * 4]
+        grams, calories = NutritionPDFBuilder._macro_energy_values(nutrition)
         total = sum(calories)
         if total <= 0:
             return "暂无可计算的三大营养素数据"
         names = ("蛋白质", "脂肪", "碳水")
-        grams = (protein, fat, carbohydrate)
         return "<br/>".join(
             f"{name} {gram:g}g（{calorie / total * 100:.1f}%）"
             for name, gram, calorie in zip(names, grams, calories)
         )
+
+    @staticmethod
+    def _macro_energy_values(nutrition: dict) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+        grams = (
+            float(nutrition.get("protein") or 0),
+            float(nutrition.get("fat") or 0),
+            float(nutrition.get("carbohydrate") or 0),
+        )
+        return grams, (grams[0] * 4, grams[1] * 9, grams[2] * 4)
+
+    @classmethod
+    def _build_macro_energy_chart(cls, nutrition: dict) -> Drawing:
+        """构建直接写入 PDF 的矢量饼图，避免磁盘临时图片和并发覆盖。"""
+        _, calories = cls._macro_energy_values(nutrition)
+        total = sum(calories)
+        drawing = Drawing(78 * mm, 30 * mm)
+        if total <= 0:
+            return drawing
+
+        pie = Pie()
+        pie.x = 68
+        pie.y = 3
+        pie.width = 78
+        pie.height = 78
+        pie.data = list(calories)
+        pie.labels = [f"{value / total * 100:.1f}%" for value in calories]
+        pie.startAngle = 90
+        pie.direction = "clockwise"
+        pie.slices.labelRadius = 0.62
+        pie.slices.fontName = "Helvetica-Bold"
+        pie.slices.fontSize = 8
+        pie.slices.fontColor = colors.white
+        pie.slices.strokeColor = colors.white
+        pie.slices.strokeWidth = 0.8
+        for index, color in enumerate(("#756BB1", "#E28C45", "#4C9BB0")):
+            pie.slices[index].fillColor = colors.HexColor(color)
+        drawing.add(pie)
+        return drawing
 
     @staticmethod
     def _interpretation(data: dict) -> str:
