@@ -59,6 +59,12 @@ class ImagingParserTests(unittest.TestCase):
         self.assertEqual(fields["检查时间"], "2026年07月0日")
         self.assertIn("检查时间", needs_review)
 
+    def test_keeps_ocr_confused_date_visible_and_marks_review(self):
+        fields, needs_review = parse_imaging_fields("", imaging_payload("2026年07月c7日"), "张羽彤.pdf")
+
+        self.assertEqual(fields["检查时间"], "2026年07月c7日")
+        self.assertIn("检查时间", needs_review)
+
     def test_report_title_is_not_mistaken_for_diagnosis(self):
         payload = json.dumps({"parsing_res_list": [{"block_id": 0, "block_content": "妇科超声诊断报告单"}]}, ensure_ascii=False)
         fields, needs_review = parse_imaging_fields("", payload, "张三.pdf")

@@ -1387,7 +1387,7 @@ def parse_imaging_fields(
     )
 
     date_match = re.search(
-        r"(?:时间|检查时间|报告时间|报告日期|检查日期)\s*[：:]?\s*((?:19|20)\d{2}\s*[年./\-]\s*\d{1,2}\s*[月./\-]\s*\d{1,2}\s*日?)",
+        r"(?:时间|检查时间|报告时间|报告日期|检查日期)\s*[：:]?\s*((?:19|20)[0-9A-Za-z]{2}\s*[年./\-]\s*[0-9A-Za-z]{1,2}\s*[月./\-]\s*[0-9A-Za-z]{1,2}\s*日?)",
         text,
     )
     date_value, date_complete = normalize_imaging_date(date_match.group(1) if date_match else "")
