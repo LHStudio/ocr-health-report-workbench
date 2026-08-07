@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "backend": "python local_service.py",
+    "backend": "python -m uvicorn local_service:app --host 127.0.0.1 --port 8000 --reload",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 3000"

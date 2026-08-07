@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from openpyxl import Workbook, load_workbook
 
 import local_service
-from local_service import general_artifact_bytes, general_json_bytes, normalize_general_output_format, process_general_job
+from local_service import general_artifact_bytes, general_json_bytes, health, normalize_general_output_format, process_general_job
 
 
 def workbook_bytes() -> bytes:
@@ -33,6 +33,13 @@ def cloud_payload() -> dict:
 
 
 class GeneralOcrTests(unittest.TestCase):
+    def test_local_health_advertises_new_workspaces(self):
+        payload = health()
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("imaging", payload["features"])
+        self.assertIn("general", payload["features"])
+
     def test_output_format_validation(self):
         self.assertEqual(normalize_general_output_format("Excel"), "excel")
         self.assertEqual(normalize_general_output_format("markdown"), "markdown")

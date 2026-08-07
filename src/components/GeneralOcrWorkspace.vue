@@ -102,6 +102,10 @@ function selectFiles(event) { setFiles(event.target.files, 'files') }
 function selectFolder(event) { setFiles(event.target.files, 'folder') }
 function saveSettings() { localStorage.setItem(storageKey, serverUrl.value.trim()); localStorage.setItem('general-processing-mode', processingMode.value); settingsOpen.value = false; serverOk.value = true }
 function clearAll() { files.value = []; records.value = []; outputUrl.value = ''; lastJobId.value = ''; errorMessage.value = ''; successMessage.value = ''; progress.value = { completed: 0, total: 0, currentFile: '' } }
+async function ensureLocalFeature() {
+  try { const response = await fetch('/local-api/'); const data = await response.json(); if (!response.ok || !Array.isArray(data.features) || !data.features.includes('general')) throw new Error('本地后端仍是旧版本，请停止旧进程后重新运行 npm run backend') }
+  catch (error) { if (String(error.message || '').includes('旧版本')) throw error; throw new Error('无法连接本地后端，请确认已重新运行 npm run backend') }
+}
 
 async function testOcr() {
   checkingServer.value = true; serverMessage.value = ''
@@ -113,6 +117,7 @@ async function testOcr() {
 async function processDocuments() {
   processing.value = true; errorMessage.value = ''; successMessage.value = ''; records.value = []; outputUrl.value = ''; progress.value = { completed: 0, total: files.value.length, currentFile: '' }
   try {
+    await ensureLocalFeature()
     saveSettings()
     const body = new FormData(); body.append('ocr_url', serverUrl.value.trim()); body.append('processing_mode', processingMode.value); body.append('output_format', outputFormat.value); files.value.forEach((file) => body.append('files', file))
     const response = await fetch('/local-api/general/process', { method: 'POST', body }); const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.detail || '任务创建失败')

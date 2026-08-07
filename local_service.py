@@ -1063,7 +1063,11 @@ def process_job(
 
 @app.get("/")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "api_version": "1.2-general-ocr",
+        "features": ["medical", "nutrition", "imaging", "general"],
+    }
 
 
 @app.post("/test-ocr")
