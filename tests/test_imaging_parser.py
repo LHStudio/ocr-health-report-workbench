@@ -122,6 +122,8 @@ class ImagingParserTests(unittest.TestCase):
 
             saved = save_imaging_review(job_id, {"records": state["records"]})
             self.assertTrue(saved["success"])
+            self.assertRegex(saved["output_filename"], r"^影像识别结果_\d{8}_\d{6}_\d{6}\.xlsx$")
+            self.assertEqual(state["output_relative"].name, saved["output_filename"])
             self.assertEqual(len(list((job_dir / "output").glob("*.xlsx"))), 1)
 
     def test_imaging_job_uses_body_crop_when_layout_ocr_omits_sections(self):

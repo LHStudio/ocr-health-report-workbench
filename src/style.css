@@ -82,6 +82,8 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
 .imaging-review { grid-template-columns: 300px minmax(0, 1fr); min-height: 470px; }
 .imaging-review-summary { align-self: center; padding: 6px 10px; border-radius: 999px; background: #fff0ce; color: #946313; font-size: .8rem; font-weight: 800; }
 .imaging-review-summary.clear { background: #e1f4ed; color: #17715c; }
+.imaging-review-actions { flex-wrap: wrap; justify-content: flex-end; }
+.imaging-export-button { min-width: 112px; padding: 9px 14px; }
 .imaging-detail { padding: 22px 24px 30px; }
 .imaging-fields-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
 .imaging-fields-grid label, .imaging-text-field { color: #59717d; font-size: .8rem; font-weight: 700; }
@@ -93,6 +95,7 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
 .needs-field-review input, .needs-field-review select, .needs-field-review textarea { border-color: #d7a94b; background: #fffaf0; box-shadow: 0 0 0 2px rgba(215, 169, 75, .08); }
 .match-badge.warning { background: #fff0ce; color: #946313; }
 .imaging-ocr-warning { margin: -5px 0 12px; padding: 8px 10px; border-radius: 6px; background: #fff4e2; color: #966216; font-size: .78rem; }
+@media (max-width: 650px) { .imaging-review-title { flex-direction: column; }.imaging-review-actions { width: 100%; justify-content: space-between; }.imaging-review-actions .imaging-export-button { width: auto; } }
 .nutrition-section-head { display: flex; align-items: center; min-height: 42px; margin-bottom: 14px; }
 .nutrition-section-head h2 { margin: 0; color: #173c50; font-size: 1.05rem; }
 .nutrition-section-head p { margin: 5px 0 0; color: #718690; font-size: .82rem; }

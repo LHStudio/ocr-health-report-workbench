@@ -894,8 +894,9 @@ def file_url(job_id: str, path: Path) -> str:
     return f"/local-files/{job_id}/{path.as_posix()}"
 
 
-def timestamped_filename(stem: str, suffix: str = ".xlsx") -> str:
-    return f"{stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{suffix}"
+def timestamped_filename(stem: str, suffix: str = ".xlsx", high_resolution: bool = False) -> str:
+    pattern = "%Y%m%d_%H%M%S_%f" if high_resolution else "%Y%m%d_%H%M%S"
+    return f"{stem}_{datetime.now().strftime(pattern)}{suffix}"
 
 
 def report_filename_stem(person: dict[str, Any]) -> str:
@@ -1552,7 +1553,6 @@ def process_imaging_job(
             })
             state["completed_files"] = index
 
-        write_imaging_workbook(state, records)
         review_count = sum(bool(record.get("needs_review")) for record in records)
         message = f"已识别 {len(records)} 份影像报告。"
         if review_count:
@@ -1631,13 +1631,17 @@ def save_imaging_review(job_id: str, payload: dict[str, Any]):
         }
         cleaned["needs_review"] = imaging_record_needs_review(cleaned)
         cleaned_records.append(cleaned)
+    output_relative = Path("output") / timestamped_filename("影像识别结果", high_resolution=True)
+    state["output_relative"] = output_relative
+    state["output_url"] = file_url(job_id, output_relative)
     write_imaging_workbook(state, cleaned_records)
     state["records"] = cleaned_records
     return {
         "success": True,
-        "message": "影像核对结果已保存到 Excel",
+        "message": "影像核对结果已导出为 Excel",
         "records": cleaned_records,
         "output_url": state["output_url"],
+        "output_filename": output_relative.name,
     }
 
 

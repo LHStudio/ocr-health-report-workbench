@@ -6,7 +6,6 @@
         <span>{{ records.length ? `${records.length} 份超声报告 · ${reviewRecordCount} 份待核对` : '批量提取姓名、性别、年龄、超声所见、超声诊断和检查时间' }}</span>
       </div>
       <div class="workspace-workbar-actions">
-        <button v-if="records.length" class="primary-button" type="button" :disabled="saving" @click="saveAndDownload">{{ saving ? '正在保存…' : '保存核对并下载 Excel' }}</button>
         <button :class="['workspace-settings-button', { 'needs-attention': !serverUrl }]" type="button" aria-label="打开影像识别设置" @click="settingsOpen = true"><span aria-hidden="true">⚙</span><span class="settings-button-label">设置</span></button>
       </div>
     </header>
@@ -44,7 +43,7 @@
     </section>
 
     <section v-if="records.length" class="card people-card">
-      <div class="section-title"><div><span class="step">2</span><h2>逐份核对识别结果</h2></div><span :class="['imaging-review-summary', { clear: reviewRecordCount === 0 }]">{{ reviewRecordCount ? `${reviewRecordCount} 份待核对` : '字段完整' }}</span></div>
+      <div class="section-title imaging-review-title"><div><span class="step">2</span><h2>逐份核对识别结果</h2></div><div class="title-actions imaging-review-actions"><span :class="['imaging-review-summary', { clear: reviewRecordCount === 0 }]">{{ reviewRecordCount ? `${reviewRecordCount} 份待核对` : '字段完整' }}</span><button class="primary-button imaging-export-button" type="button" :disabled="saving" @click="saveAndDownload">{{ saving ? '正在导出…' : '导出 Excel' }}</button></div></div>
       <p class="hint">黄色记录存在缺失或格式不完整字段。扫描件右侧被裁切时，系统会保留可见日期并提示核对，不会猜测缺失数字。</p>
       <div class="review-layout imaging-review">
         <aside class="person-list">
@@ -143,7 +142,8 @@ async function saveAndDownload() {
   saving.value = true; errorMessage.value = ''
   try {
     const response = await fetch(`/local-api/imaging/jobs/${lastJobId.value}/save-review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ records: records.value }) })
-    const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.detail || '保存失败'); records.value = data.records || records.value; successMessage.value = data.message; window.location.assign(data.output_url)
+    const data = await response.json(); if (!response.ok || !data.success) throw new Error(data.detail || '导出失败'); records.value = data.records || records.value; successMessage.value = data.message
+    const link = document.createElement('a'); link.href = data.output_url; link.download = data.output_filename || ''; document.body.appendChild(link); link.click(); link.remove()
   } catch (error) { errorMessage.value = error.message || '保存影像核对结果失败' }
   finally { saving.value = false }
 }
