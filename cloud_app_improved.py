@@ -670,6 +670,46 @@ def run_food_header_identity_ocr(input_path: Path, task_output_dir: Path) -> Tup
     return markdown, extract_identity_candidates(markdown, "header_crop_ocr")
 
 
+def run_body_composition_header_ocr(input_path: Path, task_output_dir: Path) -> Tuple[str, List[dict]]:
+    """Crop and re-read the InBody header containing ID, height, age, and sex."""
+    if input_path.suffix.lower() == ".pdf":
+        document = pdfium.PdfDocument(str(input_path))
+        try:
+            array = document[0].render(scale=3.0).to_numpy()
+        finally:
+            document.close()
+        gray = cv2.cvtColor(array, cv2.COLOR_RGBA2GRAY if array.shape[2] == 4 else cv2.COLOR_RGB2GRAY)
+    else:
+        raw = np.frombuffer(input_path.read_bytes(), dtype=np.uint8)
+        gray = cv2.imdecode(raw, cv2.IMREAD_GRAYSCALE)
+        if gray is None:
+            raise ValueError("无法读取体成分报告图像")
+
+    height, width = gray.shape
+    crop = gray[:max(1, int(height * 0.18)), :]
+    if width < 2400:
+        crop = cv2.resize(crop, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    enhanced_dir = task_output_dir / "enhanced_body_composition_header"
+    enhanced_dir.mkdir(parents=True, exist_ok=True)
+    crop_path = enhanced_dir / "body_composition_header.png"
+    cv2.imwrite(str(crop_path), crop)
+    results = pipeline.predict(
+        str(crop_path),
+        use_layout_detection=False,
+        prompt_label="ocr",
+        use_doc_orientation_classify=False,
+        use_doc_unwarping=False,
+        temperature=0.0,
+    )
+    for result in list(results):
+        if hasattr(result, "save_to_markdown"):
+            result.save_to_markdown(save_path=str(enhanced_dir))
+        if hasattr(result, "save_to_json"):
+            result.save_to_json(save_path=str(enhanced_dir))
+    markdown = "\n\n".join(safe_read_text(path) for path in sorted(enhanced_dir.rglob("*.md"))).strip()
+    return markdown, extract_identity_candidates(markdown, "body_composition_header_ocr")
+
+
 def collect_image_assets(task_output_dir: Path, max_files: int = 20, max_total_bytes: int = 8 * 1024 * 1024) -> List[dict]:
     """增量返回 OCR 产生的小图资产；旧响应字段保持不变。"""
     assets = []
@@ -1077,7 +1117,7 @@ def clean_ocr_latex_text(text: str) -> str:
 # API
 # =========================================================
 PROCESSING_MODES = {"fast", "accurate"}
-DOCUMENT_KINDS = {"auto", "medical", "nutrition"}
+DOCUMENT_KINDS = {"auto", "medical", "nutrition", "body_composition"}
 
 
 def validate_parse_options(processing_mode: str, document_kind: str, page_index: int) -> Tuple[str, str, int]:
@@ -1087,7 +1127,7 @@ def validate_parse_options(processing_mode: str, document_kind: str, page_index:
     if normalized_mode not in PROCESSING_MODES:
         raise HTTPException(status_code=400, detail="processing_mode must be fast or accurate")
     if normalized_kind not in DOCUMENT_KINDS:
-        raise HTTPException(status_code=400, detail="document_kind must be auto, medical, or nutrition")
+        raise HTTPException(status_code=400, detail="document_kind must be auto, medical, nutrition, or body_composition")
     if page_index < 1:
         raise HTTPException(status_code=400, detail="page_index must be greater than or equal to 1")
     return normalized_mode, normalized_kind, page_index
@@ -1098,7 +1138,7 @@ def health():
     # 保持旧客户端所需的 status 字段；额外信息用于启动脚本和人工排查。
     return {
         "status": "ok",
-        "api_version": "1.4-enhanced",
+        "api_version": "1.5-body-composition",
         "parse_file": "multipart/form-data: file 必填；processing_mode、document_kind、page_index、include_assets 可省略",
     }
 
@@ -1185,6 +1225,7 @@ async def parse_file(
         "output_collect": 0.0,
         "identity_ocr": 0.0,
         "header_identity_ocr": 0.0,
+        "body_composition_header_ocr": 0.0,
         "checkbox_cv": 0.0,
         "debug_assets_write": 0.0,
         "excel_build": 0.0,
@@ -1286,8 +1327,9 @@ async def parse_file(
         enhanced_markdown = ""
         name_candidates = extract_identity_candidates(markdown_text, "layout_ocr")
         detected_food_page = "食物频率调查表" in markdown_text
+        body_composition_page = page_index == 1 and document_kind == "body_composition"
         identity_relevant = (
-            (page_index == 1 and document_kind in {"medical", "nutrition"})
+            (page_index == 1 and document_kind in {"medical", "nutrition", "body_composition"})
             or any(keyword in markdown_text for keyword in ("姓名", "受试者", "食物频率调查表", "检验报告单"))
         )
         nutrition_first_page = page_index == 1 and (
@@ -1321,6 +1363,29 @@ async def parse_file(
                 debug_lines.append(f"header_identity_error: {repr(header_error)}")
             finally:
                 timings_ms["header_identity_ocr"] = round((perf_counter() - stage_started) * 1000, 2)
+
+        body_composition_header_markdown = ""
+        if body_composition_page:
+            stage_started = perf_counter()
+            try:
+                body_composition_header_markdown, body_header_candidates = run_body_composition_header_ocr(
+                    input_path, task_output_dir
+                )
+                name_candidates.extend(body_header_candidates)
+                if body_composition_header_markdown:
+                    markdown_text = (
+                        f"{markdown_text}\n\n<!-- enhanced_body_composition_header -->\n"
+                        f"{body_composition_header_markdown}"
+                    ).strip()
+                    enhanced_markdown = "\n\n".join(
+                        item for item in (enhanced_markdown, body_composition_header_markdown) if item
+                    )
+                debug_lines.append(f"body_composition_header_candidates: {body_header_candidates}")
+            except Exception as body_header_error:
+                warnings.append(f"体成分页眉增强失败：{body_header_error}")
+                debug_lines.append(f"body_composition_header_error: {repr(body_header_error)}")
+            finally:
+                timings_ms["body_composition_header_ocr"] = round((perf_counter() - stage_started) * 1000, 2)
 
         selected_name = choose_identity_name(name_candidates)
         identity = {
@@ -1359,7 +1424,11 @@ async def parse_file(
             finally:
                 timings_ms["checkbox_cv"] = round((perf_counter() - stage_started) * 1000, 2)
 
-        structured = {"identity": identity, "questionnaire": questionnaire}
+        structured = {
+            "identity": identity,
+            "questionnaire": questionnaire,
+            "body_composition_header": body_composition_header_markdown,
+        }
 
         # 6. 调试落盘
         stage_started = perf_counter()
@@ -1412,7 +1481,7 @@ async def parse_file(
             "debug_path": str(debug_path),
             "merged_md_path": str(merged_md_path),
             "merged_json_path": str(merged_json_path),
-            "api_version": "1.3-compatible",
+            "api_version": "1.5-body-composition-compatible",
             "enhanced_markdown": enhanced_markdown,
             "structured": structured,
             "assets": assets,

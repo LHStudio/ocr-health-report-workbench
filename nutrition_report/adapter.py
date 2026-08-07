@@ -58,6 +58,8 @@ PERIOD_DIVISORS = {
     "每年": 365.0,
 }
 
+EGG_UNIT_WEIGHT_GRAMS = 45.0
+
 _NUMBER = r"\d+(?:\.\d+)?"
 _RANGE_RE = re.compile(
     rf"(?P<low>{_NUMBER})\s*[-~～至]\s*(?P<high>{_NUMBER})\s*"
@@ -69,6 +71,10 @@ _MEASURE_RE = re.compile(
     re.IGNORECASE,
 )
 _PLAIN_NUMBER_RE = re.compile(rf"^\s*(?P<number>{_NUMBER})\s*$")
+_EGG_COUNT_RE = re.compile(rf"^\s*(?P<number>{_NUMBER})\s*(?:个|只|枚)\s*$")
+_EGG_COUNT_RANGE_RE = re.compile(
+    rf"^\s*(?P<low>{_NUMBER})\s*[-~～至]\s*(?P<high>{_NUMBER})\s*(?:个|只|枚)\s*$"
+)
 
 
 def _text(value: Any) -> str:
@@ -117,10 +123,34 @@ def _parse_number_or_range(value: Any, *, field_name: str, food_name: str) -> tu
 
 
 def parse_quantity_grams(value: Any, food_name: str) -> tuple[float | None, list[dict[str, str]]]:
-    """只自动换算克/千克；毫升按 1ml≈1g 并明确标注，份/个/勺不猜重量。"""
+    """换算每次食用量；蛋类按每个 45g，其他食物不猜测个/份/勺重量。"""
     text = _text(value).lower().replace("，", ",").replace("—", "-").replace("^", "-")
     if not text:
         return None, [_warning("missing_quantity", f"{food_name}缺少平均每次食用量，未计入营养报告", food=food_name)]
+
+    if food_name == "蛋类":
+        egg_range = _EGG_COUNT_RANGE_RE.fullmatch(text)
+        egg_count = _EGG_COUNT_RE.fullmatch(text) or _PLAIN_NUMBER_RE.fullmatch(text)
+        if egg_range:
+            low, high = float(egg_range.group("low")), float(egg_range.group("high"))
+            count = (low + high) / 2
+            return count * EGG_UNIT_WEIGHT_GRAMS, [
+                _warning(
+                    "egg_unit_weight_applied",
+                    f"蛋类食用量“{text}”按区间中点 {count:g} 个、每个 {EGG_UNIT_WEIGHT_GRAMS:g} 克换算，请核对",
+                    food=food_name,
+                )
+            ]
+        if egg_count:
+            count = float(egg_count.group("number"))
+            return count * EGG_UNIT_WEIGHT_GRAMS, [
+                _warning(
+                    "egg_unit_weight_applied",
+                    f"蛋类食用量“{text}”按每个 {EGG_UNIT_WEIGHT_GRAMS:g} 克换算",
+                    food=food_name,
+                    severity="info",
+                )
+            ]
 
     range_match = _RANGE_RE.search(text)
     warnings: list[dict[str, str]] = []

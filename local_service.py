@@ -44,7 +44,7 @@ app = FastAPI(title="本地 OCR 批量回写服务")
 app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 app.mount("/files", StaticFiles(directory=JOB_ROOT), name="files")
 
-NUTRITION_GENERAL_COLUMNS = ["人员文件夹", "受试者编号", "姓名", "调查日期", "访视号", "每日餐次", "每周在家吃饭天数", "早餐地点", "午餐地点", "晚餐地点", "每周户外日照天数", "每日户外日照时长(小时)", "晒太阳时段", "皮肤暴露部位", "去脂体重", "人工备注"]
+NUTRITION_GENERAL_COLUMNS = ["人员文件夹", "受试者编号", "姓名", "调查日期", "访视号", "每日餐次", "每周在家吃饭天数", "早餐地点", "午餐地点", "晚餐地点", "每周户外日照天数", "每日户外日照时长(小时)", "晒太阳时段", "皮肤暴露部位", "性别", "年龄", "身高", "体重", "去脂体重", "人工备注"]
 NUTRITION_FOOD_COLUMNS = ["人员文件夹", "姓名", "食物编号", "食物名称", "平均每次食用量", "次数", "频率周期(请核对)", "是否不吃", "人工核对备注"]
 NUTRITION_SUPPLEMENT_COLUMNS = ["人员文件夹", "姓名", "保健品种类", "保健品名称", "平均每次服用量", "次数", "频率周期(请核对)", "是否不吃", "备注"]
 NUTRITION_PERIODS = ("每天", "每周", "每月", "每年", "不吃")
@@ -1764,6 +1764,95 @@ def extract_body_composition_name_candidates(text: str) -> list[tuple[str, str]]
     return candidates
 
 
+def _body_composition_number(value: object, minimum: float, maximum: float, *, integer: bool = False) -> str:
+    match = re.search(r"(?<!\d)(\d{1,3}(?:\.\d{1,2})?)", clean(value))
+    if not match:
+        return ""
+    number = float(match.group(1))
+    if not minimum <= number <= maximum:
+        return ""
+    return str(int(number)) if integer else f"{number:g}"
+
+
+def _body_composition_gender(value: object) -> str:
+    text = re.sub(r"\s+", "", clean(value)).lower()
+    if any(token in text for token in ("女性", "女", "female")) or text == "f":
+        return "female"
+    if any(token in text for token in ("男性", "男", "male")) or text == "m":
+        return "male"
+    return ""
+
+
+def extract_body_composition_profile(text: str) -> dict[str, str]:
+    """Extract report-ready demographics and body weights from an OCR transcript.
+
+    InBody places demographics in a header table and body weight in the body
+    composition table. Reading values by their header-column positions avoids
+    confusing chart scales, reference ranges, BMI, or target weight with the
+    subject's measurements. Decimal device ages are intentionally truncated to
+    whole years for nutrition-report entry.
+    """
+    normalized_text = clean(text).replace("\r", "\n")
+    soup = BeautifulSoup(normalized_text, "html.parser")
+    profile = {"gender": "", "age": "", "height": "", "weight": "", "fat_free_mass": ""}
+
+    for table in soup.find_all("table"):
+        rows = [
+            [clean(cell.get_text(" ", strip=True)) for cell in row.find_all(["td", "th"])]
+            for row in table.find_all("tr")
+        ]
+        for row_index, headers in enumerate(rows):
+            labels = [re.sub(r"\s+", "", header).lower() for header in headers]
+            positions = {
+                "height": next((index for index, label in enumerate(labels) if label in {"身高", "height"}), None),
+                "age": next((index for index, label in enumerate(labels) if label in {"年龄", "age"}), None),
+                "gender": next((index for index, label in enumerate(labels) if label in {"性别", "sex", "gender"}), None),
+            }
+            for values in rows[row_index + 1:row_index + 4]:
+                for field, position in positions.items():
+                    if position is None or position >= len(values) or profile[field]:
+                        continue
+                    if field == "height":
+                        profile[field] = _body_composition_number(values[position], 80, 250)
+                    elif field == "age":
+                        profile[field] = _body_composition_number(values[position], 0, 150, integer=True)
+                    elif field == "gender":
+                        profile[field] = _body_composition_gender(values[position])
+
+            # Layout OCR may flatten colspans differently between the header and
+            # measurement row. In these tables the final two ranged values are
+            # consistently fat-free mass and body weight, so positional indexes
+            # are deliberately avoided here.
+            if "去脂体重" in labels and "体重" in labels and not profile["weight"]:
+                for values in rows[row_index + 1:row_index + 4]:
+                    ranged_values = re.findall(
+                        r"(?<!\d)(\d{2,3}(?:\.\d{1,2})?)\s*\(\s*\d+(?:\.\d+)?\s*[~～-]",
+                        " ".join(values),
+                    )
+                    if len(ranged_values) >= 2:
+                        profile["weight"] = _body_composition_number(ranged_values[-1], 20, 300)
+                        break
+
+    plain_text = soup.get_text("\n", strip=True) if soup.find() else normalized_text
+    fallback_patterns = {
+        "height": (r"(?:身\s*高|height)\s*(?:\([^)]{0,16}\))?\s*[:：|]?\s*(\d{2,3}(?:\.\d{1,2})?)\s*(?:cm|厘米)", 80, 250, False),
+        "age": (r"(?:年\s*龄|age)\s*[:：|]?\s*(\d{1,3}(?:\.\d{1,2})?)", 0, 150, True),
+        "weight": (r"(?<!脂)(?:体\s*重|body\s*weight)\s*(?:\([^)]{0,16}\))?\s*[:：|]?\s*(\d{2,3}(?:\.\d{1,2})?)\s*(?:kg|公斤|千克)?", 20, 300, False),
+    }
+    for field, (pattern, minimum, maximum, integer) in fallback_patterns.items():
+        if profile[field]:
+            continue
+        match = re.search(pattern, plain_text, re.IGNORECASE)
+        if match:
+            profile[field] = _body_composition_number(match.group(1), minimum, maximum, integer=integer)
+    if not profile["gender"]:
+        match = re.search(r"(?:性\s*别|sex|gender)\s*[:：|]?\s*(女性|男性|女|男|female|male|f|m)", plain_text, re.IGNORECASE)
+        if match:
+            profile["gender"] = _body_composition_gender(match.group(1))
+    profile["fat_free_mass"] = extract_fat_free_mass(normalized_text)
+    return profile
+
+
 def extract_fat_free_mass(text: str) -> str:
     """Return the first plausible fat-free mass (kg) from an OCR transcript.
 
@@ -1806,10 +1895,24 @@ def extract_fat_free_mass(text: str) -> str:
     return ""
 
 
+def body_composition_general_fields(record: dict[str, Any]) -> dict[str, str]:
+    gender = _body_composition_gender(record.get("gender"))
+    values = {
+        "性别": "女性" if gender == "female" else "男性" if gender == "male" else "",
+        "年龄": _body_composition_number(record.get("age"), 0, 150, integer=True),
+        "身高": _body_composition_number(record.get("height"), 80, 250),
+        "体重": _body_composition_number(record.get("weight"), 20, 300),
+        "去脂体重": _body_composition_number(
+            clean(record.get("corrected_fat_free_mass")) or record.get("fat_free_mass"), 10, 250
+        ),
+    }
+    return {key: value for key, value in values.items() if value}
+
+
 def merge_body_composition_records(
     people: list[dict[str, Any]], records: list[dict[str, str]],
 ) -> tuple[int, list[str]]:
-    """Merge recognised fat-free mass values only when the person name is unique."""
+    """Merge recognised body-composition fields only when the person name is unique."""
     by_name: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for person in people:
         name = valid_person_name((person.get("general") or {}).get("姓名"))
@@ -1820,13 +1923,13 @@ def merge_body_composition_records(
     unmatched: list[str] = []
     for record in records:
         name = valid_person_name(record.get("name"))
-        fat_free_mass = clean(record.get("fat_free_mass"))
+        general_fields = body_composition_general_fields(record)
         matches = by_name.get(name, [])
-        if not name or not fat_free_mass or len(matches) != 1:
+        if not name or not general_fields or len(matches) != 1:
             unmatched.append(clean(record.get("filename")) or "未命名体成分报告")
             continue
         person = matches[0]
-        person.setdefault("general", {})["去脂体重"] = fat_free_mass
+        person.setdefault("general", {}).update(general_fields)
         person.setdefault("body_composition_files", []).append(record.get("file_url", ""))
         matched += 1
     return matched, unmatched
@@ -2023,7 +2126,7 @@ def recognize_body_composition_reports(
             state,
             ocr_url,
             source_path,
-            document_kind="auto",
+            document_kind="body_composition",
             page_index=1,
         )
         try:
@@ -2041,10 +2144,11 @@ def recognize_body_composition_reports(
         markdown_path.write_text(markdown_text, encoding="utf-8")
         candidates = extract_body_composition_name_candidates(ocr_text)
         candidates.extend(cloud_name_candidates(data))
+        profile = extract_body_composition_profile(ocr_text)
         records.append({
             "id": uuid.uuid4().hex,
             "name": choose_person_name(candidates),
-            "fat_free_mass": extract_fat_free_mass(ocr_text),
+            **profile,
             "filename": source_path.name,
             "file_url": file_url(state["job_id"], relative),
         })
@@ -2092,7 +2196,7 @@ def process_appended_body_composition_reports(job_id: str, ocr_url: str, source_
         }
         state.update(
             body_composition_status="awaiting_match",
-            message=f"已识别 {len(records)} 份体成分报告，请确认姓名配对后写入去脂体重。",
+            message=f"已识别 {len(records)} 份体成分报告，请确认姓名配对后写入性别、年龄、身高、体重和去脂体重。",
         )
         persist_nutrition_job(job_id)
     except Exception as error:
@@ -2118,10 +2222,11 @@ def restore_unmatched_body_composition_records(state: dict[str, Any]) -> None:
         markdown_path = markdown_paths[-1]
         text = markdown_path.read_text(encoding="utf-8")
         name_candidates = extract_body_composition_name_candidates(text)
+        profile = extract_body_composition_profile(text)
         records.append({
             "id": f"restored-{uuid.uuid5(uuid.NAMESPACE_URL, f'{job_id}:{filename}').hex}",
             "name": choose_person_name(name_candidates),
-            "fat_free_mass": extract_fat_free_mass(text),
+            **profile,
             "filename": filename,
             "file_url": file_url(job_id, markdown_path.relative_to(job_dir)),
         })
@@ -2164,11 +2269,16 @@ def ensure_body_composition_match_history(state: dict[str, Any]) -> None:
         file_url_value = file_url(job_id, markdown_path.relative_to(job_dir))
         previous = pending_by_file.get(filename) or {}
         text = markdown_path.read_text(encoding="utf-8")
+        profile = extract_body_composition_profile(text)
         assigned_person_id = owner_by_url.get(file_url_value, "")
         record = {
             "id": previous.get("id") or f"history-{uuid.uuid5(uuid.NAMESPACE_URL, f'{job_id}:{filename}').hex}",
             "name": previous.get("name") or choose_person_name(extract_body_composition_name_candidates(text)),
-            "fat_free_mass": previous.get("fat_free_mass") or extract_fat_free_mass(text),
+            "gender": previous.get("gender") or profile["gender"],
+            "age": previous.get("age") or profile["age"],
+            "height": previous.get("height") or profile["height"],
+            "weight": previous.get("weight") or profile["weight"],
+            "fat_free_mass": previous.get("fat_free_mass") or profile["fat_free_mass"],
             "corrected_name": previous.get("corrected_name", ""),
             "corrected_fat_free_mass": previous.get("corrected_fat_free_mass", ""),
             "filename": filename,
@@ -2283,7 +2393,7 @@ def process_nutrition_job(
         relative = Path("output") / state["output_filename"]
         body_message = ""
         if body_composition_paths:
-            body_message = f" 已从 {len(body_composition_paths)} 份体成分报告匹配 {matched_body_composition} 项去脂体重。"
+            body_message = f" 已从 {len(body_composition_paths)} 份体成分报告匹配 {matched_body_composition} 份基础资料及去脂体重。"
             if unmatched_body_composition:
                 body_message += f" {len(unmatched_body_composition)} 份未能按姓名唯一匹配，请在报告导出窗口手动补充。"
         state.update(status="completed", people=people, output_relative=relative, output_url=file_url(job_id, relative), message=f"已处理 {len(people)} 名受访者。{body_message}请逐人核对频率周期、手写数值与勾选项。")
@@ -2417,21 +2527,20 @@ def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
         raise HTTPException(status_code=400, detail="当前人员数据不完整")
 
     previous_history = [record for record in state.get("body_composition_match_history") or [] if isinstance(record, dict)]
-    previously_assigned_people = {
-        clean(record.get("assigned_person_id"))
-        for record in previous_history
-        if clean(record.get("assigned_person_id"))
-    }
     previous_source_files = {
         clean(record.get("file_url"))
         for record in previous_history
         if clean(record.get("file_url"))
     }
-    for person_id in previously_assigned_people:
+    for previous_record in previous_history:
+        person_id = clean(previous_record.get("assigned_person_id"))
         person = people_by_id.get(person_id)
         if person is None:
             continue
-        person.setdefault("general", {}).pop("去脂体重", None)
+        general = person.setdefault("general", {})
+        for field, previous_value in body_composition_general_fields(previous_record).items():
+            if clean(general.get(field)) == previous_value:
+                general.pop(field, None)
         person["body_composition_files"] = [
             file_url for file_url in person.get("body_composition_files", [])
             if clean(file_url) not in previous_source_files
@@ -2444,15 +2553,15 @@ def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
         record_id = clean(record.get("id"))
         person_id = clean(assignments.get(record_id))
         person = people_by_id.get(person_id)
-        fat_free_mass = clean(record.get("corrected_fat_free_mass")) or clean(record.get("fat_free_mass"))
-        if person is None or not fat_free_mass:
+        general_fields = body_composition_general_fields(record)
+        if person is None or not general_fields:
             remaining.append(record)
             continue
         corrected_name = re.sub(r"\s+", "", clean(record.get("corrected_name")) or clean(record.get("name")))
         if corrected_name and person.setdefault("general", {}).get("姓名") != corrected_name:
             person["general"]["姓名"] = corrected_name
             corrected_names += 1
-        person.setdefault("general", {})["去脂体重"] = fat_free_mass
+        person.setdefault("general", {}).update(general_fields)
         source_files = person.setdefault("body_composition_files", [])
         if record.get("file_url") and record["file_url"] not in source_files:
             source_files.append(record["file_url"])
@@ -2475,7 +2584,7 @@ def apply_body_composition_matches(job_id: str, payload: dict[str, Any]):
         body_composition_assignments=remaining_assignments,
         body_composition_match_history=history,
         body_composition_unmatched=[clean(record.get("filename")) or "未命名体成分报告" for record in remaining],
-        message=f"已追加 {applied} 项去脂体重，并同步修正 {corrected_names} 名已配对人员的姓名。" + (f" 仍有 {len(remaining)} 份保留在黄色补录表。" if remaining else ""),
+        message=f"已追加 {applied} 份体成分资料（性别、整数年龄、身高、体重及去脂体重），并同步修正 {corrected_names} 名已配对人员的姓名。" + (f" 仍有 {len(remaining)} 份保留在黄色补录表。" if remaining else ""),
     )
     persist_nutrition_job(job_id)
     return {"success": True, "people": state["people"], "applied": applied, "pending_matches": remaining, "history": history, "assignments": remaining_assignments, "message": state["message"]}

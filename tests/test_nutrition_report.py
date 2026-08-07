@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from nutrition_report import FOOD_REFERENCE_MAP, NutritionReportService, build_payload_from_ocr_person  # noqa: E402
-from local_service import JOBS, apply_body_composition_matches, body_composition_match_candidates, extract_fat_free_mass, merge_body_composition_records  # noqa: E402
+from local_service import JOBS, apply_body_composition_matches, body_composition_match_candidates, extract_body_composition_profile, extract_fat_free_mass, merge_body_composition_records  # noqa: E402
 
 
 def sample_person() -> dict:
@@ -86,6 +86,40 @@ class OCRNutritionAdapterTest(unittest.TestCase):
         self.assertEqual([], adapted.payload["meals"])
         codes = {warning["code"] for warning in adapted.warnings}
         self.assertTrue({"unmapped_food", "unresolved_period", "no_usable_foods"}.issubset(codes))
+
+    def test_egg_counts_are_converted_at_45_grams_per_egg(self) -> None:
+        person = {
+            "id": "ocr/egg",
+            "general": {},
+            "food_rows": [
+                {"食物名称": "蛋类", "平均每次食用量": "2个", "次数": "3", "频率周期(请核对)": "每周"},
+            ],
+        }
+
+        adapted = build_payload_from_ocr_person(person)
+
+        self.assertAlmostEqual(270 / 7, adapted.payload["meals"][0]["amount"], places=4)
+        self.assertAlmostEqual(270 / 7, adapted.source_foods[0]["daily_grams"], places=4)
+        self.assertIn("egg_unit_weight_applied", {warning["code"] for warning in adapted.warnings})
+
+    def test_plain_egg_count_and_explicit_grams_remain_unambiguous(self) -> None:
+        plain_count = build_payload_from_ocr_person({
+            "id": "ocr/plain-egg",
+            "general": {},
+            "food_rows": [
+                {"食物名称": "蛋类", "平均每次食用量": "2", "次数": "1", "频率周期(请核对)": "每天"},
+            ],
+        })
+        explicit_grams = build_payload_from_ocr_person({
+            "id": "ocr/grams-egg",
+            "general": {},
+            "food_rows": [
+                {"食物名称": "蛋类", "平均每次食用量": "90克", "次数": "1", "频率周期(请核对)": "每天"},
+            ],
+        })
+
+        self.assertEqual(90.0, plain_count.payload["meals"][0]["amount"])
+        self.assertEqual(90.0, explicit_grams.payload["meals"][0]["amount"])
 
 
 class NutritionReportServiceTest(unittest.TestCase):
@@ -202,6 +236,27 @@ class NutritionReportServiceTest(unittest.TestCase):
         self.assertEqual("46.6", people[0]["general"]["去脂体重"])
         self.assertNotIn("去脂体重", people[1]["general"])
 
+    def test_body_composition_profile_uses_header_columns_and_integer_age(self) -> None:
+        transcript = """
+        <table><tr><td>ID</td><td>身高</td><td>年龄</td><td>性别</td><td>测试日期/时间</td></tr>
+        <tr><td>260604-5</td><td>164cm</td><td>18.4</td><td>女性</td><td>2026.06.04.09:19</td></tr></table>
+        <table><tr><td></td><td>测量值</td><td>肌肉量</td><td>去脂体重</td><td>体重</td></tr>
+        <tr><td>身体总水分</td><td>34.1(28.8~35.2)</td><td>43.8(37.0~45.2)</td><td>46.6(39.1~47.8)</td><td>62.4(48.0~65.0)</td></tr></table>
+        """
+        self.assertEqual({
+            "gender": "female", "age": "18", "height": "164", "weight": "62.4", "fat_free_mass": "46.6",
+        }, extract_body_composition_profile(transcript))
+
+        people = [{"id": "A", "general": {"姓名": "刘紫玉"}}]
+        matched, unmatched = merge_body_composition_records(people, [{
+            "name": "刘紫玉", "gender": "female", "age": "18", "height": "164",
+            "weight": "62.4", "fat_free_mass": "46.6", "filename": "inbody.pdf", "file_url": "body.md",
+        }])
+        self.assertEqual((1, []), (matched, unmatched))
+        self.assertEqual({
+            "姓名": "刘紫玉", "性别": "女性", "年龄": "18", "身高": "164", "体重": "62.4", "去脂体重": "46.6",
+        }, people[0]["general"])
+
     def test_body_composition_name_pairing_suggests_similar_names_without_auto_match(self) -> None:
         people = [
             {"id": "A", "general": {"姓名": "刘紫玉"}},
@@ -233,6 +288,10 @@ class NutritionReportServiceTest(unittest.TestCase):
                 "id": "body-1",
                 "name": "刘紫玉",
                 "corrected_name": "刘紫玉",
+                "gender": "female",
+                "age": "18",
+                "height": "164",
+                "weight": "62.4",
                 "fat_free_mass": "46.6",
                 "filename": "inbody.pdf",
             }],
@@ -244,6 +303,10 @@ class NutritionReportServiceTest(unittest.TestCase):
             JOBS.pop(job_id, None)
 
         self.assertEqual("刘紫玉", result["people"][0]["general"]["姓名"])
+        self.assertEqual("女性", result["people"][0]["general"]["性别"])
+        self.assertEqual("18", result["people"][0]["general"]["年龄"])
+        self.assertEqual("164", result["people"][0]["general"]["身高"])
+        self.assertEqual("62.4", result["people"][0]["general"]["体重"])
         self.assertEqual("46.6", result["people"][0]["general"]["去脂体重"])
         self.assertIn("同步修正 1 名", result["message"])
 
