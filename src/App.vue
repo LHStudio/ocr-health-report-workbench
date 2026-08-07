@@ -1,6 +1,6 @@
 <template>
   <main class="page-shell">
-    <nav class="workspace-tabs" aria-label="工作台切换"><button :class="{ active: activeWorkspace === 'medical' }" @click="activeWorkspace = 'medical'">体检报告回写</button><button :class="{ active: activeWorkspace === 'nutrition' }" @click="activeWorkspace = 'nutrition'">食物频率调查</button></nav>
+    <nav class="workspace-tabs" aria-label="工作台切换"><button :class="{ active: activeWorkspace === 'medical' }" @click="activeWorkspace = 'medical'">体检报告回写</button><button :class="{ active: activeWorkspace === 'nutrition' }" @click="activeWorkspace = 'nutrition'">食物频率调查</button><button :class="{ active: activeWorkspace === 'imaging' }" @click="activeWorkspace = 'imaging'">影像识别</button><button :class="{ active: activeWorkspace === 'general' }" @click="activeWorkspace = 'general'">通用识别</button></nav>
 
     <template v-if="activeWorkspace === 'medical'">
     <header class="workspace-workbar">
@@ -55,13 +55,17 @@
       </div>
     </section>
     </template>
-    <NutritionWorkspace v-else />
+    <NutritionWorkspace v-else-if="activeWorkspace === 'nutrition'" />
+    <ImagingWorkspace v-else-if="activeWorkspace === 'imaging'" />
+    <GeneralOcrWorkspace v-else />
   </main>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import NutritionWorkspace from './components/NutritionWorkspace.vue'
+import ImagingWorkspace from './components/ImagingWorkspace.vue'
+import GeneralOcrWorkspace from './components/GeneralOcrWorkspace.vue'
 
 const storageKey = 'medical-ocr-api-url'
 const activeWorkspace = ref('medical')

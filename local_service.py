@@ -5,10 +5,12 @@ import base64
 import difflib
 import json
 import math
+import mimetypes
 import re
 import shutil
 import time
 import uuid
+import zipfile
 from collections import Counter, defaultdict
 from copy import copy
 from io import BytesIO
@@ -17,6 +19,7 @@ from typing import Annotated, Any
 from urllib.parse import quote
 
 import requests
+import fitz
 from bs4 import BeautifulSoup
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,6 +50,10 @@ app.mount("/files", StaticFiles(directory=JOB_ROOT), name="files")
 NUTRITION_GENERAL_COLUMNS = ["人员文件夹", "受试者编号", "姓名", "调查日期", "访视号", "每日餐次", "每周在家吃饭天数", "早餐地点", "午餐地点", "晚餐地点", "每周户外日照天数", "每日户外日照时长(小时)", "晒太阳时段", "皮肤暴露部位", "性别", "年龄", "身高", "体重", "去脂体重", "人工备注"]
 NUTRITION_FOOD_COLUMNS = ["人员文件夹", "姓名", "食物编号", "食物名称", "平均每次食用量", "次数", "频率周期(请核对)", "是否不吃", "人工核对备注"]
 NUTRITION_SUPPLEMENT_COLUMNS = ["人员文件夹", "姓名", "保健品种类", "保健品名称", "平均每次服用量", "次数", "频率周期(请核对)", "是否不吃", "备注"]
+IMAGING_COLUMNS = ["文件名", "姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间", "需核对字段"]
+IMAGING_FIELD_KEYS = ("姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间")
+GENERAL_OUTPUT_FORMATS = {"excel": ".xlsx", "markdown": ".md", "json": ".json"}
+GENERAL_ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 NUTRITION_PERIODS = ("每天", "每周", "每月", "每年", "不吃")
 NUTRITION_FOOD_ITEMS = {
     "1.1": "米饭", "1.2": "大米粥", "2.1": "馒头", "2.2": "面包", "2.3": "面条", "2.4": "包子/饺子",
@@ -845,9 +852,10 @@ def request_cloud_ocr(
     for attempt in range(1, CLOUD_OCR_MAX_ATTEMPTS + 1):
         try:
             with source_path.open("rb") as payload:
+                content_type = mimetypes.guess_type(source_path.name)[0] or "application/octet-stream"
                 response = requests.post(
                     request_url,
-                    files={"file": (source_path.name, payload, "application/pdf")},
+                    files={"file": (source_path.name, payload, content_type)},
                     data=request_data,
                     timeout=CLOUD_OCR_TIMEOUT,
                 )
@@ -1188,6 +1196,631 @@ def save_review(job_id: str, payload: dict[str, Any]):
     template_workbook.close()
     state["people"] = people
     return {"success": True, "message": "人工修改已保存到汇总 Excel", "output_url": state["output_url"], "people": people}
+
+
+# ========================== 影像识别独立流程 ==========================
+
+def json_stream_values(raw: object) -> list[Any]:
+    """Decode one or more JSON values returned by OCR output collectors."""
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    decoder = json.JSONDecoder()
+    values: list[Any] = []
+    position = 0
+    while position < len(text):
+        while position < len(text) and text[position].isspace():
+            position += 1
+        if position >= len(text):
+            break
+        try:
+            value, position = decoder.raw_decode(text, position)
+            values.append(value)
+        except json.JSONDecodeError:
+            next_object = text.find("{", position + 1)
+            next_array = text.find("[", position + 1)
+            candidates = [item for item in (next_object, next_array) if item >= 0]
+            if not candidates:
+                break
+            position = min(candidates)
+    return values
+
+
+def imaging_ocr_blocks(json_text: object) -> list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            parsing_results = value.get("parsing_res_list")
+            if isinstance(parsing_results, list):
+                blocks.extend(item for item in parsing_results if isinstance(item, dict))
+            for key, child in value.items():
+                if key != "parsing_res_list":
+                    visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    for payload in json_stream_values(json_text):
+        visit(payload)
+    return sorted(
+        blocks,
+        key=lambda item: (
+            int(item.get("block_id")) if str(item.get("block_id", "")).isdigit() else 10_000,
+            int(item.get("block_order")) if str(item.get("block_order", "")).isdigit() else 10_000,
+        ),
+    )
+
+
+def imaging_table_rows(block_content: object) -> list[list[str]]:
+    content = str(block_content or "").strip()
+    if "<table" not in content.lower():
+        return []
+    soup = BeautifulSoup(content, "html.parser")
+    rows = []
+    for row in soup.find_all("tr"):
+        values = [clean(cell.get_text(" ", strip=True)) for cell in row.find_all(["th", "td"])]
+        if any(values):
+            rows.append(values)
+    return rows
+
+
+def imaging_text_sources(markdown_text: object, json_text: object) -> tuple[str, list[list[str]]]:
+    lines: list[str] = []
+    table_rows: list[list[str]] = []
+    for block in imaging_ocr_blocks(json_text):
+        content = str(block.get("block_content") or "").strip()
+        rows = imaging_table_rows(content)
+        if rows:
+            table_rows.extend(rows)
+            lines.extend(" ".join(value for value in row if value) for row in rows)
+        elif content:
+            lines.append(content)
+    if not lines:
+        fallback = str(markdown_text or "").strip()
+        fallback_rows = imaging_table_rows(fallback)
+        if fallback_rows:
+            table_rows.extend(fallback_rows)
+            lines.extend(" ".join(value for value in row if value) for row in fallback_rows)
+        elif fallback:
+            soup = BeautifulSoup(fallback, "html.parser")
+            lines.append(soup.get_text("\n", strip=True))
+    normalized_lines = [re.sub(r"[ \t\u3000]+", " ", line).strip() for line in lines if str(line).strip()]
+    return "\n".join(normalized_lines), table_rows
+
+
+def imaging_table_value(rows: list[list[str]], labels: tuple[str, ...]) -> str:
+    normalized_labels = {normalized(label) for label in labels}
+    for row in rows:
+        for index, value in enumerate(row):
+            label = clean(value).rstrip("：:")
+            if normalized(label) not in normalized_labels:
+                continue
+            for candidate in row[index + 1:]:
+                candidate = clean(candidate)
+                if candidate:
+                    return candidate
+    return ""
+
+
+def imaging_labeled_cell_value(rows: list[list[str]], labels: tuple[str, ...]) -> str:
+    label_pattern = "|".join(re.escape(label) for label in labels)
+    for row in rows:
+        for cell in row:
+            match = re.match(rf"\s*(?:{label_pattern})\s*[：:]\s*(.+)$", clean(cell), re.S | re.I)
+            if match:
+                return match.group(1).strip()
+    return ""
+
+
+def imaging_section(text: object, start_labels: tuple[str, ...], stop_labels: tuple[str, ...]) -> str:
+    raw = str(text or "")
+    starts = "|".join(re.escape(label) for label in start_labels)
+    stops = "|".join(re.escape(label) for label in stop_labels)
+    match = re.search(rf"(?:^|\n)\s*(?:{starts})\s*[：:]\s*(.*?)(?=\s*(?:{stops})\s*[：:]?|$)", raw, re.S | re.I)
+    if not match:
+        return ""
+    value = re.sub(r"[ \t\u3000]+", " ", match.group(1))
+    value = re.sub(r"\s*\n\s*", "\n", value)
+    return value.strip(" \n：:")
+
+
+def normalize_imaging_date(raw_value: object) -> tuple[str, bool]:
+    raw = clean(raw_value)
+    if not raw:
+        return "", False
+    match = re.search(r"(20\d{2})\s*[年./\-]\s*(\d{1,2})\s*[月./\-]\s*(\d{1,2})\s*日?", raw)
+    if not match:
+        return raw, False
+    year, month, day = (int(value) for value in match.groups())
+    try:
+        parsed = datetime(year, month, day)
+    except ValueError:
+        return match.group(0), False
+    return parsed.strftime("%Y-%m-%d"), True
+
+
+def parse_imaging_fields(
+    markdown_text: object,
+    json_text: object,
+    filename: object = "",
+) -> tuple[dict[str, str], list[str]]:
+    """Extract the six reviewable ultrasound fields without guessing missing scan content."""
+    text, rows = imaging_text_sources(markdown_text, json_text)
+    fields = {key: "" for key in IMAGING_FIELD_KEYS}
+
+    name = imaging_table_value(rows, ("姓名", "患者姓名", "受检者"))
+    if not name:
+        match = re.search(r"(?:姓名|患者姓名|受检者)\s*[：:]?\s*([\u3400-\u9fff·]{2,8})(?=\s*(?:性别|年龄|科别|病人ID|\n|$))", text)
+        name = match.group(1) if match else ""
+    name = valid_person_name(name)
+    if not name:
+        stem = Path(str(filename or "")).stem
+        name = valid_person_name(stem)
+    fields["姓名"] = name
+
+    sex = imaging_table_value(rows, ("性别",))
+    sex_match = re.search(r"[男女]", sex)
+    if not sex_match:
+        sex_match = re.search(r"性别\s*[：:]?\s*([男女])", text)
+    fields["性别"] = sex_match.group(0)[-1] if sex_match else ""
+
+    age = imaging_table_value(rows, ("年龄",))
+    age_match = re.search(r"(?<!\d)(\d{1,3})(?:\s*岁)?", age)
+    if not age_match:
+        age_match = re.search(r"年龄\s*[：:]?\s*(\d{1,3})(?:\s*岁)?", text)
+    fields["年龄"] = age_match.group(1) if age_match else ""
+
+    fields["超声所见"] = imaging_labeled_cell_value(rows, ("超声所见", "超声检查所见")) or imaging_section(
+        text,
+        ("超声所见", "超声检查所见"),
+        ("超声诊断", "诊断意见", "备注", "录入员", "诊断医生", "审核医生", "时间"),
+    )
+    fields["超声诊断"] = imaging_labeled_cell_value(rows, ("超声诊断", "诊断意见")) or imaging_section(
+        text,
+        ("超声诊断", "诊断意见"),
+        ("备注", "录入员", "诊断医生", "审核医生", "时间", "此报告仅供临床参考"),
+    )
+
+    date_match = re.search(
+        r"(?:时间|检查时间|报告时间|报告日期|检查日期)\s*[：:]?\s*((?:19|20)\d{2}\s*[年./\-]\s*\d{1,2}\s*[月./\-]\s*\d{1,2}\s*日?)",
+        text,
+    )
+    date_value, date_complete = normalize_imaging_date(date_match.group(1) if date_match else "")
+    fields["检查时间"] = date_value
+
+    needs_review = [key for key in IMAGING_FIELD_KEYS if not fields[key]]
+    if fields["检查时间"] and not date_complete and "检查时间" not in needs_review:
+        needs_review.append("检查时间")
+    return fields, needs_review
+
+
+def imaging_record_needs_review(record: dict[str, Any]) -> list[str]:
+    fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+    result = [key for key in IMAGING_FIELD_KEYS if not clean(fields.get(key))]
+    if clean(fields.get("检查时间")):
+        _, complete = normalize_imaging_date(fields.get("检查时间"))
+        if not complete and "检查时间" not in result:
+            result.append("检查时间")
+    return result
+
+
+def request_imaging_body_ocr(ocr_url: str, source_path: Path) -> str:
+    """Re-read the central report body only when layout OCR omitted findings/diagnosis."""
+    with fitz.open(source_path) as document:
+        page = document[0]
+        rect = page.rect
+        clip = fitz.Rect(rect.width * 0.06, rect.height * 0.28, rect.width * 0.94, rect.height * 0.79)
+        image_bytes = page.get_pixmap(matrix=fitz.Matrix(3.5, 3.5), clip=clip, alpha=False).tobytes("png")
+    endpoint = cloud_api_url(ocr_url).removesuffix("/parse-file") + "/classic-ocr"
+    response = requests.post(
+        endpoint,
+        files={"file": (f"{source_path.stem}_body.png", image_bytes, "image/png")},
+        timeout=CLOUD_OCR_TIMEOUT,
+    )
+    try:
+        data = response.json()
+    except ValueError as error:
+        raise RuntimeError(f"正文裁剪 OCR 响应不是 JSON：{response.text[:160]}") from error
+    if not response.ok or not data.get("success"):
+        raise RuntimeError(f"正文裁剪 OCR 失败：{data.get('detail') or response.status_code}")
+    return str(data.get("text") or "").strip()
+
+
+def write_imaging_workbook(state: dict[str, Any], records: list[dict[str, Any]]) -> Path:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "影像识别结果"
+    worksheet.append(IMAGING_COLUMNS)
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="167D73")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for record in records:
+        fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+        needs_review = imaging_record_needs_review(record)
+        record["needs_review"] = needs_review
+        worksheet.append([
+            clean(record.get("filename")),
+            clean(fields.get("姓名")),
+            clean(fields.get("性别")),
+            clean(fields.get("年龄")),
+            clean(fields.get("超声所见")),
+            clean(fields.get("超声诊断")),
+            clean(fields.get("检查时间")),
+            "、".join(needs_review),
+        ])
+        row_number = worksheet.max_row
+        worksheet.row_dimensions[row_number].height = 72
+        for cell in worksheet[row_number]:
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+        if needs_review:
+            worksheet.cell(row_number, 8).fill = PatternFill("solid", fgColor="FFF0CE")
+            worksheet.cell(row_number, 8).font = Font(color="946313", bold=True)
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    for column, width in enumerate((24, 13, 9, 9, 70, 48, 18, 24), start=1):
+        worksheet.column_dimensions[chr(64 + column)].width = width
+    output_path = state["job_dir"] / state["output_relative"]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    workbook.save(output_path)
+    workbook.close()
+    return output_path
+
+
+def process_imaging_job(
+    job_id: str,
+    ocr_url: str,
+    source_files: list[tuple[Path, str]],
+    processing_mode: str,
+) -> None:
+    state = JOBS[job_id]
+    records: list[dict[str, Any]] = []
+    try:
+        state.update(status="processing", message="正在识别影像报告…")
+        for index, (source_path, original_name) in enumerate(source_files, start=1):
+            state.update(current_file=original_name, message=f"正在识别 {index}/{len(source_files)}：{original_name}")
+            response = request_cloud_ocr(
+                state,
+                ocr_url,
+                source_path,
+                document_kind="medical",
+                page_index=1,
+            )
+            try:
+                data = response.json()
+            except ValueError as error:
+                raise RuntimeError(f"{original_name} 的云端响应不是 JSON：{response.text[:160]}") from error
+            if not response.ok or not data.get("success"):
+                raise RuntimeError(f"{original_name} OCR 失败：{data.get('detail') or response.status_code}")
+
+            stem = f"{index:03d}_{Path(original_name).stem}_ocr"
+            raw_root = state["job_dir"] / "imaging_ocr"
+            raw_root.mkdir(parents=True, exist_ok=True)
+            raw_urls: dict[str, str] = {}
+            excel_value = data.get("excel")
+            if excel_value:
+                excel_relative = Path("imaging_ocr") / f"{stem}.xlsx"
+                (state["job_dir"] / excel_relative).write_bytes(base64.b64decode(excel_value))
+                raw_urls["excel"] = file_url(job_id, excel_relative)
+            markdown_text = str(data.get("markdown") or "")
+            json_text = str(data.get("json_text") or "")
+            markdown_relative = Path("imaging_ocr") / f"{stem}.md"
+            json_relative = Path("imaging_ocr") / f"{stem}.json"
+            (state["job_dir"] / markdown_relative).write_text(markdown_text, encoding="utf-8")
+            (state["job_dir"] / json_relative).write_text(json_text or "{}", encoding="utf-8")
+            raw_urls.update(markdown=file_url(job_id, markdown_relative), json=file_url(job_id, json_relative))
+
+            fields, needs_review = parse_imaging_fields(markdown_text, json_text, original_name)
+            ocr_warnings: list[str] = []
+            if not fields["超声所见"] or not fields["超声诊断"]:
+                try:
+                    body_text = request_imaging_body_ocr(ocr_url, source_path)
+                    body_relative = Path("imaging_ocr") / f"{stem}_body.txt"
+                    (state["job_dir"] / body_relative).write_text(body_text, encoding="utf-8")
+                    raw_urls["body_text"] = file_url(job_id, body_relative)
+                    if not fields["超声所见"]:
+                        fields["超声所见"] = imaging_section(
+                            body_text,
+                            ("超声所见", "超声检查所见"),
+                            ("超声诊断", "诊断意见", "备注"),
+                        )
+                    if not fields["超声诊断"]:
+                        fields["超声诊断"] = imaging_section(
+                            body_text,
+                            ("超声诊断", "诊断意见"),
+                            ("备注", "录入员", "诊断医生", "审核医生", "时间", "此报告仅供临床参考"),
+                        )
+                    needs_review = [key for key in IMAGING_FIELD_KEYS if not fields[key]]
+                    if fields["检查时间"]:
+                        _, date_complete = normalize_imaging_date(fields["检查时间"])
+                        if not date_complete and "检查时间" not in needs_review:
+                            needs_review.append("检查时间")
+                except Exception as body_error:
+                    ocr_warnings.append(f"正文补充识别失败：{body_error}")
+            records.append({
+                "id": f"imaging-{index:03d}",
+                "filename": original_name,
+                "fields": fields,
+                "needs_review": needs_review,
+                "raw_files": raw_urls,
+                "warnings": ocr_warnings,
+            })
+            state["completed_files"] = index
+
+        write_imaging_workbook(state, records)
+        review_count = sum(bool(record.get("needs_review")) for record in records)
+        message = f"已识别 {len(records)} 份影像报告。"
+        if review_count:
+            message += f" 其中 {review_count} 份含缺失或不完整字段，请核对黄色提示后再导出。"
+        else:
+            message += " 所有目标字段均已提取，请抽样核对后导出。"
+        state.update(status="completed", records=records, output_url=file_url(job_id, state["output_relative"]), message=message)
+    except Exception as error:
+        state.update(status="failed", message=str(error))
+
+
+@app.post("/imaging/process", status_code=202)
+def process_imaging_reports(
+    background_tasks: BackgroundTasks,
+    ocr_url: Annotated[str, Form()],
+    files: Annotated[list[UploadFile], File()],
+    processing_mode: str = Form("accurate"),
+):
+    processing_mode = normalize_processing_mode(processing_mode)
+    if not files:
+        raise HTTPException(status_code=400, detail="请至少选择一份影像 PDF")
+    if any(not (file.filename or "").lower().endswith(".pdf") for file in files):
+        raise HTTPException(status_code=400, detail="影像识别仅支持 PDF 文件")
+    job_id = uuid.uuid4().hex
+    job_dir = JOB_ROOT / job_id
+    input_dir = job_dir / "input" / "imaging"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    source_files: list[tuple[Path, str]] = []
+    for index, pdf in enumerate(files, start=1):
+        original_name = Path(pdf.filename or f"影像报告_{index}.pdf").name
+        source_path = input_dir / f"{index:03d}_{original_name}"
+        with source_path.open("wb") as target:
+            shutil.copyfileobj(pdf.file, target)
+        source_files.append((source_path, original_name))
+    output_relative = Path("output") / timestamped_filename("影像识别结果")
+    JOBS[job_id] = {
+        "job_id": job_id,
+        "kind": "imaging",
+        "processing_mode": processing_mode,
+        "status": "queued",
+        "job_dir": job_dir,
+        "output_relative": output_relative,
+        "total_files": len(source_files),
+        "completed_files": 0,
+        "current_file": "",
+        "message": "文件已上传到本机，等待开始识别…",
+        "records": [],
+    }
+    background_tasks.add_task(process_imaging_job, job_id, ocr_url, source_files, processing_mode)
+    return {"success": True, "job_id": job_id, "total_files": len(source_files)}
+
+
+@app.post("/imaging/jobs/{job_id}/save-review")
+def save_imaging_review(job_id: str, payload: dict[str, Any]):
+    state = JOBS.get(job_id)
+    if not state or state.get("kind") != "imaging" or state.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="影像识别任务尚未完成，无法保存核对结果")
+    records = payload.get("records")
+    if not isinstance(records, list):
+        raise HTTPException(status_code=400, detail="缺少影像核对数据")
+    existing_by_id = {record.get("id"): record for record in state.get("records", []) if isinstance(record, dict)}
+    if {record.get("id") for record in records if isinstance(record, dict)} != set(existing_by_id):
+        raise HTTPException(status_code=400, detail="影像核对记录与当前任务不一致")
+    cleaned_records = []
+    for record in records:
+        original = existing_by_id.get(record.get("id"), {})
+        submitted_fields = record.get("fields") if isinstance(record.get("fields"), dict) else {}
+        fields = {key: clean(submitted_fields.get(key)) for key in IMAGING_FIELD_KEYS}
+        cleaned = {
+            "id": original.get("id"),
+            "filename": original.get("filename"),
+            "fields": fields,
+            "needs_review": [],
+            "raw_files": original.get("raw_files", {}),
+            "warnings": original.get("warnings", []),
+        }
+        cleaned["needs_review"] = imaging_record_needs_review(cleaned)
+        cleaned_records.append(cleaned)
+    write_imaging_workbook(state, cleaned_records)
+    state["records"] = cleaned_records
+    return {
+        "success": True,
+        "message": "影像核对结果已保存到 Excel",
+        "records": cleaned_records,
+        "output_url": state["output_url"],
+    }
+
+
+# ========================== 通用识别独立流程 ==========================
+
+def normalize_general_output_format(value: object) -> str:
+    output_format = clean(value).lower() or "excel"
+    if output_format not in GENERAL_OUTPUT_FORMATS:
+        raise HTTPException(status_code=400, detail="返回格式仅支持 Excel、Markdown 或 JSON")
+    return output_format
+
+
+def general_json_bytes(data: dict[str, Any], filename: str) -> bytes:
+    raw = str(data.get("json_text") or "").strip()
+    values = json_stream_values(raw)
+    if len(values) == 1:
+        payload: Any = values[0]
+    elif values:
+        payload = {"filename": filename, "documents": values}
+    else:
+        payload = {"filename": filename, "raw": raw or str(data.get("markdown") or "")}
+    return json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+
+
+def general_markdown_text(data: dict[str, Any]) -> str:
+    markdown = str(data.get("markdown") or "").strip()
+    markdown_values = json_stream_values(markdown)
+    if markdown and not markdown_values:
+        return markdown
+    blocks = imaging_ocr_blocks(data.get("json_text") or markdown)
+    parts: list[str] = []
+    for block in blocks:
+        content = str(block.get("block_content") or "").strip()
+        if not content:
+            continue
+        label = clean(block.get("block_label")).lower()
+        if label in {"paragraph_title", "doc_title", "title"}:
+            parts.append(f"## {content}")
+        else:
+            parts.append(content)
+    return "\n\n".join(parts).strip() or markdown
+
+
+def general_artifact_bytes(data: dict[str, Any], output_format: str, filename: str) -> bytes:
+    if output_format == "excel":
+        encoded = str(data.get("excel") or "")
+        if not encoded:
+            raise RuntimeError(f"{filename} 的 OCR 响应没有 Excel 结果")
+        try:
+            return base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as error:
+            raise RuntimeError(f"{filename} 的 Excel 结果编码无效") from error
+    if output_format == "markdown":
+        content = general_markdown_text(data)
+        if not content:
+            raise RuntimeError(f"{filename} 的 OCR 响应没有 Markdown 结果")
+        return content.encode("utf-8")
+    return general_json_bytes(data, filename)
+
+
+def general_preview(content: bytes, output_format: str, limit: int = 6000) -> str:
+    if output_format == "excel":
+        return ""
+    return content.decode("utf-8", "replace")[:limit]
+
+
+def process_general_job(
+    job_id: str,
+    ocr_url: str,
+    source_files: list[tuple[Path, str]],
+    output_format: str,
+) -> None:
+    state = JOBS[job_id]
+    records: list[dict[str, Any]] = []
+    try:
+        state.update(status="processing", message="正在进行通用 OCR 识别…")
+        artifact_root = state["job_dir"] / "output" / "files"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        artifact_paths: list[Path] = []
+        suffix = GENERAL_OUTPUT_FORMATS[output_format]
+        for index, (source_path, original_name) in enumerate(source_files, start=1):
+            state.update(current_file=original_name, message=f"正在识别 {index}/{len(source_files)}：{original_name}")
+            response = request_cloud_ocr(
+                state,
+                ocr_url,
+                source_path,
+                document_kind="auto",
+                page_index=1,
+            )
+            try:
+                data = response.json()
+            except ValueError as error:
+                raise RuntimeError(f"{original_name} 的云端响应不是 JSON：{response.text[:160]}") from error
+            if not response.ok or not data.get("success"):
+                raise RuntimeError(f"{original_name} OCR 失败：{data.get('detail') or response.status_code}")
+
+            content = general_artifact_bytes(data, output_format, original_name)
+            artifact_name = f"{index:03d}_{Path(original_name).stem}_ocr{suffix}"
+            artifact_path = artifact_root / artifact_name
+            artifact_path.write_bytes(content)
+            artifact_paths.append(artifact_path)
+            artifact_relative = artifact_path.relative_to(state["job_dir"])
+            records.append({
+                "id": f"general-{index:03d}",
+                "filename": original_name,
+                "output_filename": artifact_name,
+                "output_format": output_format,
+                "output_url": file_url(job_id, artifact_relative),
+                "preview": general_preview(content, output_format),
+                "size": len(content),
+            })
+            state["completed_files"] = index
+
+        if len(artifact_paths) == 1:
+            output_path = artifact_paths[0]
+        else:
+            output_path = state["job_dir"] / "output" / timestamped_filename(
+                f"通用识别_{output_format}",
+                ".zip",
+            )
+            with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for artifact_path in artifact_paths:
+                    archive.write(artifact_path, artifact_path.name)
+        output_relative = output_path.relative_to(state["job_dir"])
+        state.update(
+            status="completed",
+            records=records,
+            output_relative=output_relative,
+            output_url=file_url(job_id, output_relative),
+            output_filename=output_path.name,
+            message=f"已完成 {len(records)} 份文档的通用识别，返回格式为 {output_format.upper()}。",
+        )
+    except Exception as error:
+        state.update(status="failed", message=str(error))
+
+
+@app.post("/general/process", status_code=202)
+def process_general_reports(
+    background_tasks: BackgroundTasks,
+    ocr_url: Annotated[str, Form()],
+    files: Annotated[list[UploadFile], File()],
+    output_format: str = Form("excel"),
+    processing_mode: str = Form("accurate"),
+):
+    output_format = normalize_general_output_format(output_format)
+    processing_mode = normalize_processing_mode(processing_mode)
+    if not files:
+        raise HTTPException(status_code=400, detail="请至少选择一份待识别文档")
+    unsupported = [file.filename or "未命名文件" for file in files if Path(file.filename or "").suffix.lower() not in GENERAL_ALLOWED_EXTENSIONS]
+    if unsupported:
+        raise HTTPException(
+            status_code=400,
+            detail=f"当前 OCR 服务不支持以下文件类型：{'、'.join(unsupported[:5])}",
+        )
+
+    job_id = uuid.uuid4().hex
+    job_dir = JOB_ROOT / job_id
+    input_dir = job_dir / "input" / "general"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    source_files: list[tuple[Path, str]] = []
+    for index, upload in enumerate(files, start=1):
+        original_name = Path(upload.filename or f"document_{index}").name
+        source_path = input_dir / f"{index:03d}_{original_name}"
+        with source_path.open("wb") as target:
+            shutil.copyfileobj(upload.file, target)
+        source_files.append((source_path, original_name))
+
+    JOBS[job_id] = {
+        "job_id": job_id,
+        "kind": "general",
+        "output_format": output_format,
+        "processing_mode": processing_mode,
+        "status": "queued",
+        "job_dir": job_dir,
+        "total_files": len(source_files),
+        "completed_files": 0,
+        "current_file": "",
+        "message": "文件已上传到本机，等待开始识别…",
+        "records": [],
+    }
+    background_tasks.add_task(process_general_job, job_id, ocr_url, source_files, output_format)
+    return {
+        "success": True,
+        "job_id": job_id,
+        "total_files": len(source_files),
+        "output_format": output_format,
+    }
 
 
 # ========================== 食物频率调查独立流程 ==========================

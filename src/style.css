@@ -64,6 +64,35 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
 .workspace-workbar-actions .primary-button, .workspace-workbar-actions .secondary-button { min-width: 132px; padding: 10px 14px; }
 .workspace-workbar-actions .secondary-button { border-color: rgba(255, 255, 255, .42); background: rgba(255, 255, 255, .1); color: #fff; }.workspace-workbar-actions .secondary-button:hover { background: rgba(255, 255, 255, .18); }.workspace-settings-button { position: relative; display: inline-flex; min-width: 42px; height: 42px; align-items: center; justify-content: center; gap: 6px; padding: 0 11px; border: 1px solid rgba(255, 255, 255, .45); border-radius: 7px; background: rgba(255, 255, 255, .12); color: #fff; font: inherit; cursor: pointer; }.workspace-settings-button:hover { background: rgba(255, 255, 255, .22); }.workspace-settings-button > span:first-child { font-size: 1.2rem; line-height: 1; }.settings-button-label { font-size: .8rem; font-weight: 700; }.workspace-settings-button.needs-attention::after { position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border: 2px solid #245f6e; border-radius: 50%; background: #ffbd4a; content: ''; }
 .nutrition-workspace { padding: 20px; }
+.imaging-workspace { padding: 20px; }
+.general-workspace { padding: 20px; }
+.general-download-button { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.general-format-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 16px 0 18px; }
+.general-format-option { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; min-height: 82px; padding: 13px 14px; border: 1px solid #cfdde0; border-radius: 10px; background: #fbfdfd; color: #36525e; text-align: left; }
+.general-format-option:hover { border-color: #7fbcb2; background: #f5fbf9; }.general-format-option.active { border-color: #16867a; background: #edf8f5; box-shadow: inset 0 0 0 1px #16867a; }
+.general-format-option:disabled { cursor: wait; opacity: .68; }
+.general-format-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 8px; background: #e7f1f2; color: #25566a; font-size: .8rem; font-weight: 900; }.general-format-option.active .general-format-icon { background: #16867a; color: #fff; }
+.general-format-option strong, .general-format-option small { display: block; }.general-format-option strong { color: #21495b; font-size: .92rem; }.general-format-option small { margin-top: 4px; color: #718690; font-size: .74rem; font-weight: 400; line-height: 1.35; }
+.general-format-check { display: grid; width: 21px; height: 21px; place-items: center; border: 1px solid #bdd0d4; border-radius: 50%; color: #16867a; font-size: .78rem; font-weight: 900; }.general-format-option.active .general-format-check { border-color: #16867a; background: #dff2ec; }
+.general-upload-actions { margin-top: 4px; }
+.general-result-format { align-self: center; padding: 6px 10px; border-radius: 999px; background: #e1f4ed; color: #17715c; font-size: .8rem; font-weight: 800; }
+.general-result-list { display: grid; gap: 13px; }.general-result-item { overflow: hidden; border: 1px solid #d9e5e7; border-radius: 10px; background: #fff; }.general-result-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 15px; border-bottom: 1px solid #e2eaec; background: #f7faf9; }.general-result-head strong, .general-result-head span { display: block; }.general-result-head strong { color: #21495b; font-size: .9rem; }.general-result-head span { margin-top: 4px; color: #718690; font-size: .74rem; }.general-result-head a { text-decoration: none; }
+.general-result-preview { max-height: 480px; margin: 0; overflow: auto; padding: 16px; background: #13252e; color: #d9efeb; font-family: Consolas, 'SFMono-Regular', monospace; font-size: .79rem; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.general-excel-placeholder { display: flex; align-items: center; gap: 13px; padding: 20px 18px; color: #55707b; }.general-excel-placeholder > span { display: grid; flex: 0 0 auto; width: 44px; height: 44px; place-items: center; border-radius: 9px; background: #e1f4ed; color: #14725c; font-weight: 900; }.general-excel-placeholder strong { color: #244c5f; font-size: .88rem; }.general-excel-placeholder p { margin: 4px 0 0; font-size: .77rem; line-height: 1.45; }
+.imaging-review { grid-template-columns: 300px minmax(0, 1fr); min-height: 470px; }
+.imaging-review-summary { align-self: center; padding: 6px 10px; border-radius: 999px; background: #fff0ce; color: #946313; font-size: .8rem; font-weight: 800; }
+.imaging-review-summary.clear { background: #e1f4ed; color: #17715c; }
+.imaging-detail { padding: 22px 24px 30px; }
+.imaging-fields-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.imaging-fields-grid label, .imaging-text-field { color: #59717d; font-size: .8rem; font-weight: 700; }
+.imaging-fields-grid input, .imaging-fields-grid select { box-sizing: border-box; width: 100%; height: 38px; margin-top: 6px; border: 1px solid #cbdadd; border-radius: 6px; background: #fff; color: #243f4e; font: inherit; outline-color: #16867a; }
+.imaging-fields-grid select { padding: 7px 30px 7px 9px; }
+.imaging-fields-grid small { display: block; margin-top: 5px; color: #a16a0c; font-size: .72rem; line-height: 1.35; }
+.imaging-text-field { display: block; margin-top: 13px; }
+.imaging-text-field textarea { box-sizing: border-box; display: block; width: 100%; min-height: 145px; margin-top: 6px; padding: 10px 11px; resize: vertical; border: 1px solid #cbdadd; border-radius: 7px; background: #fff; color: #243f4e; font: inherit; font-size: .86rem; line-height: 1.65; outline-color: #16867a; }
+.needs-field-review input, .needs-field-review select, .needs-field-review textarea { border-color: #d7a94b; background: #fffaf0; box-shadow: 0 0 0 2px rgba(215, 169, 75, .08); }
+.match-badge.warning { background: #fff0ce; color: #946313; }
+.imaging-ocr-warning { margin: -5px 0 12px; padding: 8px 10px; border-radius: 6px; background: #fff4e2; color: #966216; font-size: .78rem; }
 .nutrition-section-head { display: flex; align-items: center; min-height: 42px; margin-bottom: 14px; }
 .nutrition-section-head h2 { margin: 0; color: #173c50; font-size: 1.05rem; }
 .nutrition-section-head p { margin: 5px 0 0; color: #718690; font-size: .82rem; }
@@ -92,6 +121,9 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
 @media (max-width: 900px) {
   .page-shell { width: min(100% - 32px, 1180px); }
   .nutrition-review { grid-template-columns: minmax(280px, 36%) minmax(0, 64%); }
+  .imaging-review { grid-template-columns: minmax(260px, 34%) minmax(0, 66%); }
+  .imaging-fields-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .general-format-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 650px) {
@@ -102,6 +134,12 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
   .workspace-workbar-actions .primary-button, .workspace-workbar-actions .secondary-button { width: 100%; min-width: 0; }
   .workspace-settings-button { grid-column: 1 / -1; width: 100%; }
   .nutrition-workspace { padding: 18px; }
+  .imaging-workspace { padding: 18px; }
+  .general-workspace { padding: 18px; }
+  .imaging-review { display: block; }
+  .imaging-fields-grid { grid-template-columns: 1fr; }
+  .general-result-head { align-items: stretch; flex-direction: column; }
+  .general-result-head .secondary-button { width: 100%; }
   .nutrition-review { display: block; height: auto; min-height: 0; }
   .nutrition-review .person-list { height: auto; border-right: 0; border-bottom: 1px solid #dce8eb; }
   .nutrition-review .person-detail { height: auto; overflow: visible; padding: 18px; }
