@@ -55,9 +55,9 @@
       </div>
     </section>
     </template>
-    <NutritionWorkspace v-else-if="activeWorkspace === 'nutrition'" />
-    <ImagingWorkspace v-else-if="activeWorkspace === 'imaging'" />
-    <GeneralOcrWorkspace v-else />
+    <div v-show="activeWorkspace === 'nutrition'"><NutritionWorkspace /></div>
+    <div v-show="activeWorkspace === 'imaging'"><ImagingWorkspace /></div>
+    <div v-show="activeWorkspace === 'general'"><GeneralOcrWorkspace /></div>
   </main>
 </template>
 
