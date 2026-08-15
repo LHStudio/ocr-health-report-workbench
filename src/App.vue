@@ -1,6 +1,6 @@
 <template>
   <main class="page-shell">
-    <nav class="workspace-tabs" aria-label="工作台切换"><button :class="{ active: activeWorkspace === 'medical' }" @click="activeWorkspace = 'medical'">体检报告回写</button><button :class="{ active: activeWorkspace === 'nutrition' }" @click="activeWorkspace = 'nutrition'">食物频率调查</button><button :class="{ active: activeWorkspace === 'imaging' }" @click="activeWorkspace = 'imaging'">影像识别</button><button :class="{ active: activeWorkspace === 'general' }" @click="activeWorkspace = 'general'">通用识别</button></nav>
+    <nav class="workspace-tabs" aria-label="工作台切换"><button :class="{ active: activeWorkspace === 'medical' }" @click="activeWorkspace = 'medical'">体检报告回写</button><button :class="{ active: activeWorkspace === 'nutrition' }" @click="activeWorkspace = 'nutrition'">食物频率调查</button><button :class="{ active: activeWorkspace === 'imaging' }" @click="activeWorkspace = 'imaging'">影像识别</button><button :class="{ active: activeWorkspace === 'general' }" @click="activeWorkspace = 'general'">通用识别</button><button class="about-tab" :class="{ active: activeWorkspace === 'about' }" @click="activeWorkspace = 'about'">关于</button></nav>
 
     <template v-if="activeWorkspace === 'medical'">
     <header class="workspace-workbar">
@@ -58,17 +58,25 @@
     <div v-show="activeWorkspace === 'nutrition'"><NutritionWorkspace /></div>
     <div v-show="activeWorkspace === 'imaging'"><ImagingWorkspace /></div>
     <div v-show="activeWorkspace === 'general'"><GeneralOcrWorkspace /></div>
+    <section v-if="activeWorkspace === 'about'" class="about-card" aria-labelledby="about-title">
+      <span class="about-card-label">关于本系统</span>
+      <h1 id="about-title">OCR 识别工作台</h1>
+      <p>用于体检报告、食物频率调查、影像报告及通用文件的识别与整理。</p>
+      <div class="about-version"><span>当前版本</span><strong>{{ appVersion }}</strong></div>
+    </section>
   </main>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import appMetadata from '../package.json'
 import NutritionWorkspace from './components/NutritionWorkspace.vue'
 import ImagingWorkspace from './components/ImagingWorkspace.vue'
 import GeneralOcrWorkspace from './components/GeneralOcrWorkspace.vue'
 
 const storageKey = 'medical-ocr-api-url'
 const activeWorkspace = ref('medical')
+const appVersion = `2026-08-15-v${appMetadata.version}`
 const serverUrl = ref(localStorage.getItem(storageKey) || '')
 const parseMode = ref(localStorage.getItem('ocr-parse-mode') || 'markdown')
 const processingMode = ref(localStorage.getItem('ocr-processing-mode') || 'fast')

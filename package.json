@@ -1,7 +1,7 @@
 {
   "name": "medical-ocr-workbench",
   "private": true,
-  "version": "1.0.0",
+  "version": "4.2.0",
   "type": "module",
   "scripts": {
     "backend": "python -m uvicorn local_service:app --host 127.0.0.1 --port 8000 --reload",
