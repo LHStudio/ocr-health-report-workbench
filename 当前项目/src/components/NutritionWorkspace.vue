@@ -65,7 +65,12 @@
       </section>
     </section>
     <div class="review-layout nutrition-review">
-      <aside class="person-list"><div class="person-list-head"><span>人员列表</span><strong>{{ people.length }} 人</strong></div><button v-for="person in people" :key="person.id" type="button" :class="['person-item', { active: selectedId === person.id, 'has-review-items': personReviewCount(person) > 0 }]" @click="selectPerson(person)"><strong>{{ person.general.姓名 || person.id }}</strong><span>{{ person.id }} · {{ person.page_count || person.ocr_files.length }} 页 · {{ person.food_rows.length }} 类食物</span><span :class="['person-review-count', { clear: personReviewCount(person) === 0 }]">需核对 {{ personReviewCount(person) }} 项</span></button></aside>
+      <aside class="person-list">
+        <div class="person-list-toolbar"><div class="person-list-toolbar-head"><span>人员列表</span><strong>{{ filteredNutritionPeople.length }} / {{ people.length }} 人</strong></div><label class="person-list-search"><span class="sr-only">搜索受访者</span><input v-model="nutritionPersonSearch" type="search" placeholder="搜索姓名或人员编号" /></label><div class="person-list-options"><span>{{ nutritionPageRange }}</span><label>每页 <select v-model.number="nutritionPageSize"><option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }} 人</option></select></label></div></div>
+        <p v-if="!filteredNutritionPeople.length" class="person-list-empty">没有找到匹配的受访者，请更换关键词。</p>
+        <button v-for="person in pagedNutritionPeople" :key="person.id" type="button" :class="['person-item', { active: selectedId === person.id, 'has-review-items': personReviewCount(person) > 0 }]" @click="selectPerson(person)"><strong>{{ person.general.姓名 || person.id }}</strong><span>{{ person.id }} · {{ person.page_count || person.ocr_files.length }} 页 · {{ person.food_rows.length }} 类食物</span><span :class="['person-review-count', { clear: personReviewCount(person) === 0 }]">需核对 {{ personReviewCount(person) }} 项</span></button>
+        <nav v-if="filteredNutritionPeople.length" class="person-list-pagination" aria-label="食物频率人员分页"><button type="button" :disabled="nutritionPage <= 1" @click="setNutritionPage(nutritionPage - 1)">上一页</button><span>第 {{ nutritionPage }} / {{ nutritionPageCount }} 页</span><button type="button" :disabled="nutritionPage >= nutritionPageCount" @click="setNutritionPage(nutritionPage + 1)">下一页</button></nav>
+      </aside>
       <div v-if="selected" class="person-detail">
         <div class="detail-head"><div><h3>{{ selected.general.姓名 || selected.id }}</h3><p>{{ selected.id }}：请核对 OCR 数据、频率周期和纸质问卷上的勾选项。</p></div></div>
           <div class="ocr-downloads"><span>OCR 原始结果：</span><a v-for="(file, index) in selected.ocr_files" :key="file" :href="file" download>第 {{ index + 1 }} 页 Excel</a><a v-for="(file, index) in selected.markdown_files || []" :key="file" :href="file" download>第 {{ index + 1 }} 页 Markdown</a></div>
@@ -166,9 +171,15 @@ const nutritionSettingsOpen = ref(false); const nutritionSettingsSnapshot = ref(
 const appendBodyCompositionFiles = ref([]); const appendingBodyComposition = ref(false); const applyingBodyCompositionMatches = ref(false)
 const bodyCompositionMatches = ref([]); const bodyCompositionHistory = ref([]); const bodyCompositionAssignments = ref({}); const bodyCompositionMessage = ref(''); const bodyCompositionError = ref(false); const bodyCompositionMatchFilter = ref('all'); const bodyCompositionPanelOpen = ref(true)
 const bodyRecordEditorOpen = ref(false); const editingBodyRecordId = ref(''); const bodyRecordDraft = ref(emptyBodyRecordDraft()); const bodyRecordEditorError = ref('')
+const pageSizeOptions = [10, 20, 30, 50, 100]
+const nutritionPersonSearch = ref(''); const nutritionPageSize = ref(10); const nutritionPage = ref(1)
 const canProcess = computed(() => !!(serverUrl.value && nutritionFiles.value.length && !processing.value))
 const personFolders = computed(() => [...new Set(nutritionFiles.value.map(folderFor))].sort((a, b) => a.localeCompare(b, 'zh-CN')))
 const selected = computed(() => people.value.find((person) => person.id === selectedId.value) || people.value[0])
+const filteredNutritionPeople = computed(() => { const query = nutritionPersonSearch.value.trim().toLocaleLowerCase('zh-CN'); if (!query) return people.value; return people.value.filter((person) => nutritionPersonSearchText(person).includes(query)) })
+const nutritionPageCount = computed(() => Math.max(1, Math.ceil(filteredNutritionPeople.value.length / nutritionPageSize.value)))
+const pagedNutritionPeople = computed(() => { const start = (nutritionPage.value - 1) * nutritionPageSize.value; return filteredNutritionPeople.value.slice(start, start + nutritionPageSize.value) })
+const nutritionPageRange = computed(() => { if (!filteredNutritionPeople.value.length) return '0 人'; const start = (nutritionPage.value - 1) * nutritionPageSize.value + 1; const end = Math.min(start + nutritionPageSize.value - 1, filteredNutritionPeople.value.length); return `显示 ${start}–${end}，共 ${filteredNutritionPeople.value.length} 人` })
 const bmiValue = computed(() => { const height = Number(reportProfile.value.height); const weight = Number(reportProfile.value.weight); if (!(height > 0 && weight > 0)) return ''; return (weight / ((height / 100) ** 2)).toFixed(1) })
 const bmiStatus = computed(() => { const bmi = Number(bmiValue.value); if (!bmi) return ''; if (bmi < 18.5) return '偏瘦'; if (bmi < 24) return '正常'; if (bmi < 28) return '超重'; return '肥胖' })
 const energyStandardNote = computed(() => { const standard = nutritionPreview.value?.nutrition?.energy?.standard; if (standard) return 'kcal/天'; if (reportProfile.value.gender === 'male') return '当前迁移的 EER 表仅含女性标准'; return '补全年龄、性别和活动量后显示' })
@@ -207,6 +218,9 @@ const checkboxReview = computed(() => {
 })
 const progressPercent = computed(() => progress.value.total ? Math.round(progress.value.completed / progress.value.total * 100) : 0)
 function folderFor(file) { if (mode.value === 'files') return file.name.replace(/\.pdf$/i, ''); const parts = (file.webkitRelativePath || file.name).split('/').filter(Boolean); return parts.length > 1 ? parts.slice(0, -1).join('/') : file.name.replace(/\.pdf$/i, '') }
+function nutritionPersonSearchText(person) { return `${person?.general?.姓名 || ''} ${person?.id || ''} ${personSourceFileNames(person)}`.toLocaleLowerCase('zh-CN') }
+function ensureNutritionSelectionOnPage() { const person = pagedNutritionPeople.value.find((item) => item.id === selectedId.value) || pagedNutritionPeople.value[0]; if (person && person.id !== selectedId.value) selectPerson(person) }
+function setNutritionPage(page) { nutritionPage.value = Math.min(Math.max(1, page), nutritionPageCount.value); ensureNutritionSelectionOnPage() }
 function saveUrl() { localStorage.setItem('medical-ocr-api-url', serverUrl.value); serverOk.value = true; serverMessage.value = '云端地址已保存。' }
 function saveParseMode() { localStorage.setItem('ocr-parse-mode', parseMode.value) }
 function saveProcessingMode() { localStorage.setItem('ocr-processing-mode', processingMode.value) }
@@ -267,7 +281,7 @@ function selectPerson(person) {
   nutritionPreview.value = null
   scheduleNutritionPreview()
 }
-function clear() { nutritionFiles.value = []; bodyCompositionFiles.value = []; bodyCompositionMode.value = ''; appendBodyCompositionFiles.value = []; bodyCompositionMatches.value = []; bodyCompositionHistory.value = []; bodyCompositionAssignments.value = {}; bodyCompositionMessage.value = ''; bodyCompositionError.value = false; bodyRecordEditorOpen.value = false; editingBodyRecordId.value = ''; bodyRecordDraft.value = emptyBodyRecordDraft(); bodyRecordEditorError.value = ''; people.value = []; selectedId.value = ''; errorMessage.value = ''; successMessage.value = ''; reportProfiles.value = {}; reportProfile.value = emptyReportProfile(); reportReviews.value = {}; reportReview.value = emptyReportReview(); nutritionPreview.value = null; nutritionReviewOpen.value = false; previewError.value = ''; reportErrorMessage.value = ''; reportSuccessMessage.value = '' }
+function clear() { nutritionFiles.value = []; bodyCompositionFiles.value = []; bodyCompositionMode.value = ''; appendBodyCompositionFiles.value = []; bodyCompositionMatches.value = []; bodyCompositionHistory.value = []; bodyCompositionAssignments.value = {}; bodyCompositionMessage.value = ''; bodyCompositionError.value = false; bodyRecordEditorOpen.value = false; editingBodyRecordId.value = ''; bodyRecordDraft.value = emptyBodyRecordDraft(); bodyRecordEditorError.value = ''; people.value = []; selectedId.value = ''; nutritionPersonSearch.value = ''; nutritionPage.value = 1; errorMessage.value = ''; successMessage.value = ''; reportProfiles.value = {}; reportProfile.value = emptyReportProfile(); reportReviews.value = {}; reportReview.value = emptyReportReview(); nutritionPreview.value = null; nutritionReviewOpen.value = false; previewError.value = ''; reportErrorMessage.value = ''; reportSuccessMessage.value = '' }
 function hasText(value) { return String(value ?? '').trim().length > 0 }
 function actionableFoodNote(value) { return String(value ?? '').split('；').map((part) => part.trim()).filter(Boolean).some((part) => !part.startsWith('OCR项目原文：')) }
 function rowNeedsReview(row, noteKey) { return String(row?.['频率周期(请核对)'] ?? '').trim() === '未识别' || hasText(row?.[noteKey]) }
@@ -419,5 +433,7 @@ async function generateReport(format) {
 }
 watch(reportProfile, scheduleNutritionPreview, { deep: true })
 watch(selected, scheduleNutritionPreview, { deep: true })
+watch([nutritionPersonSearch, nutritionPageSize], () => { nutritionPage.value = 1; ensureNutritionSelectionOnPage() })
+watch(nutritionPageCount, (pageCount) => { if (nutritionPage.value > pageCount) nutritionPage.value = pageCount })
 onMounted(resumeLatestNutritionJob)
 </script>

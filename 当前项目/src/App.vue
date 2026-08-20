@@ -5,7 +5,7 @@
     <template v-if="activeWorkspace === 'medical'">
     <header class="workspace-workbar">
       <div class="workspace-workbar-context"><strong>体检报告回写</strong><span>{{ people.length ? `${people.length} 名受检者 · 可逐项核对并修正回写结果` : '上传体检 PDF，自动识别并回写 Excel' }}</span></div>
-      <div class="workspace-workbar-actions"><button v-if="people.length" class="primary-button" type="button" :disabled="savingReview" @click="saveReview">{{ savingReview ? '正在保存…' : '保存修改并下载 Excel' }}</button><button :class="['workspace-settings-button', { 'needs-attention': !serverUrl }]" type="button" aria-label="打开体检报告设置" title="OCR 服务、模板与正常范围设置" @click="openMedicalSettings"><span aria-hidden="true">⚙</span><span class="settings-button-label">设置</span></button></div>
+      <div class="workspace-workbar-actions"><button v-if="people.length" class="primary-button" type="button" :disabled="savingReview" @click="saveReview">{{ savingReview ? '正在保存…' : '保存修改并下载 Excel' }}</button><button :class="['workspace-settings-button', { 'needs-attention': !serverUrl || !hasMedicalTemplate }]" type="button" aria-label="打开体检报告设置" title="OCR 服务、模板与正常范围设置" @click="openMedicalSettings"><span aria-hidden="true">⚙</span><span class="settings-button-label">设置</span></button></div>
     </header>
 
     <div v-if="medicalSettingsOpen" class="settings-backdrop workspace-settings-backdrop" @click.self="closeMedicalSettings">
@@ -37,7 +37,8 @@
         <label class="drop-zone compact" :class="{ ready: pdfFiles.length && inputMode === 'folder' }"><input type="file" accept=".pdf,application/pdf" multiple webkitdirectory directory @change="selectReportRoot" /><strong>选择报告文件夹</strong><span>{{ inputMode === 'folder' && pdfFiles.length ? `已读取 ${pdfFiles.length} 份 PDF` : '自动按子文件夹归为人员' }}</span></label>
       </div>
       <div v-if="pdfFiles.length" class="batch-summary"><span>将处理 <b>{{ peopleFolders.length }}</b> 名受检者 / <b>{{ pdfFiles.length }}</b> 个 PDF</span><span v-for="folder in peopleFolders.slice(0, 6)" :key="folder">{{ folder }}</span><span v-if="peopleFolders.length > 6">…</span></div>
-      <div class="action-row"><button class="primary-button" :disabled="!canProcess" @click="processBatch">开始自动识别并回写</button><button class="secondary-button" type="button" :disabled="processing" @click="clearBatch">清空</button></div>
+      <div class="action-row"><button class="primary-button" :disabled="!canProcess" :aria-describedby="medicalSetupIssues.length ? 'medical-setup-required' : undefined" @click="processBatch">开始自动识别并回写</button><button class="secondary-button" type="button" :disabled="processing" @click="clearBatch">清空</button></div>
+      <div v-if="pdfFiles.length && medicalSetupIssues.length" id="medical-setup-required" class="setup-required-message" role="status"><div><strong>开始识别前还差一步</strong><span>{{ medicalSetupHint }}</span></div><button class="secondary-button mini-button" type="button" @click="openMedicalSettings">打开设置并完成配置</button></div>
       <div v-if="processing" class="progress-panel"><div class="progress-label"><strong>{{ progressText }}</strong><span>{{ progress.completed }}/{{ progress.total }}</span></div><div class="progress-track"><div class="progress-bar" :style="{ width: progressPercent + '%' }"></div></div><p>{{ progress.currentFile || '正在准备任务…' }}</p></div>
       <p v-if="processError" class="error-message">{{ processError }}</p><p v-if="processMessage" class="success-message">{{ processMessage }}</p>
     </section>
@@ -46,7 +47,12 @@
       <div class="section-title"><div><span class="step">2</span><h2>逐人核对与人工修正</h2></div></div>
       <p class="hint">所有模板字段均可编辑；自动未匹配字段保持空白，人工填写后点击保存。每页云端返回的 OCR Excel 已留存在本机。</p>
       <div class="review-layout">
-        <aside class="person-list"><button v-for="person in people" :key="person.id" type="button" :class="['person-item', { active: selectedPersonId === person.id, 'has-abnormal-items': abnormalCount(person) }]" @click="selectedPersonId = person.id"><strong>{{ person.id }}</strong><span>第 {{ person.row }} 行 · {{ person.page_count }} 页 · {{ matchedCount(person) }}/{{ person.review_fields.length }} 项自动填写</span><span v-if="abnormalCount(person)" class="person-abnormal-count">{{ abnormalCount(person) }} 项超出范围</span></button></aside>
+        <aside class="person-list">
+          <div class="person-list-toolbar"><div class="person-list-toolbar-head"><span>人员列表</span><strong>{{ filteredMedicalPeople.length }} / {{ people.length }} 人</strong></div><label class="person-list-search"><span class="sr-only">搜索受检者</span><input v-model="medicalPersonSearch" type="search" placeholder="搜索姓名或人员编号" /></label><div class="person-list-options"><span>{{ medicalPageRange }}</span><label>每页 <select v-model.number="medicalPageSize"><option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }} 人</option></select></label></div></div>
+          <p v-if="!filteredMedicalPeople.length" class="person-list-empty">没有找到匹配的受检者，请更换关键词。</p>
+          <button v-for="person in pagedMedicalPeople" :key="person.id" type="button" :class="['person-item', { active: selectedPersonId === person.id, 'has-abnormal-items': abnormalCount(person) }]" @click="selectedPersonId = person.id"><strong>{{ person.id }}</strong><span>第 {{ person.row }} 行 · {{ person.page_count }} 页 · {{ matchedCount(person) }}/{{ person.review_fields.length }} 项自动填写</span><span v-if="abnormalCount(person)" class="person-abnormal-count">{{ abnormalCount(person) }} 项超出范围</span></button>
+          <nav v-if="filteredMedicalPeople.length" class="person-list-pagination" aria-label="体检人员分页"><button type="button" :disabled="medicalPage <= 1" @click="setMedicalPage(medicalPage - 1)">上一页</button><span>第 {{ medicalPage }} / {{ medicalPageCount }} 页</span><button type="button" :disabled="medicalPage >= medicalPageCount" @click="setMedicalPage(medicalPage + 1)">下一页</button></nav>
+        </aside>
         <div v-if="selectedPerson" class="person-detail">
           <div class="detail-head"><div><h3>{{ selectedPerson.id }}</h3><p>写入汇总表第 {{ selectedPerson.row }} 行。可直接编辑任意单元格的值；超出已设置范围的项目会标红。</p></div><span class="match-badge">{{ matchedCount(selectedPerson) }} 项自动填写</span></div>
           <div class="ocr-downloads"><span>OCR 原始结果：</span><a v-for="(file, index) in selectedPerson.ocr_files" :key="file" :href="file" download>第 {{ index + 1 }} 页 Excel</a><a v-for="(file, index) in selectedPerson.markdown_files || []" :key="file" :href="file" download>第 {{ index + 1 }} 页 Markdown</a></div>
@@ -68,7 +74,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import appMetadata from '../package.json'
 import NutritionWorkspace from './components/NutritionWorkspace.vue'
 import ImagingWorkspace from './components/ImagingWorkspace.vue'
@@ -90,10 +96,19 @@ const people = ref([]); const selectedPersonId = ref(''); const outputUrl = ref(
 const normalRangeItems = ref([]); const normalRangeDraft = ref([]); const normalRangeSettingsOpen = ref(false)
 const savingNormalRanges = ref(false); const normalRangeError = ref('')
 const medicalSettingsOpen = ref(false); const medicalSettingsSnapshot = ref(null)
+const pageSizeOptions = [10, 20, 30, 50, 100]
+const medicalPersonSearch = ref(''); const medicalPageSize = ref(10); const medicalPage = ref(1)
 
-const canProcess = computed(() => !!(serverUrl.value && (templateFile.value || lastTemplate.value.exists) && pdfFiles.value.length && !processing.value))
+const hasMedicalTemplate = computed(() => Boolean(templateFile.value || lastTemplate.value.exists))
+const medicalSetupIssues = computed(() => { const issues = []; if (!hasMedicalTemplate.value) issues.push('template'); if (!serverUrl.value.trim()) issues.push('server'); return issues })
+const medicalSetupHint = computed(() => { const hints = []; if (!hasMedicalTemplate.value) hints.push('请在“设置 → 汇总模板与正常范围”上传 Excel 回写模板，模板决定识别结果写入哪些字段'); if (!serverUrl.value.trim()) hints.push('请在“设置 → 云端 OCR 服务”填写并测试服务地址'); return `${hints.join('；')}。保存设置后，“开始自动识别并回写”按钮即可使用。` })
+const canProcess = computed(() => !!(serverUrl.value.trim() && hasMedicalTemplate.value && pdfFiles.value.length && !processing.value))
 const peopleFolders = computed(() => [...new Set(pdfFiles.value.map(personFolder))].sort((a, b) => a.localeCompare(b, 'zh-CN')))
 const selectedPerson = computed(() => people.value.find((person) => person.id === selectedPersonId.value) || people.value[0])
+const filteredMedicalPeople = computed(() => { const query = medicalPersonSearch.value.trim().toLocaleLowerCase('zh-CN'); if (!query) return people.value; return people.value.filter((person) => medicalPersonSearchText(person).includes(query)) })
+const medicalPageCount = computed(() => Math.max(1, Math.ceil(filteredMedicalPeople.value.length / medicalPageSize.value)))
+const pagedMedicalPeople = computed(() => { const start = (medicalPage.value - 1) * medicalPageSize.value; return filteredMedicalPeople.value.slice(start, start + medicalPageSize.value) })
+const medicalPageRange = computed(() => { if (!filteredMedicalPeople.value.length) return '0 人'; const start = (medicalPage.value - 1) * medicalPageSize.value + 1; const end = Math.min(start + medicalPageSize.value - 1, filteredMedicalPeople.value.length); return `显示 ${start}–${end}，共 ${filteredMedicalPeople.value.length} 人` })
 const progressPercent = computed(() => progress.value.total ? Math.round((progress.value.completed / progress.value.total) * 100) : 0)
 const progressText = computed(() => progress.value.total ? `正在处理第 ${Math.min(progress.value.completed + 1, progress.value.total)}/${progress.value.total} 个 PDF` : '正在准备上传文件')
 
@@ -102,6 +117,9 @@ function personFolder(file) {
   const parts = (file.webkitRelativePath || file.name).split('/').filter(Boolean)
   return parts.length > 1 ? parts.slice(0, -1).join('/') : file.name.replace(/\.pdf$/i, '')
 }
+function medicalPersonSearchText(person) { const name = (person.review_fields || []).find((field) => String(field.header || '').includes('姓名'))?.value || ''; return `${person.id || ''} ${name} ${person.row || ''}`.toLocaleLowerCase('zh-CN') }
+function ensureMedicalSelectionOnPage() { if (!pagedMedicalPeople.value.some((person) => person.id === selectedPersonId.value) && pagedMedicalPeople.value[0]) selectedPersonId.value = pagedMedicalPeople.value[0].id }
+function setMedicalPage(page) { medicalPage.value = Math.min(Math.max(1, page), medicalPageCount.value); ensureMedicalSelectionOnPage() }
 function matchedCount(person) { return person.review_fields.filter((field) => field.source && field.value).length }
 function rangeForField(field) { return normalRangeItems.value.find((item) => item.key === field.range_key) || null }
 function numberOrNull(value) { if (value === '' || value === null || value === undefined) return null; const number = Number(value); return Number.isFinite(number) ? number : null }
@@ -130,7 +148,7 @@ function selectTemplate(event) { templateFile.value = event.target.files?.[0] ||
 function setFiles(files, mode) { inputMode.value = mode; pdfFiles.value = Array.from(files || []).filter((file) => /\.pdf$/i.test(file.name)); processError.value = ''; processMessage.value = '' }
 function selectPdfFiles(event) { setFiles(event.target.files, 'files') }
 function selectReportRoot(event) { setFiles(event.target.files, 'folder') }
-function clearBatch() { templateFile.value = null; pdfFiles.value = []; people.value = []; selectedPersonId.value = ''; outputUrl.value = ''; processMessage.value = ''; processError.value = ''; progress.value = { completed: 0, total: 0, currentFile: '', message: '' } }
+function clearBatch() { templateFile.value = null; pdfFiles.value = []; people.value = []; selectedPersonId.value = ''; medicalPersonSearch.value = ''; medicalPage.value = 1; outputUrl.value = ''; processMessage.value = ''; processError.value = ''; progress.value = { completed: 0, total: 0, currentFile: '', message: '' } }
 async function testOcr() {
   checkingServer.value = true; serverMessage.value = ''
   try { const body = new FormData(); body.append('ocr_url', serverUrl.value); const response = await fetch('/local-api/test-ocr', { method: 'POST', body }); const data = await response.json(); if (!response.ok) throw new Error(data.detail || '服务不可用'); serverOk.value = true; serverMessage.value = data.message }
@@ -180,5 +198,7 @@ async function saveNormalRanges() {
 async function loadLastTemplate() {
   try { const response = await fetch('/local-api/medical-template-status'); if (response.ok) lastTemplate.value = await response.json() } catch (_) { /* 本地服务未启动时不阻塞页面 */ }
 }
+watch([medicalPersonSearch, medicalPageSize], () => { medicalPage.value = 1; ensureMedicalSelectionOnPage() })
+watch(medicalPageCount, (pageCount) => { if (medicalPage.value > pageCount) medicalPage.value = pageCount })
 onMounted(() => { loadLastTemplate(); loadMedicalNormalRanges() })
 </script>

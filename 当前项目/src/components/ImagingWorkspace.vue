@@ -47,11 +47,14 @@
       <p class="hint">黄色记录存在缺失或格式不完整字段。扫描件右侧被裁切时，系统会保留可见日期并提示核对，不会猜测缺失数字。</p>
       <div class="review-layout imaging-review">
         <aside class="person-list">
-          <button v-for="record in records" :key="record.id" type="button" :class="['person-item', { active: selectedRecordId === record.id, 'has-review-items': recordNeedsReview(record).length }]" @click="selectedRecordId = record.id">
+          <div class="person-list-toolbar"><div class="person-list-toolbar-head"><span>人员列表</span><strong>{{ filteredRecords.length }} / {{ records.length }} 人</strong></div><label class="person-list-search"><span class="sr-only">搜索影像人员</span><input v-model="recordSearch" type="search" placeholder="搜索姓名或文件名" /></label><div class="person-list-options"><span>{{ recordPageRange }}</span><label>每页 <select v-model.number="recordPageSize"><option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }} 人</option></select></label></div></div>
+          <p v-if="!filteredRecords.length" class="person-list-empty">没有找到匹配的人员或报告文件。</p>
+          <button v-for="record in pagedRecords" :key="record.id" type="button" :class="['person-item', { active: selectedRecordId === record.id, 'has-review-items': recordNeedsReview(record).length }]" @click="selectedRecordId = record.id">
             <strong>{{ record.fields.姓名 || filenameStem(record.filename) }}</strong>
             <span>{{ record.filename }}</span>
             <span :class="['person-review-count', { clear: !recordNeedsReview(record).length }]">{{ recordNeedsReview(record).length ? `${recordNeedsReview(record).join('、')}待核对` : '6 项字段完整' }}</span>
           </button>
+          <nav v-if="filteredRecords.length" class="person-list-pagination" aria-label="影像人员分页"><button type="button" :disabled="recordPage <= 1" @click="setRecordPage(recordPage - 1)">上一页</button><span>第 {{ recordPage }} / {{ recordPageCount }} 页</span><button type="button" :disabled="recordPage >= recordPageCount" @click="setRecordPage(recordPage + 1)">下一页</button></nav>
         </aside>
         <div v-if="selectedRecord" class="person-detail imaging-detail">
           <div class="detail-head"><div><h3>{{ selectedRecord.fields.姓名 || filenameStem(selectedRecord.filename) }}</h3><p>{{ selectedRecord.filename }}</p></div><span :class="['match-badge', { warning: recordNeedsReview(selectedRecord).length }]">{{ recordNeedsReview(selectedRecord).length ? `${recordNeedsReview(selectedRecord).length} 项待核对` : '字段完整' }}</span></div>
@@ -72,7 +75,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { storedOcrApiUrl } from '../runtime-config'
 
 const storageKey = 'medical-ocr-api-url'
@@ -92,22 +95,33 @@ const selectedRecordId = ref('')
 const lastJobId = ref('')
 const errorMessage = ref('')
 const successMessage = ref('')
+const pageSizeOptions = [10, 20, 30, 50, 100]
+const recordSearch = ref('')
+const recordPageSize = ref(10)
+const recordPage = ref(1)
 
 const canProcess = computed(() => !!(serverUrl.value.trim() && files.value.length && !processing.value))
 const progressPercent = computed(() => progress.value.total ? Math.round(progress.value.completed / progress.value.total * 100) : 0)
 const selectedRecord = computed(() => records.value.find((record) => record.id === selectedRecordId.value) || records.value[0])
 const reviewRecordCount = computed(() => records.value.filter((record) => recordNeedsReview(record).length).length)
+const filteredRecords = computed(() => { const query = recordSearch.value.trim().toLocaleLowerCase('zh-CN'); if (!query) return records.value; return records.value.filter((record) => recordSearchText(record).includes(query)) })
+const recordPageCount = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / recordPageSize.value)))
+const pagedRecords = computed(() => { const start = (recordPage.value - 1) * recordPageSize.value; return filteredRecords.value.slice(start, start + recordPageSize.value) })
+const recordPageRange = computed(() => { if (!filteredRecords.value.length) return '0 人'; const start = (recordPage.value - 1) * recordPageSize.value + 1; const end = Math.min(start + recordPageSize.value - 1, filteredRecords.value.length); return `显示 ${start}–${end}，共 ${filteredRecords.value.length} 人` })
 
 function filenameStem(filename) { return String(filename || '').replace(/\.pdf$/i, '') }
+function recordSearchText(record) { const fields = record?.fields || {}; return `${fields.姓名 || ''} ${record?.filename || ''} ${record?.id || ''}`.toLocaleLowerCase('zh-CN') }
+function ensureRecordSelectionOnPage() { if (!pagedRecords.value.some((record) => record.id === selectedRecordId.value) && pagedRecords.value[0]) selectedRecordId.value = pagedRecords.value[0].id }
+function setRecordPage(page) { recordPage.value = Math.min(Math.max(1, page), recordPageCount.value); ensureRecordSelectionOnPage() }
 function fileKey(file) { return file.webkitRelativePath || file.name }
 function validDate(value) { const match = String(value || '').trim().match(/^(20\d{2})-(\d{2})-(\d{2})$/); if (!match) return false; const date = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00`); return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(match[1]) && date.getMonth() + 1 === Number(match[2]) && date.getDate() === Number(match[3]) }
 function needsDateReview(value) { return !validDate(value) }
 function recordNeedsReview(record) { const fields = record?.fields || {}; const missing = ['姓名', '性别', '年龄', '超声所见', '超声诊断'].filter((key) => !String(fields[key] || '').trim()); if (needsDateReview(fields.检查时间)) missing.push('检查时间'); return missing }
-function setFiles(fileList, mode) { files.value = Array.from(fileList || []).filter((file) => /\.pdf$/i.test(file.name)); inputMode.value = mode; records.value = []; selectedRecordId.value = ''; errorMessage.value = ''; successMessage.value = '' }
+function setFiles(fileList, mode) { files.value = Array.from(fileList || []).filter((file) => /\.pdf$/i.test(file.name)); inputMode.value = mode; records.value = []; selectedRecordId.value = ''; recordSearch.value = ''; recordPage.value = 1; errorMessage.value = ''; successMessage.value = '' }
 function selectFiles(event) { setFiles(event.target.files, 'files') }
 function selectFolder(event) { setFiles(event.target.files, 'folder') }
 function saveSettings() { localStorage.setItem(storageKey, serverUrl.value.trim()); localStorage.setItem('imaging-processing-mode', processingMode.value); settingsOpen.value = false; serverOk.value = true }
-function clearAll() { files.value = []; records.value = []; selectedRecordId.value = ''; lastJobId.value = ''; errorMessage.value = ''; successMessage.value = ''; progress.value = { completed: 0, total: 0, currentFile: '' } }
+function clearAll() { files.value = []; records.value = []; selectedRecordId.value = ''; recordSearch.value = ''; recordPage.value = 1; lastJobId.value = ''; errorMessage.value = ''; successMessage.value = ''; progress.value = { completed: 0, total: 0, currentFile: '' } }
 async function ensureLocalFeature() {
   try { const response = await fetch('/local-api/'); const data = await response.json(); if (!response.ok || !Array.isArray(data.features) || !data.features.includes('imaging')) throw new Error('本地后端仍是旧版本，请停止旧进程后重新运行 npm run backend') }
   catch (error) { if (String(error.message || '').includes('旧版本')) throw error; throw new Error('无法连接本地后端，请确认已重新运行 npm run backend') }
@@ -148,4 +162,6 @@ async function saveAndDownload() {
   } catch (error) { errorMessage.value = error.message || '保存影像核对结果失败' }
   finally { saving.value = false }
 }
+watch([recordSearch, recordPageSize], () => { recordPage.value = 1; ensureRecordSelectionOnPage() })
+watch(recordPageCount, (pageCount) => { if (recordPage.value > pageCount) recordPage.value = pageCount })
 </script>
