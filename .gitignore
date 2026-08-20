@@ -1,28 +1,35 @@
-# Build and dependency outputs
-node_modules/
-dist/
-__pycache__/
+# 本仓库只维护当前程序和服务器配置，以下均为本地归档
+/冗余压缩包/
+/历史版本/
+/可再生成文件/
+/弃用内容/
+/运行日志/
+/程序备份*.zip
+/备份说明.md
+
+# 通用运行产物与敏感配置
 **/__pycache__/
-*.py[cod]
-.DS_Store
+**/*.py[cod]
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+**/node_modules/
+**/dist/
+**/.run/
+**/.vscode/
 
-# Local configuration and runtime state
-.env
-.env.*
-!.env.example
-/data/
-/tmp/
-*.log
-
-# Source documents and generated reports: never commit participant data
-/体成分分析/
-/体检报告单/
-/扫描*.pdf
-/检验结果_*.xlsx
-/server_backups/
-/服务器配置/
-*.pdf
-
-# Local-only deployment copies and editor state
-docker_deployment/runtime/
-.vscode/
+# 业务数据、服务输出与大模型文件
+/当前项目/data/
+/服务器配置/data/
+/服务器配置/logs/
+/服务器配置/output/
+/服务器配置/models/
+/服务器配置/checkpoints/
+*.tar
+*.tar.gz
+*.tar.zst
+*.onnx
+*.pdmodel
+*.pdparams
+*.safetensors
