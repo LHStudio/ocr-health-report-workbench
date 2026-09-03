@@ -50,8 +50,8 @@ app.mount("/files", StaticFiles(directory=JOB_ROOT), name="files")
 NUTRITION_GENERAL_COLUMNS = ["人员文件夹", "受试者编号", "姓名", "调查日期", "访视号", "每日餐次", "每周在家吃饭天数", "早餐地点", "午餐地点", "晚餐地点", "每周户外日照天数", "每日户外日照时长(小时)", "晒太阳时段", "皮肤暴露部位", "性别", "年龄", "身高", "体重", "去脂体重", "人工备注"]
 NUTRITION_FOOD_COLUMNS = ["人员文件夹", "姓名", "食物编号", "食物名称", "平均每次食用量", "次数", "频率周期(请核对)", "是否不吃", "人工核对备注"]
 NUTRITION_SUPPLEMENT_COLUMNS = ["人员文件夹", "姓名", "保健品种类", "保健品名称", "平均每次服用量", "次数", "频率周期(请核对)", "是否不吃", "备注"]
-IMAGING_COLUMNS = ["文件名", "姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间", "需核对字段"]
-IMAGING_FIELD_KEYS = ("姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间")
+IMAGING_COLUMNS = ["病人ID", "文件名", "姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间", "需核对字段"]
+IMAGING_FIELD_KEYS = ("病人ID", "姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间")
 GENERAL_OUTPUT_FORMATS = {"excel": ".xlsx", "markdown": ".md", "json": ".json"}
 GENERAL_ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 NUTRITION_PERIODS = ("每天", "每周", "每月", "每年", "不吃")
@@ -1281,15 +1281,18 @@ def imaging_text_sources(markdown_text: object, json_text: object) -> tuple[str,
             lines.extend(" ".join(value for value in row if value) for row in rows)
         elif content:
             lines.append(content)
-    if not lines:
-        fallback = str(markdown_text or "").strip()
-        fallback_rows = imaging_table_rows(fallback)
-        if fallback_rows:
-            table_rows.extend(fallback_rows)
-            lines.extend(" ".join(value for value in row if value) for row in fallback_rows)
-        elif fallback:
-            soup = BeautifulSoup(fallback, "html.parser")
-            lines.append(soup.get_text("\n", strip=True))
+    fallback = str(markdown_text or "").strip()
+    fallback_rows = imaging_table_rows(fallback)
+    if fallback_rows:
+        for row in fallback_rows:
+            row_text = " ".join(value for value in row if value)
+            if row_text and row_text not in lines:
+                table_rows.append(row)
+                lines.append(row_text)
+    elif fallback:
+        fallback_text = BeautifulSoup(fallback, "html.parser").get_text("\n", strip=True)
+        if fallback_text and fallback_text not in lines:
+            lines.append(fallback_text)
     normalized_lines = [re.sub(r"[ \t\u3000]+", " ", line).strip() for line in lines if str(line).strip()]
     return "\n".join(normalized_lines), table_rows
 
@@ -1345,14 +1348,38 @@ def normalize_imaging_date(raw_value: object) -> tuple[str, bool]:
     return parsed.strftime("%Y-%m-%d"), True
 
 
+def extract_imaging_patient_id(raw_value: object) -> str:
+    """Return an OCR-read patient ID without inventing characters from an unclear scan."""
+    raw = clean(raw_value)
+    if not raw:
+        return ""
+    match = re.search(
+        r"(?:病人\s*(?:I(?:D|[l1])|编号)|患者\s*(?:I(?:D|[l1])|编号)|住院号)\s*[：:]?\s*([A-Za-z0-9][A-Za-z0-9_.\-/]{0,63})(?=\s|$|[：:;；,，。])",
+        raw,
+        re.I,
+    )
+    if match and re.match(r"\s*[A-Za-z0-9?？._\-/]", raw[match.end():]):
+        return ""
+    candidate = match.group(1) if match else raw
+    candidate = candidate.strip("：:;；,，。")
+    return candidate if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.\-/]{0,63}", candidate) else ""
+
+
 def parse_imaging_fields(
     markdown_text: object,
     json_text: object,
     filename: object = "",
 ) -> tuple[dict[str, str], list[str]]:
-    """Extract the six reviewable ultrasound fields without guessing missing scan content."""
+    """Extract the seven reviewable ultrasound fields without guessing missing scan content."""
     text, rows = imaging_text_sources(markdown_text, json_text)
     fields = {key: "" for key in IMAGING_FIELD_KEYS}
+
+    patient_id = imaging_table_value(rows, ("病人ID", "病人Id", "患者ID", "患者编号", "住院号"))
+    if not patient_id:
+        patient_id = extract_imaging_patient_id(text)
+    else:
+        patient_id = extract_imaging_patient_id(patient_id)
+    fields["病人ID"] = patient_id
 
     name = imaging_table_value(rows, ("姓名", "患者姓名", "受检者"))
     if not name:
@@ -1432,6 +1459,28 @@ def request_imaging_body_ocr(ocr_url: str, source_path: Path) -> str:
     return str(data.get("text") or "").strip()
 
 
+def request_imaging_patient_id_ocr(ocr_url: str, source_path: Path) -> str:
+    """Read the upper-right identifier at a higher resolution when layout OCR missed it."""
+    with fitz.open(source_path) as document:
+        page = document[0]
+        rect = page.rect
+        clip = fitz.Rect(rect.width * 0.50, rect.height * 0.02, rect.width * 0.98, rect.height * 0.30)
+        image_bytes = page.get_pixmap(matrix=fitz.Matrix(5.0, 5.0), clip=clip, alpha=False).tobytes("png")
+    endpoint = cloud_api_url(ocr_url).removesuffix("/parse-file") + "/classic-ocr"
+    response = requests.post(
+        endpoint,
+        files={"file": (f"{source_path.stem}_patient_id.png", image_bytes, "image/png")},
+        timeout=CLOUD_OCR_TIMEOUT,
+    )
+    try:
+        data = response.json()
+    except ValueError as error:
+        raise RuntimeError(f"病人ID裁剪 OCR 响应不是 JSON：{response.text[:160]}") from error
+    if not response.ok or not data.get("success"):
+        raise RuntimeError(f"病人ID裁剪 OCR 失败：{data.get('detail') or response.status_code}")
+    return str(data.get("text") or "").strip()
+
+
 def write_imaging_workbook(state: dict[str, Any], records: list[dict[str, Any]]) -> Path:
     workbook = Workbook()
     worksheet = workbook.active
@@ -1446,6 +1495,7 @@ def write_imaging_workbook(state: dict[str, Any], records: list[dict[str, Any]])
         needs_review = imaging_record_needs_review(record)
         record["needs_review"] = needs_review
         worksheet.append([
+            clean(fields.get("病人ID")),
             clean(record.get("filename")),
             clean(fields.get("姓名")),
             clean(fields.get("性别")),
@@ -1460,11 +1510,11 @@ def write_imaging_workbook(state: dict[str, Any], records: list[dict[str, Any]])
         for cell in worksheet[row_number]:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
         if needs_review:
-            worksheet.cell(row_number, 8).fill = PatternFill("solid", fgColor="FFF0CE")
-            worksheet.cell(row_number, 8).font = Font(color="946313", bold=True)
+            worksheet.cell(row_number, 9).fill = PatternFill("solid", fgColor="FFF0CE")
+            worksheet.cell(row_number, 9).font = Font(color="946313", bold=True)
     worksheet.freeze_panes = "A2"
     worksheet.auto_filter.ref = worksheet.dimensions
-    for column, width in enumerate((24, 13, 9, 9, 70, 48, 18, 24), start=1):
+    for column, width in enumerate((18, 24, 13, 9, 9, 70, 48, 18, 24), start=1):
         worksheet.column_dimensions[chr(64 + column)].width = width
     output_path = state["job_dir"] / state["output_relative"]
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1516,8 +1566,17 @@ def process_imaging_job(
             (state["job_dir"] / json_relative).write_text(json_text or "{}", encoding="utf-8")
             raw_urls.update(markdown=file_url(job_id, markdown_relative), json=file_url(job_id, json_relative))
 
-            fields, needs_review = parse_imaging_fields(markdown_text, json_text, original_name)
+            fields, _ = parse_imaging_fields(markdown_text, json_text, original_name)
             ocr_warnings: list[str] = []
+            if not fields["病人ID"]:
+                try:
+                    patient_id_text = request_imaging_patient_id_ocr(ocr_url, source_path)
+                    patient_id_relative = Path("imaging_ocr") / f"{stem}_patient_id.txt"
+                    (state["job_dir"] / patient_id_relative).write_text(patient_id_text, encoding="utf-8")
+                    raw_urls["patient_id_text"] = file_url(job_id, patient_id_relative)
+                    fields["病人ID"] = extract_imaging_patient_id(patient_id_text)
+                except Exception as patient_id_error:
+                    ocr_warnings.append(f"病人ID右上角补充识别失败：{patient_id_error}")
             if not fields["超声所见"] or not fields["超声诊断"]:
                 try:
                     body_text = request_imaging_body_ocr(ocr_url, source_path)
@@ -1536,13 +1595,9 @@ def process_imaging_job(
                             ("超声诊断", "诊断意见"),
                             ("备注", "录入员", "诊断医生", "审核医生", "时间", "此报告仅供临床参考"),
                         )
-                    needs_review = [key for key in IMAGING_FIELD_KEYS if not fields[key]]
-                    if fields["检查时间"]:
-                        _, date_complete = normalize_imaging_date(fields["检查时间"])
-                        if not date_complete and "检查时间" not in needs_review:
-                            needs_review.append("检查时间")
                 except Exception as body_error:
                     ocr_warnings.append(f"正文补充识别失败：{body_error}")
+            needs_review = imaging_record_needs_review({"fields": fields})
             records.append({
                 "id": f"imaging-{index:03d}",
                 "filename": original_name,

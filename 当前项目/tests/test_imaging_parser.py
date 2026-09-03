@@ -24,7 +24,7 @@ def imaging_payload(date_text: str = "2026年07月13日") -> str:
                     "block_label": "table",
                     "block_content": (
                         "<table>"
-                        "<tr><td>姓名</td><td>张三</td><td>性别</td><td>女</td><td>年龄</td><td>23岁</td></tr>"
+                        "<tr><td>病人ID</td><td>PID-2026-001</td><td>姓名</td><td>张三</td><td>性别</td><td>女</td><td>年龄</td><td>23岁</td></tr>"
                         "<tr><td colspan='6'>超声所见：子宫前位，内膜厚0.8cm。</td></tr>"
                         "<tr><td colspan='6'>超声诊断：子宫附件未见明显异常</td></tr>"
                         "</table>"
@@ -45,6 +45,7 @@ class ImagingParserTests(unittest.TestCase):
     def test_extracts_requested_ultrasound_fields(self):
         fields, needs_review = parse_imaging_fields("", imaging_payload(), "扫描件.pdf")
 
+        self.assertEqual(fields["病人ID"], "PID-2026-001")
         self.assertEqual(fields["姓名"], "张三")
         self.assertEqual(fields["性别"], "女")
         self.assertEqual(fields["年龄"], "23")
@@ -52,6 +53,16 @@ class ImagingParserTests(unittest.TestCase):
         self.assertEqual(fields["超声诊断"], "子宫附件未见明显异常")
         self.assertEqual(fields["检查时间"], "2026-07-13")
         self.assertEqual(needs_review, [])
+
+    def test_extracts_patient_id_from_markdown_when_json_has_only_an_unrelated_title(self):
+        json_with_title_only = json.dumps(
+            {"parsing_res_list": [{"block_id": 0, "block_label": "title", "block_content": "妇科超声诊断报告单"}]},
+            ensure_ascii=False,
+        )
+
+        fields, _ = parse_imaging_fields("病人ID：MARKDOWN-2026", json_with_title_only, "扫描件.pdf")
+
+        self.assertEqual(fields["病人ID"], "MARKDOWN-2026")
 
     def test_keeps_incomplete_date_visible_and_marks_review(self):
         fields, needs_review = parse_imaging_fields("", imaging_payload("2026年07月0日"), "扫描件.pdf")
@@ -87,12 +98,15 @@ class ImagingParserTests(unittest.TestCase):
             state = {"job_dir": Path(directory), "output_relative": Path("output/result.xlsx")}
             output_path = write_imaging_workbook(state, records)
             workbook = load_workbook(output_path, read_only=True)
-            worksheet = workbook["影像识别结果"]
-            self.assertEqual([cell.value for cell in worksheet[1]], ["文件名", "姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间", "需核对字段"])
-            self.assertEqual(worksheet.cell(2, 2).value, "张三")
-            self.assertEqual(worksheet.cell(2, 7).value, "2026-07-13")
-            self.assertIsNone(worksheet.cell(2, 8).value)
-            workbook.close()
+            try:
+                worksheet = workbook["影像识别结果"]
+                self.assertEqual([cell.value for cell in worksheet[1]], ["病人ID", "文件名", "姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间", "需核对字段"])
+                self.assertEqual(worksheet.cell(2, 1).value, "PID-2026-001")
+                self.assertEqual(worksheet.cell(2, 3).value, "张三")
+                self.assertEqual(worksheet.cell(2, 8).value, "2026-07-13")
+                self.assertIsNone(worksheet.cell(2, 9).value)
+            finally:
+                workbook.close()
 
     def test_imaging_job_processes_and_saves_review(self):
         response = Mock(ok=True, status_code=200)
@@ -163,8 +177,63 @@ class ImagingParserTests(unittest.TestCase):
             record = local_service.JOBS[job_id]["records"][0]
             self.assertEqual(record["fields"]["超声所见"], "子宫前位，内膜厚0.8cm。")
             self.assertEqual(record["fields"]["超声诊断"], "盆腔积液")
-            self.assertEqual(record["needs_review"], [])
+            self.assertEqual(record["needs_review"], ["病人ID"])
             self.assertIn("body_text", record["raw_files"])
+
+    def test_imaging_job_uses_upper_right_ocr_when_layout_ocr_omits_patient_id(self):
+        response = Mock(ok=True, status_code=200)
+        response.json.return_value = {"success": True, "markdown": "", "json_text": imaging_payload().replace("<td>病人ID</td><td>PID-2026-001</td>", "")}
+        with tempfile.TemporaryDirectory() as directory, patch.object(local_service, "request_cloud_ocr", return_value=response), patch.object(local_service, "request_imaging_patient_id_ocr", return_value="病人ID：RIGHT-7788"):
+            job_id = "c" * 32
+            job_dir = Path(directory) / job_id
+            source = job_dir / "input" / "扫描件.pdf"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"%PDF-1.4 synthetic")
+            local_service.JOBS[job_id] = {
+                "job_id": job_id,
+                "kind": "imaging",
+                "processing_mode": "accurate",
+                "status": "queued",
+                "job_dir": job_dir,
+                "output_relative": Path("output/result.xlsx"),
+                "total_files": 1,
+                "completed_files": 0,
+                "records": [],
+            }
+
+            process_imaging_job(job_id, "http://ocr.example", [(source, "扫描件.pdf")], "accurate")
+
+            record = local_service.JOBS[job_id]["records"][0]
+            self.assertEqual(record["fields"]["病人ID"], "RIGHT-7788")
+            self.assertIn("patient_id_text", record["raw_files"])
+
+    def test_imaging_job_keeps_ambiguous_patient_id_for_manual_review(self):
+        response = Mock(ok=True, status_code=200)
+        response.json.return_value = {"success": True, "markdown": "", "json_text": imaging_payload().replace("<td>病人ID</td><td>PID-2026-001</td>", "")}
+        with tempfile.TemporaryDirectory() as directory, patch.object(local_service, "request_cloud_ocr", return_value=response), patch.object(local_service, "request_imaging_patient_id_ocr", return_value="病人ID：12 ?8"):
+            job_id = "d" * 32
+            job_dir = Path(directory) / job_id
+            source = job_dir / "input" / "扫描件.pdf"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"%PDF-1.4 synthetic")
+            local_service.JOBS[job_id] = {
+                "job_id": job_id,
+                "kind": "imaging",
+                "processing_mode": "accurate",
+                "status": "queued",
+                "job_dir": job_dir,
+                "output_relative": Path("output/result.xlsx"),
+                "total_files": 1,
+                "completed_files": 0,
+                "records": [],
+            }
+
+            process_imaging_job(job_id, "http://ocr.example", [(source, "扫描件.pdf")], "accurate")
+
+            record = local_service.JOBS[job_id]["records"][0]
+            self.assertEqual(record["fields"]["病人ID"], "")
+            self.assertIn("病人ID", record["needs_review"])
+            self.assertIn("patient_id_text", record["raw_files"])
 
 
 if __name__ == "__main__":

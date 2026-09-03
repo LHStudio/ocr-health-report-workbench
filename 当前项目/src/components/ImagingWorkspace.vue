@@ -3,7 +3,7 @@
     <header class="workspace-workbar">
       <div class="workspace-workbar-context">
         <strong>影像识别</strong>
-        <span>{{ records.length ? `${records.length} 份超声报告 · ${reviewRecordCount} 份待核对` : '批量提取姓名、性别、年龄、超声所见、超声诊断和检查时间' }}</span>
+        <span>{{ records.length ? `${records.length} 份超声报告 · ${reviewRecordCount} 份待核对` : '批量提取病人ID、姓名、性别、年龄、超声所见、超声诊断和检查时间' }}</span>
       </div>
       <div class="workspace-workbar-actions">
         <button :class="['workspace-settings-button', { 'needs-attention': !serverUrl }]" type="button" aria-label="打开影像识别设置" @click="settingsOpen = true"><span aria-hidden="true">⚙</span><span class="settings-button-label">设置</span></button>
@@ -44,23 +44,24 @@
 
     <section v-if="records.length" class="card people-card">
       <div class="section-title imaging-review-title"><div><span class="step">2</span><h2>逐份核对识别结果</h2></div><div class="title-actions imaging-review-actions"><span :class="['imaging-review-summary', { clear: reviewRecordCount === 0 }]">{{ reviewRecordCount ? `${reviewRecordCount} 份待核对` : '字段完整' }}</span><button class="primary-button imaging-export-button" type="button" :disabled="saving" @click="saveAndDownload">{{ saving ? '正在导出…' : '导出 Excel' }}</button></div></div>
-      <p class="hint">黄色记录存在缺失或格式不完整字段。扫描件右侧被裁切时，系统会保留可见日期并提示核对，不会猜测缺失数字。</p>
+      <p class="hint">黄色记录存在缺失或格式不完整字段。病人ID会优先读取版面 OCR；缺失时会高分辨率补充识别右上角，但不会猜测模糊字符。</p>
       <div class="review-layout imaging-review">
         <aside class="person-list">
-          <div class="person-list-toolbar"><div class="person-list-toolbar-head"><span>人员列表</span><strong>{{ filteredRecords.length }} / {{ records.length }} 人</strong></div><label class="person-list-search"><span class="sr-only">搜索影像人员</span><input v-model="recordSearch" type="search" placeholder="搜索姓名或文件名" /></label><div class="person-list-options"><span>{{ recordPageRange }}</span><label>每页 <select v-model.number="recordPageSize"><option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }} 人</option></select></label></div></div>
+          <div class="person-list-toolbar"><div class="person-list-toolbar-head"><span>人员列表</span><strong>{{ filteredRecords.length }} / {{ records.length }} 人</strong></div><label class="person-list-search"><span class="sr-only">搜索影像人员</span><input v-model="recordSearch" type="search" placeholder="搜索病人ID、姓名或文件名" /></label><div class="person-list-options"><span>{{ recordPageRange }}</span><label>每页 <select v-model.number="recordPageSize"><option v-for="size in pageSizeOptions" :key="size" :value="size">{{ size }} 人</option></select></label></div></div>
           <p v-if="!filteredRecords.length" class="person-list-empty">没有找到匹配的人员或报告文件。</p>
           <button v-for="record in pagedRecords" :key="record.id" type="button" :class="['person-item', { active: selectedRecordId === record.id, 'has-review-items': recordNeedsReview(record).length }]" @click="selectedRecordId = record.id">
             <strong>{{ record.fields.姓名 || filenameStem(record.filename) }}</strong>
             <span>{{ record.filename }}</span>
-            <span :class="['person-review-count', { clear: !recordNeedsReview(record).length }]">{{ recordNeedsReview(record).length ? `${recordNeedsReview(record).join('、')}待核对` : '6 项字段完整' }}</span>
+            <span :class="['person-review-count', { clear: !recordNeedsReview(record).length }]">{{ recordNeedsReview(record).length ? `${recordNeedsReview(record).join('、')}待核对` : '7 项字段完整' }}</span>
           </button>
           <nav v-if="filteredRecords.length" class="person-list-pagination" aria-label="影像人员分页"><button type="button" :disabled="recordPage <= 1" @click="setRecordPage(recordPage - 1)">上一页</button><span>第 {{ recordPage }} / {{ recordPageCount }} 页</span><button type="button" :disabled="recordPage >= recordPageCount" @click="setRecordPage(recordPage + 1)">下一页</button></nav>
         </aside>
         <div v-if="selectedRecord" class="person-detail imaging-detail">
           <div class="detail-head"><div><h3>{{ selectedRecord.fields.姓名 || filenameStem(selectedRecord.filename) }}</h3><p>{{ selectedRecord.filename }}</p></div><span :class="['match-badge', { warning: recordNeedsReview(selectedRecord).length }]">{{ recordNeedsReview(selectedRecord).length ? `${recordNeedsReview(selectedRecord).length} 项待核对` : '字段完整' }}</span></div>
-          <div class="ocr-downloads"><span>OCR 原始结果：</span><a v-if="selectedRecord.raw_files?.excel" :href="selectedRecord.raw_files.excel" download>Excel</a><a v-if="selectedRecord.raw_files?.markdown" :href="selectedRecord.raw_files.markdown" download>Markdown</a><a v-if="selectedRecord.raw_files?.json" :href="selectedRecord.raw_files.json" download>JSON</a><a v-if="selectedRecord.raw_files?.body_text" :href="selectedRecord.raw_files.body_text" download>正文补充 OCR</a></div>
+          <div class="ocr-downloads"><span>OCR 原始结果：</span><a v-if="selectedRecord.raw_files?.excel" :href="selectedRecord.raw_files.excel" download>Excel</a><a v-if="selectedRecord.raw_files?.markdown" :href="selectedRecord.raw_files.markdown" download>Markdown</a><a v-if="selectedRecord.raw_files?.json" :href="selectedRecord.raw_files.json" download>JSON</a><a v-if="selectedRecord.raw_files?.patient_id_text" :href="selectedRecord.raw_files.patient_id_text" download>病人ID补充 OCR</a><a v-if="selectedRecord.raw_files?.body_text" :href="selectedRecord.raw_files.body_text" download>正文补充 OCR</a></div>
           <p v-for="warning in selectedRecord.warnings || []" :key="warning" class="imaging-ocr-warning">{{ warning }}</p>
           <div class="imaging-fields-grid">
+            <label :class="{ 'needs-field-review': !selectedRecord.fields.病人ID }">病人ID<input v-model.trim="selectedRecord.fields.病人ID" class="value-input" placeholder="右上角未识别，请人工填写" /></label>
             <label :class="{ 'needs-field-review': !selectedRecord.fields.姓名 }">姓名<input v-model.trim="selectedRecord.fields.姓名" class="value-input" placeholder="未识别，请人工填写" /></label>
             <label :class="{ 'needs-field-review': !selectedRecord.fields.性别 }">性别<select v-model="selectedRecord.fields.性别"><option value="">请选择</option><option value="女">女</option><option value="男">男</option></select></label>
             <label :class="{ 'needs-field-review': !selectedRecord.fields.年龄 }">年龄<input v-model.trim="selectedRecord.fields.年龄" class="value-input" inputmode="numeric" placeholder="未识别" /></label>
@@ -110,13 +111,13 @@ const pagedRecords = computed(() => { const start = (recordPage.value - 1) * rec
 const recordPageRange = computed(() => { if (!filteredRecords.value.length) return '0 人'; const start = (recordPage.value - 1) * recordPageSize.value + 1; const end = Math.min(start + recordPageSize.value - 1, filteredRecords.value.length); return `显示 ${start}–${end}，共 ${filteredRecords.value.length} 人` })
 
 function filenameStem(filename) { return String(filename || '').replace(/\.pdf$/i, '') }
-function recordSearchText(record) { const fields = record?.fields || {}; return `${fields.姓名 || ''} ${record?.filename || ''} ${record?.id || ''}`.toLocaleLowerCase('zh-CN') }
+function recordSearchText(record) { const fields = record?.fields || {}; return `${fields.病人ID || ''} ${fields.姓名 || ''} ${record?.filename || ''} ${record?.id || ''}`.toLocaleLowerCase('zh-CN') }
 function ensureRecordSelectionOnPage() { if (!pagedRecords.value.some((record) => record.id === selectedRecordId.value) && pagedRecords.value[0]) selectedRecordId.value = pagedRecords.value[0].id }
 function setRecordPage(page) { recordPage.value = Math.min(Math.max(1, page), recordPageCount.value); ensureRecordSelectionOnPage() }
 function fileKey(file) { return file.webkitRelativePath || file.name }
 function validDate(value) { const match = String(value || '').trim().match(/^(20\d{2})-(\d{2})-(\d{2})$/); if (!match) return false; const date = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00`); return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(match[1]) && date.getMonth() + 1 === Number(match[2]) && date.getDate() === Number(match[3]) }
 function needsDateReview(value) { return !validDate(value) }
-function recordNeedsReview(record) { const fields = record?.fields || {}; const missing = ['姓名', '性别', '年龄', '超声所见', '超声诊断'].filter((key) => !String(fields[key] || '').trim()); if (needsDateReview(fields.检查时间)) missing.push('检查时间'); return missing }
+function recordNeedsReview(record) { const fields = record?.fields || {}; const missing = ['病人ID', '姓名', '性别', '年龄', '超声所见', '超声诊断'].filter((key) => !String(fields[key] || '').trim()); if (needsDateReview(fields.检查时间)) missing.push('检查时间'); return missing }
 function setFiles(fileList, mode) { files.value = Array.from(fileList || []).filter((file) => /\.pdf$/i.test(file.name)); inputMode.value = mode; records.value = []; selectedRecordId.value = ''; recordSearch.value = ''; recordPage.value = 1; errorMessage.value = ''; successMessage.value = '' }
 function selectFiles(event) { setFiles(event.target.files, 'files') }
 function selectFolder(event) { setFiles(event.target.files, 'folder') }
