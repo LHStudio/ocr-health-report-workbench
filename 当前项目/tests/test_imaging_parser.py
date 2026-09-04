@@ -235,6 +235,40 @@ class ImagingParserTests(unittest.TestCase):
             self.assertIn("病人ID", record["needs_review"])
             self.assertIn("patient_id_text", record["raw_files"])
 
+    def test_fast_imaging_job_uses_only_layout_ocr_when_fields_are_missing(self):
+        response = Mock(ok=True, status_code=200)
+        response.json.return_value = {
+            "success": True,
+            "markdown": "",
+            "json_text": json.dumps({"parsing_res_list": [{"block_id": 0, "block_content": "妇科超声诊断报告单"}]}, ensure_ascii=False),
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.object(local_service, "request_cloud_ocr", return_value=response), patch.object(local_service, "request_imaging_patient_id_ocr", side_effect=AssertionError("快速模式不应补充病人ID OCR")), patch.object(local_service, "request_imaging_body_ocr", side_effect=AssertionError("快速模式不应补充正文 OCR")):
+            job_id = "e" * 32
+            job_dir = Path(directory) / job_id
+            source = job_dir / "input" / "扫描件.pdf"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"%PDF-1.4 synthetic")
+            local_service.JOBS[job_id] = {
+                "job_id": job_id,
+                "kind": "imaging",
+                "processing_mode": "fast",
+                "status": "queued",
+                "job_dir": job_dir,
+                "output_relative": Path("output/result.xlsx"),
+                "total_files": 1,
+                "completed_files": 0,
+                "records": [],
+            }
+
+            process_imaging_job(job_id, "http://ocr.example", [(source, "扫描件.pdf")], "fast")
+
+            record = local_service.JOBS[job_id]["records"][0]
+            self.assertEqual(record["fields"]["病人ID"], "")
+            self.assertIn("病人ID", record["needs_review"])
+            self.assertNotIn("patient_id_text", record["raw_files"])
+            self.assertNotIn("body_text", record["raw_files"])
+            self.assertEqual(record["warnings"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

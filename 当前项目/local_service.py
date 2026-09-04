@@ -1568,7 +1568,7 @@ def process_imaging_job(
 
             fields, _ = parse_imaging_fields(markdown_text, json_text, original_name)
             ocr_warnings: list[str] = []
-            if not fields["病人ID"]:
+            if processing_mode != "fast" and not fields["病人ID"]:
                 try:
                     patient_id_text = request_imaging_patient_id_ocr(ocr_url, source_path)
                     patient_id_relative = Path("imaging_ocr") / f"{stem}_patient_id.txt"
@@ -1577,7 +1577,7 @@ def process_imaging_job(
                     fields["病人ID"] = extract_imaging_patient_id(patient_id_text)
                 except Exception as patient_id_error:
                     ocr_warnings.append(f"病人ID右上角补充识别失败：{patient_id_error}")
-            if not fields["超声所见"] or not fields["超声诊断"]:
+            if processing_mode != "fast" and (not fields["超声所见"] or not fields["超声诊断"]):
                 try:
                     body_text = request_imaging_body_ocr(ocr_url, source_path)
                     body_relative = Path("imaging_ocr") / f"{stem}_body.txt"
