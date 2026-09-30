@@ -80,11 +80,13 @@
         </section>
         <section v-if="nutritionReviewOpen" class="nutrition-dialog-backdrop" @click.self="closeNutritionReview">
           <section class="nutrition-report-panel nutrition-report-dialog" role="dialog" aria-modal="true" aria-labelledby="nutrition-report-title">
-          <div class="subsection-title"><div><h4 id="nutrition-report-title">营养报告导出</h4><p>报告文件在本机生成；食物营养值优先查询独立云端营养库，无法访问时自动使用本地营养库。年龄、性别和活动量会影响能量评价。</p></div><button class="dialog-close" type="button" aria-label="关闭营养评价窗口" @click="closeNutritionReview">×</button></div>
+          <div class="subsection-title"><div><h4 id="nutrition-report-title">营养报告导出</h4><p>机器初稿依据运动员膳食干预参数V2.0，仅适用训练期。运动类型、体重和年龄决定参考目标；文档未规定的项目不自动判定。报告在本机生成。</p></div><button class="dialog-close" type="button" aria-label="关闭营养评价窗口" @click="closeNutritionReview">×</button></div>
           <div class="general-grid report-profile-grid">
             <label>姓名<input v-model="reportProfile.name" class="value-input" placeholder="姓名（可选）" /></label>
             <label>年龄<input v-model="reportProfile.age" class="value-input" inputmode="numeric" placeholder="岁（可选）" /></label>
             <label>项目种类<input v-model="reportProfile.projectType" class="value-input" placeholder="例如：女足（可选）" /></label>
+            <label>运动类型<select v-model="reportProfile.athleteType" aria-label="运动类型"><option value="">按项目精确匹配／待确认</option><option value="strength">力量为主</option><option value="team">团体（有氧+力量）</option><option value="endurance">有氧为主</option></select></label>
+            <label>训练阶段<select v-model="reportProfile.trainingPhase" aria-label="训练阶段"><option value="">按当前状态匹配／待确认</option><option value="training">训练期</option><option value="competition">赛期（不适用）</option><option value="other">其他（不适用）</option></select></label>
             <label>训练年限<input v-model="reportProfile.trainingYears" class="value-input" placeholder="例如：5年（可选）" /></label>
             <label>当前状态<input v-model="reportProfile.currentStatus" class="value-input" placeholder="例如：正常训练（可选）" /></label>
             <label>性别<select v-model="reportProfile.gender"><option value="">未填写</option><option value="female">女</option><option value="male">男</option></select></label>
@@ -112,6 +114,12 @@
             </div>
           </div>
           <section class="nutrition-evaluation-review" aria-label="营养评价人工复核">
+            <div v-if="nutritionPreview?.athlete_evaluation" class="nutrition-preview-panel">
+              <h5>{{ nutritionPreview.athlete_evaluation.source }} · {{ nutritionPreview.athlete_evaluation.athlete_label }}</h5>
+              <p v-for="note in nutritionPreview.athlete_evaluation.warnings" :key="note" class="hint">{{ note }}</p>
+              <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>机器初稿</th></tr></thead><tbody><tr v-for="row in nutritionPreview.athlete_evaluation.rows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}</td><td>{{ row.gap ?? '—' }}</td><td>{{ row.machine_evaluation }}</td></tr></tbody></table></div>
+              <p class="hint">{{ nutritionPreview.athlete_evaluation.gap_note }}</p>
+            </div>
             <div class="subsection-title"><div><h4>营养评价人工复核</h4><p>机器评价仅作初稿。请按实际情况逐项选择偏少、适中、偏多或其他自定义评价，并编辑最终建议和解读。</p></div><div class="review-header-actions"><button class="secondary-button mini-button" type="button" :disabled="!nutritionPreview" @click="resetReportReviewFromMachine">重载机器初稿</button></div></div>
             <p v-if="!nutritionPreview || previewLoading" class="hint">正在计算机器初稿，完成后可复核。</p>
             <template v-else>
@@ -182,7 +190,7 @@ const pagedNutritionPeople = computed(() => { const start = (nutritionPage.value
 const nutritionPageRange = computed(() => { if (!filteredNutritionPeople.value.length) return '0 人'; const start = (nutritionPage.value - 1) * nutritionPageSize.value + 1; const end = Math.min(start + nutritionPageSize.value - 1, filteredNutritionPeople.value.length); return `显示 ${start}–${end}，共 ${filteredNutritionPeople.value.length} 人` })
 const bmiValue = computed(() => { const height = Number(reportProfile.value.height); const weight = Number(reportProfile.value.weight); if (!(height > 0 && weight > 0)) return ''; return (weight / ((height / 100) ** 2)).toFixed(1) })
 const bmiStatus = computed(() => { const bmi = Number(bmiValue.value); if (!bmi) return ''; if (bmi < 18.5) return '偏瘦'; if (bmi < 24) return '正常'; if (bmi < 28) return '超重'; return '肥胖' })
-const energyStandardNote = computed(() => { const standard = nutritionPreview.value?.nutrition?.energy?.standard; if (standard) return 'kcal/天'; if (reportProfile.value.gender === 'male') return '当前迁移的 EER 表仅含女性标准'; return '补全年龄、性别和活动量后显示' })
+const energyStandardNote = computed(() => 'V2.0未提供总能量标准')
 const nutritionDataSource = computed(() => nutritionPreview.value?.food_data_source || {})
 const categoryReviewRows = computed(() => Object.entries(nutritionPreview.value?.category_result || {}).map(([key, info]) => ({ key, label: key, value: info?.value ?? 0, machineEvaluation: machineEvaluationText(info?.evaluation) })))
 const nutrientReviewRows = computed(() => {
@@ -190,6 +198,7 @@ const nutrientReviewRows = computed(() => {
   return [
     { key: 'energyEvaluation', label: '总能量', value: nutrition.energy?.value ?? '—', unit: 'kcal/天', machineEvaluation: machineEvaluationText(nutrition.energy?.evaluation) },
     { key: 'calciumEvaluation', label: '钙', value: nutrition.calcium?.value ?? '—', unit: 'mg/天', machineEvaluation: machineEvaluationText(nutrition.calcium?.evaluation) },
+    ...(nutritionPreview.value?.athlete_evaluation?.rows || []).filter((row) => ['protein', 'carbohydrate', 'fat'].includes(row.key)).map((row) => ({ key: `${row.key}Evaluation`, label: row.label, value: row.actual ?? '—', unit: row.unit, machineEvaluation: machineEvaluationText(row.machine_evaluation) })),
   ]
 })
 const canExportReviewedReport = computed(() => !!(selected.value && nutritionPreview.value && !previewLoading.value))
@@ -235,11 +244,11 @@ function setBodyCompositionFiles(files, nextMode) { bodyCompositionMode.value = 
 function selectBodyCompositionFiles(event) { setBodyCompositionFiles(event.target.files, 'files') }
 function selectBodyCompositionFolder(event) { setBodyCompositionFiles(event.target.files, 'folder') }
 function selectAppendBodyCompositionFiles(event) { appendBodyCompositionFiles.value = Array.from(event.target.files || []).filter((file) => /\.pdf$/i.test(file.name)); bodyCompositionMessage.value = ''; bodyCompositionError.value = false }
-function emptyReportProfile() { return { name: '', age: '', projectType: '', trainingYears: '', currentStatus: '', gender: '', height: '', weight: '', fatFreeMass: '', activityLevel: '' } }
+function emptyReportProfile() { return { name: '', age: '', projectType: '', athleteType: '', trainingPhase: '', trainingYears: '', currentStatus: '', gender: '', height: '', weight: '', fatFreeMass: '', activityLevel: '' } }
 function emptyBodyRecordDraft() { return { filename: '', name: '', gender: '', age: '', height: '', weight: '', fatFreeMass: '' } }
 function emptyReportReview() { return { categoryEvaluations: {}, energyEvaluation: '', calciumEvaluation: '', overallSuggestions: '', interpretation: '', machineSeeded: false, manualEntryFields: {} } }
 function copyReportReview(review) { return { ...emptyReportReview(), ...(review || {}), categoryEvaluations: { ...(review?.categoryEvaluations || {}) }, manualEntryFields: { ...(review?.manualEntryFields || {}) } } }
-function machineEvaluationText(value) { const text = String(value || '').trim(); if (text === '不足') return '偏少'; if (text === '偏高') return '偏多'; if (text === '适宜') return '适中'; return '' }
+function machineEvaluationText(value) { const text = String(value || '').trim(); if (text === '不足') return '偏少'; if (text === '偏高') return '偏多'; if (text === '适宜') return '适中'; return text === '-' ? '' : text }
 function machineInterpretation(preview) {
   const nutrition = preview?.nutrition || {}; const lines = []
   if (nutrition.energy?.evaluation === '不足') lines.push('能量摄入偏少，建议结合训练量补充主食等碳水化合物来源。')
@@ -248,10 +257,19 @@ function machineInterpretation(preview) {
   return lines.join('\n') || '请结合受访者训练、疾病和补充剂使用情况进行最终解读。'
 }
 function seedReportReviewFromPreview() {
-  if (!selected.value || !nutritionPreview.value || reportReview.value.machineSeeded) return
+  if (!selected.value || !nutritionPreview.value) return
   const preview = nutritionPreview.value; const categoryEvaluations = {}
   Object.entries(preview.category_result || {}).forEach(([category, info]) => { categoryEvaluations[category] = machineEvaluationText(info?.evaluation) })
-  reportReview.value = { ...reportReview.value, categoryEvaluations, energyEvaluation: machineEvaluationText(preview.nutrition?.energy?.evaluation), calciumEvaluation: machineEvaluationText(preview.nutrition?.calcium?.evaluation), overallSuggestions: (preview.suggestions || []).join('\n') || '请结合实际饮食、训练与健康状况给出建议。', interpretation: machineInterpretation(preview), machineSeeded: true }
+  const next = { categoryEvaluations, energyEvaluation: machineEvaluationText(preview.nutrition?.energy?.evaluation), calciumEvaluation: machineEvaluationText(preview.nutrition?.calcium?.evaluation), overallSuggestions: (preview.suggestions || []).join('\n') || '请结合实际饮食、训练与健康状况给出建议。', interpretation: machineInterpretation(preview) }
+  for (const row of preview.athlete_evaluation?.rows || []) if (['protein', 'carbohydrate', 'fat'].includes(row.key)) next[`${row.key}Evaluation`] = machineEvaluationText(row.machine_evaluation)
+  const previous = reportReview.value.lastMachine || {}
+  const merged = { ...reportReview.value, categoryEvaluations: { ...reportReview.value.categoryEvaluations } }
+  for (const [key, value] of Object.entries(next)) {
+    if (key === 'categoryEvaluations') {
+      for (const [category, evaluation] of Object.entries(value)) if (!reportReview.value.machineSeeded || merged.categoryEvaluations[category] === previous.categoryEvaluations?.[category]) merged.categoryEvaluations[category] = evaluation
+    } else if (!reportReview.value.machineSeeded || merged[key] === previous[key]) merged[key] = value
+  }
+  reportReview.value = { ...merged, lastMachine: next, machineSeeded: true }
   reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
 }
 function resetReportReviewFromMachine() { reportReview.value = emptyReportReview(); seedReportReviewFromPreview() }
@@ -268,7 +286,7 @@ function setEvaluation(kind, key, selection) {
   delete reportReview.value.manualEntryFields[fieldKey]
   target[key] = selection
 }
-function manualEvaluationsPayload() { return { categoryEvaluations: { ...reportReview.value.categoryEvaluations }, energyEvaluation: String(reportReview.value.energyEvaluation || '').trim(), calciumEvaluation: String(reportReview.value.calciumEvaluation || '').trim(), overallSuggestions: String(reportReview.value.overallSuggestions || '').trim(), interpretation: String(reportReview.value.interpretation || '').trim() } }
+function manualEvaluationsPayload() { return { categoryEvaluations: { ...reportReview.value.categoryEvaluations }, ...Object.fromEntries(['energyEvaluation', 'calciumEvaluation', 'proteinEvaluation', 'carbohydrateEvaluation', 'fatEvaluation', 'overallSuggestions', 'interpretation'].map((key) => [key, String(reportReview.value[key] || '').trim()])) } }
 function openNutritionReview() { reportErrorMessage.value = ''; reportSuccessMessage.value = ''; nutritionReviewOpen.value = true; scheduleNutritionPreview() }
 function closeNutritionReview() { nutritionReviewOpen.value = false }
 function formatSourceTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString('zh-CN', { hour12: false }) }
@@ -388,7 +406,7 @@ async function saveCurrentReview() { if (!jobId.value) return; saving.value = tr
 async function save() { saving.value = true; try { const r = await fetch(`/local-api/nutrition/jobs/${jobId.value}/save-review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(currentReviewPayload()) }); const d = await r.json(); if (!r.ok || !d.success) throw new Error(d.detail || '保存失败'); successMessage.value = d.message; window.location.assign(d.output_url) } catch (e) { errorMessage.value = e.message } finally { saving.value = false } }
 let previewTimer = 0
 let previewRequest = 0
-function scheduleNutritionPreview() { window.clearTimeout(previewTimer); previewTimer = window.setTimeout(refreshNutritionPreview, 350) }
+function scheduleNutritionPreview() { window.clearTimeout(previewTimer); ++previewRequest; previewLoading.value = true; previewTimer = window.setTimeout(refreshNutritionPreview, 350) }
 async function refreshNutritionPreview() {
   if (!selected.value) { nutritionPreview.value = null; return }
   const requestId = ++previewRequest; previewLoading.value = true; previewError.value = ''

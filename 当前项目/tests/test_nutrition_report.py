@@ -161,7 +161,8 @@ class NutritionReportServiceTest(unittest.TestCase):
                 page_texts = [page.get_text() for page in pdf_document]
                 pdf_text = "\n".join(page_texts)
                 image_counts = [len(page.get_images(full=True)) for page in pdf_document]
-            self.assertEqual(3, len(page_texts))
+            self.assertEqual(4, len(page_texts))
+            self.assertIn("运动员专项膳食评价", page_texts[3])
             self.assertIn("姓名", page_texts[0])
             self.assertIn("测试甲", page_texts[0])
             self.assertIn("年龄", page_texts[0])
@@ -191,12 +192,12 @@ class NutritionReportServiceTest(unittest.TestCase):
             self.assertIn("营养数据来源", page_texts[-1])
             self.assertIn("OCR 换算与数据质量说明", page_texts[-1])
             self.assertEqual(4, pdf_result["usable_food_count"])
-            self.assertEqual(2100, pdf_result["report_data"]["nutrition"]["energy"]["standard"])
+            self.assertIsNone(pdf_result["report_data"]["nutrition"]["energy"]["standard"])
 
             workbook = load_workbook(excel_path, read_only=True, data_only=True)
             try:
                 self.assertEqual(
-                    ["个人信息", "食物明细", "分类评估", "营养总计", "建议", "OCR换算说明"],
+                    ["个人信息", "食物明细", "分类评估", "营养总计", "建议", "OCR换算说明", "运动员专项评价"],
                     workbook.sheetnames,
                 )
                 note_codes = {

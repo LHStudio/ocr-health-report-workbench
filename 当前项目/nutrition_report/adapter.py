@@ -211,6 +211,8 @@ def _build_user(person: Mapping[str, Any], overrides: Mapping[str, Any] | None) 
         "name": pick("name", "姓名", _text(person.get("id"))),
         "age": pick("age", "年龄"),
         "projectType": pick("projectType", "项目种类"),
+        "athleteType": pick("athleteType", "运动类型"),
+        "trainingPhase": pick("trainingPhase", "训练阶段"),
         "trainingYears": pick("trainingYears", "训练年限"),
         "currentStatus": pick("currentStatus", "当前状态"),
         "height": pick("height", "身高"),

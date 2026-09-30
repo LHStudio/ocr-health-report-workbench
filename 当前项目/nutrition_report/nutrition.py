@@ -1,6 +1,7 @@
 import json
 from collections import defaultdict
 from pathlib import Path
+from .athlete import evaluate_athlete
 
 DIET_RECORD_ONLY_DISCLAIMER = "以上营养成分仅根据记录饮食计算，不包含维生素、矿物质、蛋白粉等其他补充剂摄入。"
 
@@ -26,6 +27,8 @@ class NutritionService:
 
         with open(eer_path, "r", encoding="utf-8") as f:
             self.female_eer = json.load(f)
+        with open(package_root / "config" / "athlete_intervention_v2.json", encoding="utf-8") as f:
+            self.athlete_config = json.load(f)
 
     def build_report_data(self, front_json):
         user = front_json.get("user", {})
@@ -35,7 +38,7 @@ class NutritionService:
         merged_meals = self._merge_meals(meals)
         food_details, nutrition_total, unmatched_foods = self._calculate_nutrition(merged_meals, user)
         category_result = self._build_category_result_from_foods(food_details)
-        suggestions = self._generate_suggestions(category_result)
+        athlete, suggestions = evaluate_athlete(user, nutrition_total, category_result, self.athlete_config)
         interpretation = None
 
         if not auto_evaluation:
@@ -45,6 +48,14 @@ class NutritionService:
                     category_result, suggestions, nutrition_total, manual
                 )
             )
+            for row in athlete["rows"]:
+                key = row["key"]
+                if key == "vegetables":
+                    row["evaluation"] = category_result.get("蔬菜", {}).get("evaluation", row["evaluation"])
+                else:
+                    field = f"{key}Evaluation"
+                    if field in manual:
+                        row["evaluation"] = str(manual[field] or "").strip()
 
         report = {
             "user": user,
@@ -53,6 +64,7 @@ class NutritionService:
             "category_result": category_result,
             "suggestions": suggestions,
             "nutrition": nutrition_total,
+            "athlete_evaluation": athlete,
             "autoEvaluation": auto_evaluation,
             "unmatched_foods": unmatched_foods,
             "food_data_source": dict(self.food_data_source),
@@ -71,26 +83,12 @@ class NutritionService:
 
     def build_intake_preview(self, front_json):
         """复用营养计算逻辑，返回各类摄入量与营养素合计（供手动评价参考）"""
-        user = front_json.get("user", {})
-        meals = front_json.get("meals", [])
-
-        merged_meals = self._merge_meals(meals)
-        food_details, nutrition_total, unmatched_foods = self._calculate_nutrition(merged_meals, user)
-        category_result = self._build_category_result_from_foods(food_details)
-
-        return {
-            "category_result": category_result,
-            "nutrition": nutrition_total,
-            "foods": food_details,
-            "unmatched_foods": unmatched_foods,
-            "food_data_source": dict(self.food_data_source),
-        }
-
+        return self.build_report_data({**front_json, "autoEvaluation": True})
     def _apply_manual_evaluations(self, category_result, suggestions, nutrition_total, manual):
         category_evals = manual.get("categoryEvaluations") or {}
         for cat, info in category_result.items():
-            if cat in category_evals and str(category_evals[cat]).strip():
-                info["evaluation"] = str(category_evals[cat]).strip()
+            if cat in category_evals:
+                info["evaluation"] = str(category_evals[cat] or "").strip()
 
         overall = str(manual.get("overallSuggestions", "")).strip()
         suggestions = [
@@ -100,11 +98,11 @@ class NutritionService:
         ]
 
         energy_eval = str(manual.get("energyEvaluation", "")).strip()
-        if energy_eval:
+        if "energyEvaluation" in manual:
             nutrition_total["energy"]["evaluation"] = energy_eval
 
         calcium_eval = str(manual.get("calciumEvaluation", "")).strip()
-        if calcium_eval:
+        if "calciumEvaluation" in manual:
             nutrition_total["calcium"]["evaluation"] = calcium_eval
 
         interpretation = str(manual.get("interpretation", "")).strip()
@@ -175,12 +173,8 @@ class NutritionService:
                 }
             })
 
-        energy_standard = self._lookup_energy_eer(user or {})
-        if energy_standard is not None:
-            energy_eval = self._eval_energy_against_standard(total_energy, energy_standard)
-        else:
-            energy_standard = None
-            energy_eval = self._eval_nutrition(total_energy, "energy")
+        energy_standard = None
+        energy_eval = "V2.0未提供总能量标准"
 
         nutrition_total = {
             "energy": {
@@ -193,7 +187,7 @@ class NutritionService:
             "carbohydrate": round(total_carb, 2),
             "calcium": {
                 "value": round(total_calcium, 2),
-                "evaluation": self._eval_nutrition(total_calcium, "calcium")
+                "evaluation": "待专项评价"
             }
         }
 
@@ -279,7 +273,7 @@ class NutritionService:
         for cat, val in category_sum.items():
             result[cat] = {
                 "value": round(val, 1),
-                "evaluation": self._evaluate_category(cat, val)
+                "evaluation": "文档未提供该类别标准"
             }
 
         return result

@@ -232,6 +232,20 @@ class NutritionPDFBuilder:
         ]))
         story.append(energy_report)
 
+        athlete = data.get("athlete_evaluation")
+        if athlete:
+            story.extend([PageBreak(), Paragraph("运动员专项膳食评价", title)])
+            for line in [athlete["source"] + " · " + athlete["athlete_label"], *athlete["warnings"], athlete["gap_note"]]:
+                story.append(Paragraph(escape(line), quality))
+            rows = [[Paragraph(text, header) for text in ["项目", "实际摄入", "参考目标", "差值", "机器初稿", "最终评价"]]]
+            for row in athlete["rows"]:
+                actual = "—" if row["actual"] is None else f"{row['actual']:g} {row['unit']}"
+                values = [row["label"], actual, row["target"], "—" if row["gap"] is None else f"{row['gap']:+g}", row["machine_evaluation"], row["evaluation"]]
+                rows.append([Paragraph(escape(value), normal) for value in values])
+            table = Table(rows, colWidths=[24*mm, 30*mm, 32*mm, 16*mm, 37*mm, 37*mm], repeatRows=1)
+            table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F75B5"))]))
+            story.extend([Spacer(1, 3*mm), table])
+
         warnings = data.get("conversion_warnings") or []
         unmatched = data.get("unmatched_foods") or []
         source = data.get("food_data_source") or {}

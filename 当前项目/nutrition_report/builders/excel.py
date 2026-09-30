@@ -16,6 +16,20 @@ class NutritionExcelBuilder:
         self._create_nutrition_sheet(wb, data)
         self._create_suggestions_sheet(wb, data)
         self._create_conversion_notes_sheet(wb, data)
+        athlete = data.get("athlete_evaluation")
+        if athlete:
+            ws = wb.create_sheet("运动员专项评价")
+            ws.append([athlete["source"], athlete["athlete_label"], athlete["training_phase"]])
+            for note in athlete["warnings"] + [athlete["gap_note"]]:
+                ws.append([note])
+            ws.append(["项目", "实际摄入", "单位", "参考目标", "差值", "机器初稿", "最终评价"])
+            for row in athlete["rows"]:
+                ws.append([row[k] for k in ("label", "actual", "unit", "target", "gap", "machine_evaluation", "evaluation")])
+            for column in "ABCDEFG":
+                ws.column_dimensions[column].width = 30
+            for cells in ws:
+                for cell in cells:
+                    cell.alignment = Alignment(wrap_text=True, vertical="top")
 
         wb.save(output_path)
 
@@ -187,9 +201,9 @@ class NutritionExcelBuilder:
         nutrition = data.get("nutrition", {})
         rows = [
             ("总能量", nutrition.get("energy", {}).get("value", ""), "kcal/day", nutrition.get("energy", {}).get("evaluation", "")),
-            ("蛋白质", nutrition.get("protein", ""), "g", "-"),
-            ("脂肪", nutrition.get("fat", ""), "g", "-"),
-            ("碳水化合物", nutrition.get("carbohydrate", ""), "g", "-"),
+            ("蛋白质", nutrition.get("protein", ""), "g", "见运动员专项评价"),
+            ("脂肪", nutrition.get("fat", ""), "g", "供能比评价见专项表"),
+            ("碳水化合物", nutrition.get("carbohydrate", ""), "g", "见运动员专项评价"),
             ("钙", nutrition.get("calcium", {}).get("value", ""), "mg/day", nutrition.get("calcium", {}).get("evaluation", "")),
         ]
 

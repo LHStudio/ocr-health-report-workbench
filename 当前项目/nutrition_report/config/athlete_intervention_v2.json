@@ -1,0 +1,14 @@
+{
+  "source": "运动员膳食干预参数V2.0",
+  "scope": "仅训练期；参数来自用户提供文档，需营养专业人员审核。",
+  "adult_age": 18,
+  "adult_age_note": "成年分界按18岁实现，原文未明确年龄分界，需业务确认。",
+  "calcium_mg": {"adult": 1000, "minor": 1300},
+  "vegetables_g_min": 400,
+  "fat_energy_percent": [20, 30],
+  "types": {
+    "strength": {"label": "力量为主", "projects": ["举重", "摔跤", "铅球", "铁饼"], "protein": [1.7, 2.0], "carbohydrate": [5], "protein_preferred": null},
+    "team": {"label": "团体（有氧+力量）", "projects": ["足球", "女足", "男足", "篮球", "女篮", "男篮", "橄榄球"], "protein": [1.5, 2.0], "carbohydrate": [7], "protein_preferred": 1.7},
+    "endurance": {"label": "有氧为主", "projects": ["长跑", "自行车", "竞走"], "protein": [1.2], "carbohydrate": [8, 10], "protein_preferred": null}
+  }
+}
