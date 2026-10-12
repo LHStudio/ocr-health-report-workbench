@@ -174,3 +174,9 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
   .nutrition-review .person-detail { height: auto; overflow: visible; padding: 18px; }
   .nutrition-review .detail-head { position: static; margin: 0 0 16px; padding: 0 0 13px; backdrop-filter: none; }
 }
+
+/* Batch export stays readable at narrow workbench widths. */
+.nutrition-workspace .nutrition-batch-export { display: block; }
+.nutrition-batch-export .action-row { flex-wrap: wrap; width: 100%; }
+.nutrition-batch-export .action-row .primary-button { flex: 1 1 240px; width: auto; min-width: 0; white-space: normal; }
+.nutrition-batch-export .action-row select { max-width: 100%; padding: 9px; }

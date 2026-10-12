@@ -45,15 +45,16 @@ class AthleteInterventionTest(unittest.TestCase):
 
     def test_phase_and_project_gates(self):
         for phase in ("competition", "other", ""):
-            self.assertTrue(all(row["gap"] is None for row in self.rows(trainingPhase=phase).values()))
+            self.assertTrue(all(row["gap"] is None for key, row in self.rows(trainingPhase=phase).items() if key != 'vegetables'))
         self.assertIn("待选择", self.rows(athleteType="", projectType="未知项目")["protein"]["evaluation"])
         self.assertEqual("105–140 g/天", self.rows(athleteType="", projectType="女足")["protein"]["target"])
         self.assertEqual("适宜", self.rows(trainingPhase="", currentStatus="正常训练")["protein"]["evaluation"])
 
-    def test_old_category_and_energy_rules_are_not_used(self):
+    def test_categories_use_food_rules_and_energy_needs_activity_profile(self):
         report = self.report()
-        self.assertEqual("文档未提供该类别标准", report["category_result"]["蛋类"]["evaluation"])
-        self.assertEqual("V2.0未提供总能量标准", report["nutrition"]["energy"]["evaluation"])
+        self.assertEqual("不足", report["category_result"]["蛋类"]["evaluation"])
+        self.assertEqual("-", report["nutrition"]["energy"]["evaluation"])
+        self.assertIsNone(report['nutrition']['energy']['standard'])
         self.assertEqual(-300, self.rows()["vegetables"]["gap"])
 
     def test_fat_percentage_and_zero_energy(self):

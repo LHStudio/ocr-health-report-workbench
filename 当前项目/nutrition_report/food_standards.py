@@ -1,0 +1,182 @@
+"""用户2026-10-12新增标准；规则达标计数不是临床风险评分。"""
+import math
+from collections import defaultdict
+from .adapter import FOOD_REFERENCE_MAP
+
+
+def number(value):
+    try:
+        result = float(value)
+        return result if math.isfinite(result) and result >= 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def evaluate_food_standards(payload, food_db, athlete_config=None):
+    user = payload.get('user') or {}
+    config = athlete_config or {}
+    types = config.get('types', {})
+    selected = str(user.get('athleteType') or '').strip()
+    if not selected:
+        project = str(user.get('projectType') or '').strip()
+        selected = next((key for key, rule in types.items() if project in rule.get('projects', [])), '')
+    vegetable_min = max(400, number(config.get('vegetables_g_min')) or 0,
+                        number(types.get(selected, {}).get('vegetables_g_min')) or 0)
+    weight = number(user.get('weight'))
+    scale = number(user.get('foodTargetScale'))
+    scope = '' if weight and weight >= 60 else '无法判断：缺少有效体重或体重低于60kg，适用标准待确认'
+    quantity_scope = scope
+    if weight and weight > 70 and (scale is None or scale < 1):
+        quantity_scope = '仅列基础参考：体重超过70kg，待专业人员确认摄入倍率（≥1）'
+    scale = scale if weight and weight > 70 and scale is not None and scale >= 1 else 1
+    notes = [
+        '新增标准适用于60–70kg运动员；日均摄入按食物频率折算，不代表单日精确记录。',
+        '超过70kg不自动按体重线性加量；克数目标可由专业人员填写倍率，比值目标不随倍率改变。低于60kg不自动外推。',
+        '主食能量=谷类+豆类（包含豆制品）+薯类；豆类至少5%、薯类至少15%，因此谷类占比上限为80%，不是必须达到80%。',
+        '水产品占比按肉类日均重量计算；畜禽肉为肉类总量扣除水产品后的部分，包含畜肉和禽肉。',
+        '奶粉、奶酪折算鲜奶等价量（按蛋白质估计）=记录克数×该食物每100g蛋白质/鲜奶每100g蛋白质；鲜奶、酸奶按原重。折算只用于奶量评价，营养素不重复计算。',
+        '蔬菜最低400g/天，原有运动分类要求更高时取更高下限；采用最低量规则，不以先前500g封顶。',
+        '优质蛋白=肉（含水产品）+蛋+奶的蛋白质克数/所有记录食物蛋白质克数；不含补充剂。',
+        '每项定量规则达标记1、未达标记0、无法判断不计分；仅在全部定量项均可判断时显示达标率。谷类上限由豆类、薯类下限推导，达标率不作为医学综合评分。',
+    ]
+    totals = defaultdict(lambda: defaultdict(float))
+    missing = set()
+    unknown_all = False
+    source = payload.get('source_foods')
+    blanks_are_zero = payload.get('blank_food_policy') == 'not_eaten'
+    if source is not None:
+        known = {row['food'] for row in source if 'food' in row}
+        invalid = {w.get('food') for w in payload.get('conversion_warnings', []) if w.get('code') in
+                   {'unresolved_period', 'missing_quantity', 'unsupported_quantity_unit', 'missing_次数',
+                    'invalid_次数', 'negative_value', 'invalid_quantity', 'missing_食用量'}}
+        known -= invalid
+        for name, (reference, _) in FOOD_REFERENCE_MAP.items():
+            if blanks_are_zero and name not in known and name not in invalid:
+                continue  # 完成问卷未列出的食物也按未食用，不当作漏填。
+            category = food_db.get(reference, {}).get('category')
+            if not category:
+                # Only explicit non-consumption needs no nutrient lookup.
+                if not any(r.get('food') == name and r.get('status') in {'not_eaten', 'zero'} for r in source):
+                    unknown_all = True
+            elif name not in known:
+                missing.add(category)
+        unknown_all |= any(w.get('code') in {'unmapped_food', 'invalid_food_row', 'missing_food_name'}
+                           for w in payload.get('conversion_warnings', []))
+    milk_equivalent = 0
+    milk_trace = []
+    milk_protein = number(food_db.get('鲜奶', {}).get('protein'))
+    for meal in payload.get('meals') or []:
+        name = str(meal.get('name') or '')
+        info = food_db.get(name)
+        grams = number(meal.get('amount'))
+        if not info or grams is None:
+            unknown_all = True
+            continue
+        category = info.get('category') or ''
+        totals[category]['grams'] += grams
+        if category == '奶类':
+            if name in {'奶粉', '奶酪'} and grams:
+                protein = number(info.get('protein'))
+                if not milk_protein or protein is None:
+                    missing.add('奶类')
+                    milk_trace.append(f'{name}无法折算：鲜奶或该食品蛋白质数据缺失/鲜奶基准为0')
+                else:
+                    equivalent = grams * protein / milk_protein
+                    milk_equivalent += equivalent
+                    milk_trace.append(f'{name} {grams:g}g×{protein:g}/{milk_protein:g}={equivalent:.2f}g鲜奶等价量（按蛋白质估计）')
+            else:
+                milk_equivalent += grams
+        for nutrient in ('energy', 'protein'):
+            value = number(info.get(nutrient))
+            if value is None:
+                missing.add(category)
+            else:
+                totals[category][nutrient] += value * grams / 100
+
+    def complete(categories):
+        return not unknown_all and not missing.intersection(categories)
+
+    def total(categories, unit='grams'):
+        return sum(totals[cat][unit] for cat in categories)
+
+    rows = []
+
+    def add(key, label, groups, low=None, high=None, ratio=None, target=None, note='', qualitative=None, actual_override=None, advisory=False, over_label='偏高'):
+        is_ratio = ratio is not None
+        unit = '%' if is_ratio else 'g/天'
+        blocked = scope if is_ratio or qualitative is not None else quantity_scope
+        if not complete(groups):
+            actual = None
+            blocked = '-'  # 非空但无法换算的条目保留在换算说明，不误计为0。
+        elif is_ratio:
+            numerator, denominator = ratio
+            actual = numerator / denominator * 100 if denominator > 0 else None
+            if actual is None:
+                blocked = '无法判断：分母为0'
+        else:
+            actual = actual_override if actual_override is not None else total(groups)
+        lo = low * (1 if is_ratio else scale) if low is not None else None
+        hi = high * (1 if is_ratio else scale) if high is not None else None
+        if target is None:
+            target = (f'≤ {hi:g}' if lo is None else f'{lo:g}–{hi:g}' if hi is not None else f'≥ {lo:g}') + ' ' + unit
+        status, score, gap = blocked, None, None
+        if advisory:
+            # 通用建议/类别说明不依赖体重，也不把未填写的问卷视为零摄入。
+            status = qualitative(actual)
+            if blocked:
+                note = '；'.join(filter(None, (note, blocked)))
+        elif not status:
+            if qualitative is not None:
+                status = qualitative(actual)
+            elif lo is not None and actual < lo:
+                status, score, gap = '不足', 0, actual - lo
+            elif hi is not None and actual > hi:
+                status, score, gap = over_label, 0, actual - hi
+            else:
+                status, score, gap = '达标', 1, 0
+        rows.append(dict(key=key, label=label, actual=round(actual, 4) if actual is not None else None,
+                         unit=unit, target=target, gap=round(gap, 4) if gap is not None else None,
+                         score=score, machine_evaluation=status, evaluation=status, note=note))
+
+    staples = {'谷类', '豆类', '薯类'}
+    meat = {'畜禽肉', '水产品'}
+    animal = meat | {'奶类', '蛋类'}
+    staple_energy = total(staples, 'energy')
+    beans_min, tubers_min = 5, 15
+    add('nuts', '坚果', {'坚果'}, 10)
+    add('beans_energy', '豆类占主食能量', staples, beans_min,
+        ratio=(total({'豆类'}, 'energy'), staple_energy), note='分母：谷类、豆类、薯类能量合计')
+    add('tubers_energy', '薯类占主食能量', staples, tubers_min,
+        ratio=(total({'薯类'}, 'energy'), staple_energy))
+    add('grains_remainder', '谷类占主食能量', staples, high=100-beans_min-tubers_min,
+        ratio=(total({'谷类'}, 'energy'), staple_energy), over_label='超过',
+        note='上限=100%-豆类5%-薯类15%；无下限')
+    milk_note = (f'鲜奶基准蛋白质 {milk_protein:g} g/100g；' if milk_protein else '') + '；'.join(milk_trace)
+    add('milk', '奶类鲜奶等价量（按蛋白质估计）', {'奶类'}, 400, note=milk_note or '鲜奶、酸奶原重；奶粉奶酪按蛋白质折算', actual_override=milk_equivalent)
+    add('eggs', '蛋类', {'蛋类'}, 50, note='每个鸡蛋按50g；显式克数不二次折算')
+    add('seafood', '水产品占肉类重量', meat, 30,
+        ratio=(total({'水产品'}), total(meat)))
+    add('livestock_remainder', '畜禽肉', {'畜禽肉'}, target='肉类总量扣除水产品后的部分（含禽肉）',
+        qualitative=lambda _: '-', advisory=True)
+    add('fruit', '水果', {'水果'}, 200, 500)
+    add('vegetables', '蔬菜', {'蔬菜'}, vegetable_min,
+        note=f'取400g与原有分类标准的较高值：{vegetable_min:g}g/天（基础体重）')
+    add('snacks', '零食', {'零食'}, target='建议尽量不吃',
+        qualitative=lambda _: '建议尽量不吃', advisory=True)
+    all_categories = set(totals) | set(missing)
+    add('quality_protein', '肉蛋奶优质蛋白占比', all_categories, 50,
+        ratio=(total(animal, 'protein'), total(all_categories, 'protein')))
+    judged = [r for r in rows if r['score'] is not None]
+    passed = sum(r['score'] for r in judged)
+    total_rules = len([r for r in rows if r['key'] not in {'livestock_remainder', 'snacks'}])
+    summary = dict(passed=passed, evaluated=len(judged), total=total_rules,
+                   attainment_percent=round(passed / total_rules * 100, 1) if len(judged) == total_rules else None)
+    summary['text'] = f'定量规则达标 {passed}/{len(judged)} 项；可评价 {len(judged)}/{total_rules} 项。' + (
+        f'完整达标率 {summary["attainment_percent"]:g}%（非医学综合评分）。' if len(judged) == total_rules else
+        '存在未评价项，不给出总分或完整达标率。')
+    if source is not None:
+        proxies = sorted({r.get('food') for r in source if r.get('reference_exact') is False})
+        if proxies:
+            notes.append('代表食物估算（需复核）：' + '、'.join(proxies))
+    return dict(source='用户新增膳食标准 2026-10-12', rows=rows, summary=summary, warnings=notes,
+                nutrient_record_complete=not unknown_all and not missing)

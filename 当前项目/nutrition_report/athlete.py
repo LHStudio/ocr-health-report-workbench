@@ -2,6 +2,11 @@
 import math
 
 
+def display_number(value):
+    """只缩短报告文案；计算与边界判断仍使用原始精度。"""
+    return f'{value:.1f}'.rstrip('0').rstrip('.')
+
+
 def positive_number(value):
     try:
         number = float(value)
@@ -74,20 +79,23 @@ def evaluate_athlete(user, nutrition, categories, config):
     for row in rows:
         if row["actual"] is not None:
             row["actual"] = round(row["actual"], 2)
-    for info in categories.values():
-        info["evaluation"] = "文档未提供该类别标准"
+    for category, info in categories.items():
+        info["evaluation"] = "-" if category in {"饮料", "酒类"} else "文档未提供该类别标准"
     if "蔬菜" in categories:
         categories["蔬菜"]["evaluation"] = rows[-1]["evaluation"]
-    nutrition["energy"].update(standard=None, evaluation="V2.0未提供总能量标准")
+    # 能量独立采用现有女性EER活动量标准，不被专项V2规则覆盖。
     nutrition["calcium"]["evaluation"] = rows[-2]["evaluation"]
     suggestions = []
     for row in rows:
+        if row['key'] == 'vegetables':
+            continue  # 新增膳食标准统一生成蔬菜建议，避免沿用旧400g阈值。
         if row["gap"] is not None and row["gap"] < 0:
-            suggestions.append(f"{row['label']}较参考{'目标' if row['key'] == 'carbohydrate' and len(rule['carbohydrate']) == 1 else '下限'}少 {abs(row['gap']):g} {row['unit']}，请结合训练及完整饮食记录复核调整。")
+            unit = '个百分点' if row['unit'] == '%' else row['unit']
+            suggestions.append(f"{row['label']}较参考{'目标' if row['key'] == 'carbohydrate' and len(rule['carbohydrate']) == 1 else '下限'}少 {display_number(abs(row['gap']))} {unit}。")
         elif row["evaluation"] == "偏高":
-            suggestions.append(f"{row['label']}高于文档参考上限，请由营养专业人员复核调整。")
+            suggestions.append(f"{row['label']}高于参考上限，建议适当减少相关食物摄入。")
     if not reason and rule.get("protein_preferred") and weight:
-        suggestions.append(f"团体项目蛋白质优选参考约 {rule['protein_preferred'] * weight:g} g/天（1.7 g/kg）。")
+        suggestions.append(f"团体项目蛋白质优选参考约 {display_number(rule['protein_preferred'] * weight)} g/天（1.7 g/kg）。")
     return dict(source=config["source"], scope=config["scope"], athlete_type=selected,
                 athlete_label=rule["label"] if rule else "未确认", training_phase=phase,
                 warnings=warnings, rows=rows,

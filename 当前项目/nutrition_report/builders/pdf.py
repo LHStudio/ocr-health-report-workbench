@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -212,7 +213,7 @@ class NutritionPDFBuilder:
         energy_report = Table(
             energy_table,
             colWidths=[38 * mm, 108 * mm, 28 * mm],
-            rowHeights=[10 * mm, 9 * mm, 14 * mm, 33 * mm, 12 * mm, 30 * mm, 20 * mm],
+            rowHeights=[10 * mm, 9 * mm, 19 * mm, 33 * mm, 12 * mm, 30 * mm, 20 * mm],
         )
         energy_report.setStyle(TableStyle([
             ("SPAN", (0, 0), (-1, 0)),
@@ -246,10 +247,30 @@ class NutritionPDFBuilder:
             table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F75B5"))]))
             story.extend([Spacer(1, 3*mm), table])
 
+        standard = data.get('food_standard_evaluation')
+        if standard:
+            story.extend([PageBreak(), Paragraph('新增膳食标准逐项评价', title)])
+            story.append(Paragraph(escape(standard['source']), quality))
+            story.append(Paragraph(escape(standard['summary']['text']), quality))
+            standard_body = ParagraphStyle('FoodStandardBody', parent=normal, fontSize=9.5, leading=12)
+            rows = [[Paragraph(text, header) for text in ['项目', '实际值', '目标 / 口径', '机器初稿 / 规则分', '最终评价']]]
+            for row in standard['rows']:
+                actual = '—' if row['actual'] is None else f"{row['actual']:g} {row['unit']}"
+                score = '未计分' if row['score'] is None else f"{row['score']}/1"
+                values = [row['label'], actual, row['target'] + ('；' + row['note'] if row['note'] else ''),
+                          row['machine_evaluation'] + '；' + score, row['evaluation']]
+                rows.append([Paragraph(escape(v), standard_body) for v in values])
+            table = Table(rows, colWidths=[28*mm, 27*mm, 43*mm, 39*mm, 39*mm], repeatRows=1)
+            table.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), .4, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F75B5'))]))
+            story.extend([Spacer(1, 3*mm), table, Spacer(1, 3*mm)])
+            for note in standard['warnings']:
+                story.append(Paragraph(escape(note), quality))
+
         warnings = data.get("conversion_warnings") or []
         unmatched = data.get("unmatched_foods") or []
         source = data.get("food_data_source") or {}
-        story.extend([Spacer(1, 5 * mm), Paragraph("OCR 换算与数据质量说明", ParagraphStyle("QualityTitle", parent=title, fontSize=14, leading=17)), Spacer(1, 2 * mm)])
+        story.extend([PageBreak(), Paragraph("OCR 换算与数据质量说明", ParagraphStyle("QualityTitle", parent=title, fontSize=14, leading=17)), Spacer(1, 2 * mm)])
         story.append(Paragraph(
             "食物频率已折算为日均摄入量；无法可靠确定频率、次数或克数的项目不会静默计入。以下项目请在使用报告前复核。",
             quality,
@@ -300,35 +321,42 @@ class NutritionPDFBuilder:
             info = results.get(category) or default_info
             value = info.get("value", 0)
             amount_text = "-" if value in (None, "", "-") else f"{escape(_as_text(value))} g"
+            if category == '奶类' and 'equivalent_value' in info:
+                equivalent = info['equivalent_value']
+                amount_text += '<br/>鲜奶等价量（按蛋白质估计）：' + ('-' if equivalent is None else f'{equivalent:g} g')
             table_data.append([
                 Paragraph(escape(category), category_style),
                 Paragraph(amount_text, normal),
                 Paragraph(escape(_as_text(info.get("evaluation", "-"))), normal),
             ])
         if suggestions is not None:
-            suggestion_text = "<br/>".join(
-                f"{index}. {escape(_as_text(item))}" for index, item in enumerate(suggestions, 1)
-            ) or "暂无自动建议"
-            table_data.append([
-                Paragraph("整体评估<br/>及建议", category_style),
-                Paragraph(suggestion_text, ParagraphStyle("NutritionSuggestion", parent=normal, alignment=0, fontSize=9.5, leading=12)),
-                "",
-            ])
-        row_heights: list[float | None] = [11 * mm, 9 * mm] + [11 * mm] * len(categories)
+            suggestion_start = len(table_data)
+            table_data.append([Paragraph('整体评估及建议', ParagraphStyle(
+                'NutritionSuggestionHeading', parent=category_style, alignment=0)), '', ''])
+            suggestion_style = ParagraphStyle('NutritionSuggestion', parent=normal, alignment=0,
+                fontSize=10, leading=15, leftIndent=14, firstLineIndent=-14)
+            for index, item in enumerate(suggestions or ['暂无自动建议'], 1):
+                text = escape(_as_text(item)).replace('\n', '<br/>')
+                # 数值与单位整体换行，避免把 g/天 或 mg/天拆成碎片。
+                text = re.sub(r'(?<![\w.])\d+(?:\.\d+)?\s*(?:kcal/天|kcal/day|mg/天|g/天|g/kg|个百分点|%|kg|mg|g)(?![A-Za-z/])',
+                              lambda match: '<nobr>' + match.group(0) + '</nobr>', text)
+                table_data.append([Paragraph(f'{index}. {text}', suggestion_style), '', ''])
+        row_heights: list[float | None] = [11 * mm, 9 * mm] + [17 * mm if c == '奶类' else 11 * mm for c in categories]
         if suggestions is not None:
-            row_heights.append(None)
+            row_heights.extend([9 * mm] + [None] * max(1, len(suggestions)))
         report = Table(
             table_data,
             colWidths=[57 * mm, 72 * mm, 45 * mm],
             rowHeights=row_heights,
+            repeatRows=2,
         )
         style = [
             ("SPAN", (0, 0), (-1, 0)),
             ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#BFC4D7")),
-            ("BACKGROUND", (0, 2), (0, -1), colors.HexColor("#8D8FB6")),
+            ("BACKGROUND", (0, 2), (0, len(categories)+1), colors.HexColor("#8D8FB6")),
             ("TEXTCOLOR", (0, 0), (-1, 1), colors.white),
-            ("TEXTCOLOR", (0, 2), (0, -1), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D9D9D9")),
+            ("TEXTCOLOR", (0, 2), (0, len(categories)+1), colors.white),
+            ("GRID", (0, 0), (-1, len(categories)+1), 0.5, colors.HexColor("#D9D9D9")),
             ("FONTNAME", (0, 0), (-1, -1), self.font_name),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
@@ -336,7 +364,17 @@ class NutritionPDFBuilder:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ]
         if suggestions is not None:
-            style.append(("SPAN", (1, -1), (-1, -1)))
+            for row_index in range(suggestion_start, len(table_data)):
+                style.append(('SPAN', (0, row_index), (-1, row_index)))
+            style.extend([
+                ('BOX', (0, suggestion_start), (-1, -1), 0.5, colors.HexColor('#D9D9D9')),
+                ('BACKGROUND', (0, suggestion_start), (-1, suggestion_start), colors.HexColor('#8D8FB6')),
+                ('VALIGN', (0, suggestion_start+1), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, suggestion_start), (-1, -1), 10),
+                ('RIGHTPADDING', (0, suggestion_start), (-1, -1), 10),
+                ('TOPPADDING', (0, suggestion_start+1), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, suggestion_start+1), (-1, -1), 5),
+            ])
         report.setStyle(TableStyle(style))
         return report
 
@@ -345,7 +383,7 @@ class NutritionPDFBuilder:
         value = escape(_as_text(energy.get("value", "-")))
         standard = energy.get("standard")
         if standard not in (None, ""):
-            return f"{value} kcal/day<br/>(标准 {escape(_as_text(standard))} kcal)"
+            return f"{value} kcal/day<br/>推荐能量 {escape(_as_text(standard))} kcal/天<br/>{escape(_as_text(energy.get('activity_label')))}（女性EER）"
         return f"{value} kcal/day"
 
     @staticmethod

@@ -12,7 +12,8 @@ import time
 import uuid
 import zipfile
 from collections import Counter, defaultdict
-from copy import copy
+from copy import copy, deepcopy
+from tempfile import TemporaryDirectory
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any
@@ -3459,6 +3460,76 @@ def generate_nutrition_report(job_id: str, payload: dict[str, Any]):
     if not person_id:
         raise HTTPException(status_code=400, detail="当前受访者缺少人员标识")
     return generate_nutrition_person_report(job_id, person_id, payload)
+
+
+@app.post('/nutrition/jobs/{job_id}/reports/batch')
+def generate_nutrition_batch_reports(job_id: str, payload: dict[str, Any]):
+    """Export a snapshot of ALL people in one job, with per-file failure evidence."""
+    state = JOBS.get(job_id) or recover_nutrition_job(job_id)
+    if not state or state.get('kind') != 'nutrition' or state.get('status') != 'completed':
+        raise HTTPException(status_code=409, detail='营养问卷任务尚未完成，无法批量导出')
+    report_format = payload.get('format', 'both')
+    if report_format not in {'pdf', 'excel', 'both'}:
+        raise HTTPException(status_code=400, detail='批量报告格式仅支持 pdf、excel 或 both')
+    people = deepcopy(payload.get('people', state.get('people', [])))
+    expected = [clean(p.get('id')) for p in state.get('people', []) if isinstance(p, dict)]
+    ids = [clean(p.get('id')) for p in people if isinstance(p, dict)] if isinstance(people, list) else []
+    if (not ids or len(ids) != len(people) or '' in ids or len(set(ids)) != len(ids)
+            or set(ids) != set(expected) or len(ids) != len(expected)):
+        raise HTTPException(status_code=400, detail='批量导出必须包含当前任务全部人员，人员标识不得为空、重复或来自其他任务')
+    profiles, reviews = deepcopy(payload.get('profiles', {})), deepcopy(payload.get('reviews', {}))
+    for name, mapping in [('profiles', profiles), ('reviews', reviews)]:
+        if not isinstance(mapping, dict) or set(mapping) - set(ids) or any(not isinstance(v, dict) for v in mapping.values()):
+            raise HTTPException(status_code=400, detail=f'{name}必须按当前任务人员标识填写对象')
+    output = state['job_dir'] / 'output' / 'nutrition_reports'
+    output.mkdir(parents=True, exist_ok=True)
+    archive_path = output / timestamped_filename('全部营养报告_' + uuid.uuid4().hex[:8], '.zip')
+    manifest = dict(requested_people=len(people), success_count=0, failure_count=0, results=[],
+                    scope='当前任务全部人员；不是全部历史任务', standard_version='2026-10-12',
+                    created_at=datetime.now().isoformat(timespec='seconds'))
+    formats = ['pdf', 'excel'] if report_format == 'both' else [report_format]
+    service = NutritionReportService()  # one food-data snapshot for the whole batch
+    manifest['food_data_source'] = service.nutrition_service.food_data_source
+    with TemporaryDirectory(prefix='batch-', dir=output) as directory:
+        with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED) as archive:
+            for index, person in enumerate(people, 1):
+                person_id = clean(person['id'])
+                review = reviews.get(person_id)
+                options = dict(user_overrides=profiles.get(person_id),
+                               auto_evaluation=not bool(review), manual_evaluations=review)
+                for fmt in formats:
+                    entry = dict(person_id=person_id, format=fmt,
+                                 evaluation_mode='manual_reviewed' if review else 'automatic')
+                    try:
+                        adapted = service.adapt_ocr_person(person, **options)
+                        if not adapted.usable_food_count:
+                            raise ValueError('无可换算食物，不能生成以零摄入冒充完整结果的报告；请核对数据')
+                        data = service.build_report_data(adapted.payload)
+                        stem_person = dict(person, general={**(person.get('general') or {}),
+                                           '姓名': data['user'].get('name') or person_id})
+                        filename = f'{index:04d}_{report_filename_stem(stem_person)}' + ('.pdf' if fmt == 'pdf' else '.xlsx')
+                        path = Path(directory) / filename
+                        builder = service.pdf_builder if fmt == 'pdf' else service.excel_builder
+                        builder.build(data, path)
+                        archive.write(path, filename)
+                        entry.update(status='success', file=filename, usable_food_count=adapted.usable_food_count,
+                                     warnings=adapted.warnings, summary=data['food_standard_evaluation']['summary'])
+                        manifest['success_count'] += 1
+                    except Exception as error:
+                        entry.update(status='failed', error=str(error))
+                        manifest['failure_count'] += 1
+                    manifest['results'].append(entry)
+            archive.writestr('manifest.json', json.dumps(manifest, ensure_ascii=False, indent=2))
+            lines = [f"人员数：{len(people)}；成功文件：{manifest['success_count']}；失败文件：{manifest['failure_count']}",
+                     '未人工修改的报告保留机器初稿；请核对每份报告中的适用范围和缺失项。']
+            lines += [f"{e['person_id']} / {e['format']} / {e['status']} / {e.get('file', e.get('error', ''))}" for e in manifest['results']]
+            archive.writestr('导出清单.txt', '\n'.join(lines))
+    return FileResponse(archive_path, media_type='application/zip', filename=archive_path.name, headers={
+        'X-Report-Filename': quote(archive_path.name, safe=''),
+        'X-Report-Success-Count': str(manifest['success_count']),
+        'X-Report-Failure-Count': str(manifest['failure_count']),
+        'X-Report-Person-Count': str(len(people)),
+    })
 
 
 if __name__ == "__main__":

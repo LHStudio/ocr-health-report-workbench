@@ -87,7 +87,7 @@ class OCRNutritionAdapterTest(unittest.TestCase):
         codes = {warning["code"] for warning in adapted.warnings}
         self.assertTrue({"unmapped_food", "unresolved_period", "no_usable_foods"}.issubset(codes))
 
-    def test_egg_counts_are_converted_at_45_grams_per_egg(self) -> None:
+    def test_egg_counts_are_converted_at_50_grams_per_egg(self) -> None:
         person = {
             "id": "ocr/egg",
             "general": {},
@@ -98,8 +98,8 @@ class OCRNutritionAdapterTest(unittest.TestCase):
 
         adapted = build_payload_from_ocr_person(person)
 
-        self.assertAlmostEqual(270 / 7, adapted.payload["meals"][0]["amount"], places=4)
-        self.assertAlmostEqual(270 / 7, adapted.source_foods[0]["daily_grams"], places=4)
+        self.assertAlmostEqual(300 / 7, adapted.payload["meals"][0]["amount"], places=4)
+        self.assertAlmostEqual(300 / 7, adapted.source_foods[0]["daily_grams"], places=4)
         self.assertIn("egg_unit_weight_applied", {warning["code"] for warning in adapted.warnings})
 
     def test_plain_egg_count_and_explicit_grams_remain_unambiguous(self) -> None:
@@ -118,7 +118,7 @@ class OCRNutritionAdapterTest(unittest.TestCase):
             ],
         })
 
-        self.assertEqual(90.0, plain_count.payload["meals"][0]["amount"])
+        self.assertEqual(100.0, plain_count.payload["meals"][0]["amount"])
         self.assertEqual(90.0, explicit_grams.payload["meals"][0]["amount"])
 
 
@@ -161,7 +161,8 @@ class NutritionReportServiceTest(unittest.TestCase):
                 page_texts = [page.get_text() for page in pdf_document]
                 pdf_text = "\n".join(page_texts)
                 image_counts = [len(page.get_images(full=True)) for page in pdf_document]
-            self.assertEqual(4, len(page_texts))
+            self.assertGreaterEqual(len(page_texts), 5)
+            self.assertIn('新增膳食标准逐项评价', pdf_text)
             self.assertIn("运动员专项膳食评价", page_texts[3])
             self.assertIn("姓名", page_texts[0])
             self.assertIn("测试甲", page_texts[0])
@@ -192,12 +193,12 @@ class NutritionReportServiceTest(unittest.TestCase):
             self.assertIn("营养数据来源", page_texts[-1])
             self.assertIn("OCR 换算与数据质量说明", page_texts[-1])
             self.assertEqual(4, pdf_result["usable_food_count"])
-            self.assertIsNone(pdf_result["report_data"]["nutrition"]["energy"]["standard"])
+            self.assertEqual(2100, pdf_result["report_data"]["nutrition"]["energy"]["standard"])
 
             workbook = load_workbook(excel_path, read_only=True, data_only=True)
             try:
                 self.assertEqual(
-                    ["个人信息", "食物明细", "分类评估", "营养总计", "建议", "OCR换算说明", "运动员专项评价"],
+                    ["个人信息", "食物明细", "分类评估", "营养总计", "建议", "OCR换算说明", "运动员专项评价", "新增膳食标准"],
                     workbook.sheetnames,
                 )
                 note_codes = {
@@ -221,15 +222,15 @@ class NutritionReportServiceTest(unittest.TestCase):
             self.assertEqual(4, excel_result["usable_food_count"])
 
     def test_fat_free_mass_is_extracted_and_merged_only_for_a_unique_name(self) -> None:
-        transcript = "InBody770\nID 260604-5（刘紫玉）\n人体成分分析\n去脂体重 (kg) 46.6\n体重 62.4"
+        transcript = "InBody770\nID 260604-5（测试甲）\n人体成分分析\n去脂体重 (kg) 46.6\n体重 62.4"
         self.assertEqual("46.6", extract_fat_free_mass(transcript))
 
         people = [
-            {"id": "A", "general": {"姓名": "刘紫玉"}},
+            {"id": "A", "general": {"姓名": "测试甲"}},
             {"id": "B", "general": {"姓名": "陈晨"}},
         ]
         matched, unmatched = merge_body_composition_records(people, [
-            {"name": "刘紫玉", "fat_free_mass": "46.6", "filename": "inbody.pdf", "file_url": "/local-files/demo/inbody.md"},
+            {"name": "测试甲", "fat_free_mass": "46.6", "filename": "inbody.pdf", "file_url": "/local-files/demo/inbody.md"},
             {"name": "未知", "fat_free_mass": "40.1", "filename": "unknown.pdf", "file_url": ""},
         ])
         self.assertEqual(1, matched)
@@ -248,24 +249,24 @@ class NutritionReportServiceTest(unittest.TestCase):
             "gender": "female", "age": "18", "height": "164", "weight": "62.4", "fat_free_mass": "46.6",
         }, extract_body_composition_profile(transcript))
 
-        people = [{"id": "A", "general": {"姓名": "刘紫玉"}}]
+        people = [{"id": "A", "general": {"姓名": "测试甲"}}]
         matched, unmatched = merge_body_composition_records(people, [{
-            "name": "刘紫玉", "gender": "female", "age": "18", "height": "164",
+            "name": "测试甲", "gender": "female", "age": "18", "height": "164",
             "weight": "62.4", "fat_free_mass": "46.6", "filename": "inbody.pdf", "file_url": "body.md",
         }])
         self.assertEqual((1, []), (matched, unmatched))
         self.assertEqual({
-            "姓名": "刘紫玉", "性别": "女性", "年龄": "18", "身高": "164", "体重": "62.4", "去脂体重": "46.6",
+            "姓名": "测试甲", "性别": "女性", "年龄": "18", "身高": "164", "体重": "62.4", "去脂体重": "46.6",
         }, people[0]["general"])
 
     def test_body_composition_name_pairing_suggests_similar_names_without_auto_match(self) -> None:
         people = [
-            {"id": "A", "general": {"姓名": "刘紫玉"}},
-            {"id": "B", "general": {"姓名": "刘子玉"}},
+            {"id": "A", "general": {"姓名": "测试甲"}},
+            {"id": "B", "general": {"姓名": "测似甲"}},
             {"id": "C", "general": {"姓名": "陈晨"}},
         ]
-        exact = body_composition_match_candidates("刘紫玉", people)
-        similar = body_composition_match_candidates("刘紫雨", people)
+        exact = body_composition_match_candidates("测试甲", people)
+        similar = body_composition_match_candidates("测试乙", people)
         self.assertEqual("A", exact[0]["person_id"])
         self.assertEqual(100, exact[0]["score"])
         self.assertTrue(any(item["person_id"] == "A" for item in similar))
@@ -273,7 +274,7 @@ class NutritionReportServiceTest(unittest.TestCase):
 
     def test_confirmed_body_composition_pairing_corrects_questionnaire_name(self) -> None:
         job_id = "body-composition-name-correction"
-        people = [{"id": "ocr/1", "general": {"姓名": "刘紫雨"}}]
+        people = [{"id": "ocr/1", "general": {"姓名": "测试乙"}}]
         JOBS[job_id] = {
             "job_id": job_id,
             "kind": "nutrition",
@@ -287,8 +288,8 @@ class NutritionReportServiceTest(unittest.TestCase):
             "assignments": {"body-1": "ocr/1"},
             "body_composition_pending_matches": [{
                 "id": "body-1",
-                "name": "刘紫玉",
-                "corrected_name": "刘紫玉",
+                "name": "测试甲",
+                "corrected_name": "测试甲",
                 "gender": "female",
                 "age": "18",
                 "height": "164",
@@ -303,7 +304,7 @@ class NutritionReportServiceTest(unittest.TestCase):
         finally:
             JOBS.pop(job_id, None)
 
-        self.assertEqual("刘紫玉", result["people"][0]["general"]["姓名"])
+        self.assertEqual("测试甲", result["people"][0]["general"]["姓名"])
         self.assertEqual("女性", result["people"][0]["general"]["性别"])
         self.assertEqual("18", result["people"][0]["general"]["年龄"])
         self.assertEqual("164", result["people"][0]["general"]["身高"])

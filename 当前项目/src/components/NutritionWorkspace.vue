@@ -36,8 +36,14 @@
   </section>
 
   <section v-if="people.length" class="card people-card nutrition-workspace">
-    <div class="nutrition-section-head"><div><h2>问卷核对</h2><p>逐人补充 OCR 空白项、核对勾选信息和食物频率。</p></div><div class="nutrition-section-actions"><button class="secondary-button" type="button" :disabled="saving" @click="save">{{ saving ? '正在保存…' : '保存并下载 Excel' }}</button><button class="primary-button" type="button" :disabled="saving" @click="saveCurrentReview">{{ saving ? '保存中…' : '保存当前核对信息' }}</button></div></div>
-    <p class="hint">OCR 未能可靠识别手写勾选的位置时，“频率周期”和就餐/日照选项会保持空白；请在此补充。“不吃”由频率周期自动确定，已选择每天/每周等频率时保持空白。</p>
+    <div class="nutrition-section-head"><div><h2>问卷核对</h2><p>逐人核对人员资料、勾选信息和食物频率。</p></div><div class="nutrition-section-actions"><button class="secondary-button" type="button" :disabled="saving" @click="save">{{ saving ? '正在保存…' : '保存并下载 Excel' }}</button><button class="primary-button" type="button" :disabled="saving" @click="saveCurrentReview">{{ saving ? '保存中…' : '保存当前核对信息' }}</button></div></div>
+    <p class="hint">已完成问卷中，食物摄入空白项按未食用处理；“未识别”或无法换算的非空填写仍保留核对提示。</p>
+    <section class="nutrition-report-launch nutrition-batch-export" aria-label="批量导出全部营养报告">
+      <h3>批量导出全部营养报告</h3>
+      <p>导出当前任务全部 {{ people.length }} 人，不受搜索或分页限制。使用当前核对数据；未人工修改的人员保留机器初稿。ZIP 内附成功/失败清单，食物摄入空白项按未食用处理。</p>
+      <div class="action-row"><select v-model="batchFormat" :disabled="batchGenerating" aria-label="批量报告格式"><option value="both">PDF + Excel</option><option value="pdf">仅 PDF</option><option value="excel">仅 Excel</option></select><button class="primary-button" :disabled="batchGenerating || reportGenerating !== '' || saving || appendingBodyComposition || applyingBodyCompositionMatches" @click="generateAllReports">{{ batchGenerating ? '正在生成全部报告…' : `导出全部 ${people.length} 人报告（ZIP）` }}</button></div>
+      <p v-if="batchMessage" class="success-message">{{ batchMessage }}</p><p v-if="batchError" class="error-message">{{ batchError }}</p>
+    </section>
     <section class="nutrition-report-launch body-composition-append">
       <div><h4>补充体成分报告</h4><p>只识别新上传的 InBody 等体成分报告，不会重新识别食物问卷，也不会清除当前已核对内容。识别完成后请确认姓名配对。</p></div>
       <div class="append-actions"><label class="secondary-button file-button"><input type="file" accept=".pdf,application/pdf" multiple @change="selectAppendBodyCompositionFiles" />选择体成分 PDF</label><button class="primary-button" type="button" :disabled="appendingBodyComposition || !appendBodyCompositionFiles.length" @click="appendBodyComposition">{{ appendingBodyComposition ? '正在识别…' : '追加并识别' }}</button></div>
@@ -95,6 +101,7 @@
             <label>去脂体重（瘦体重）<input v-model="reportProfile.fatFreeMass" class="value-input" inputmode="decimal" placeholder="kg（可选）" /></label>
             <label>活动量<select v-model="reportProfile.activityLevel"><option value="">未填写</option><option value="1">低</option><option value="2">中</option><option value="3">高</option></select></label>
           </div>
+          <label v-if="Number(reportProfile.weight) > 70">超过70kg的食物摄入倍率（专业人员确认）<input v-model="reportProfile.foodTargetScale" class="value-input" inputmode="decimal" placeholder="留空：只列基础参考；如1.2" /></label>
           <div class="nutrition-preview-panel" aria-label="营养摄入即时预览">
             <div class="nutrition-preview-head"><div><h5>即时计算结果</h5><p>随人员信息和食物核对数据自动更新。</p></div><span v-if="previewLoading">计算中…</span><span v-else>{{ previewUsableFoodCount }} 项食物已计入</span></div>
             <p v-if="previewError" class="error-message preview-message">{{ previewError }}</p>
@@ -120,6 +127,12 @@
               <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>机器初稿</th></tr></thead><tbody><tr v-for="row in nutritionPreview.athlete_evaluation.rows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}</td><td>{{ row.gap ?? '—' }}</td><td>{{ row.machine_evaluation }}</td></tr></tbody></table></div>
               <p class="hint">{{ nutritionPreview.athlete_evaluation.gap_note }}</p>
             </div>
+            <section v-if="nutritionPreview?.food_standard_evaluation" class="nutrition-preview-panel" aria-label="新增膳食标准">
+              <h5>{{ nutritionPreview.food_standard_evaluation.source }}</h5>
+              <p><strong>{{ nutritionPreview.food_standard_evaluation.summary.text }}</strong></p>
+              <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际值</th><th>目标</th><th>差值</th><th>规则分</th><th>机器初稿</th></tr></thead><tbody><tr v-for="row in nutritionPreview.food_standard_evaluation.rows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}</td><td>{{ row.gap ?? '—' }}</td><td>{{ row.score == null ? '不计分' : `${row.score}/1` }}</td><td>{{ row.machine_evaluation }}</td></tr></tbody></table></div>
+              <details><summary>适用范围与计算口径</summary><p v-for="note in nutritionPreview.food_standard_evaluation.warnings" :key="note" class="hint">{{ note }}</p></details>
+            </section>
             <div class="subsection-title"><div><h4>营养评价人工复核</h4><p>机器评价仅作初稿。请按实际情况逐项选择偏少、适中、偏多或其他自定义评价，并编辑最终建议和解读。</p></div><div class="review-header-actions"><button class="secondary-button mini-button" type="button" :disabled="!nutritionPreview" @click="resetReportReviewFromMachine">重载机器初稿</button></div></div>
             <p v-if="!nutritionPreview || previewLoading" class="hint">正在计算机器初稿，完成后可复核。</p>
             <template v-else>
@@ -131,7 +144,7 @@
               <p class="nutrition-disclaimer-preview">报告将注明：以上营养成分仅根据记录饮食计算，不包含维生素、矿物质、蛋白粉等其他补充剂摄入。</p>
             </template>
           </section>
-          <div class="action-row report-actions"><button class="primary-button" :disabled="reportGenerating !== '' || !canExportReviewedReport" @click="generateReport('pdf')">{{ reportGenerating === 'pdf' ? '正在生成 PDF…' : '导出营养 PDF 报告' }}</button><button class="secondary-button" :disabled="reportGenerating !== '' || !canExportReviewedReport" @click="generateReport('excel')">{{ reportGenerating === 'excel' ? '正在生成 Excel…' : '导出营养分析 Excel' }}</button></div>
+          <div class="action-row report-actions"><button class="primary-button" :disabled="batchGenerating || reportGenerating !== '' || !canExportReviewedReport" @click="generateReport('pdf')">{{ reportGenerating === 'pdf' ? '正在生成 PDF…' : '导出营养 PDF 报告' }}</button><button class="secondary-button" :disabled="batchGenerating || reportGenerating !== '' || !canExportReviewedReport" @click="generateReport('excel')">{{ reportGenerating === 'excel' ? '正在生成 Excel…' : '导出营养分析 Excel' }}</button></div>
           <p v-if="!canExportReviewedReport" class="hint">请等待机器初稿计算完成后再导出。</p>
           <p v-if="reportErrorMessage" class="error-message report-message">{{ reportErrorMessage }}</p><p v-if="reportSuccessMessage" class="success-message report-message">{{ reportSuccessMessage }}</p>
           </section>
@@ -165,12 +178,14 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { storedOcrApiUrl } from '../runtime-config'
+import { buildBatchPayload } from '../nutrition-batch'
 
 const serverUrl = ref(storedOcrApiUrl())
 const serverMessage = ref(''); const serverOk = ref(false); const testing = ref(false)
 const nutritionFiles = ref([]); const bodyCompositionFiles = ref([]); const mode = ref('folder'); const bodyCompositionMode = ref(''); const templateFile = ref(null); const parseMode = ref(localStorage.getItem('ocr-parse-mode') || 'markdown'); const processingMode = ref(localStorage.getItem('ocr-processing-mode') || 'fast'); const processing = ref(false); const saving = ref(false)
 const progress = ref({ completed: 0, total: 0, currentFile: '' }); const errorMessage = ref(''); const successMessage = ref('')
 const people = ref([]); const selectedId = ref(''); const jobId = ref('')
+const batchGenerating = ref(false); const batchFormat = ref('both'); const batchMessage = ref(''); const batchError = ref('')
 const reportGenerating = ref(''); const reportProfiles = ref({}); const reportProfile = ref(emptyReportProfile()); const reportReviews = ref({}); const reportReview = ref(emptyReportReview())
 const nutritionPreview = ref(null); const previewLoading = ref(false); const previewError = ref(''); const previewUsableFoodCount = ref(0)
 const reportErrorMessage = ref(''); const reportSuccessMessage = ref('')
@@ -190,14 +205,15 @@ const pagedNutritionPeople = computed(() => { const start = (nutritionPage.value
 const nutritionPageRange = computed(() => { if (!filteredNutritionPeople.value.length) return '0 人'; const start = (nutritionPage.value - 1) * nutritionPageSize.value + 1; const end = Math.min(start + nutritionPageSize.value - 1, filteredNutritionPeople.value.length); return `显示 ${start}–${end}，共 ${filteredNutritionPeople.value.length} 人` })
 const bmiValue = computed(() => { const height = Number(reportProfile.value.height); const weight = Number(reportProfile.value.weight); if (!(height > 0 && weight > 0)) return ''; return (weight / ((height / 100) ** 2)).toFixed(1) })
 const bmiStatus = computed(() => { const bmi = Number(bmiValue.value); if (!bmi) return ''; if (bmi < 18.5) return '偏瘦'; if (bmi < 24) return '正常'; if (bmi < 28) return '超重'; return '肥胖' })
-const energyStandardNote = computed(() => 'V2.0未提供总能量标准')
+const energyStandardNote = computed(() => nutritionPreview.value?.nutrition?.energy?.standard_note || '请选择活动量')
 const nutritionDataSource = computed(() => nutritionPreview.value?.food_data_source || {})
-const categoryReviewRows = computed(() => Object.entries(nutritionPreview.value?.category_result || {}).map(([key, info]) => ({ key, label: key, value: info?.value ?? 0, machineEvaluation: machineEvaluationText(info?.evaluation) })))
+const categoryReviewRows = computed(() => Object.entries(nutritionPreview.value?.category_result || {}).map(([key, info]) => ({ key, label: key, value: key === '奶类' && 'equivalent_value' in info ? `${info.value}（原重），鲜奶等价量（按蛋白质估计）${info.equivalent_value ?? '-'}` : (info?.value ?? 0), machineEvaluation: machineEvaluationText(info?.evaluation) })))
 const nutrientReviewRows = computed(() => {
   const nutrition = nutritionPreview.value?.nutrition || {}
   return [
     { key: 'energyEvaluation', label: '总能量', value: nutrition.energy?.value ?? '—', unit: 'kcal/天', machineEvaluation: machineEvaluationText(nutrition.energy?.evaluation) },
     { key: 'calciumEvaluation', label: '钙', value: nutrition.calcium?.value ?? '—', unit: 'mg/天', machineEvaluation: machineEvaluationText(nutrition.calcium?.evaluation) },
+    ...(nutritionPreview.value?.food_standard_evaluation?.rows || []).map((row) => ({ key: `standard_${row.key}Evaluation`, label: row.label, value: row.actual ?? '—', unit: row.unit, machineEvaluation: machineEvaluationText(row.machine_evaluation) })),
     ...(nutritionPreview.value?.athlete_evaluation?.rows || []).filter((row) => ['protein', 'carbohydrate', 'fat'].includes(row.key)).map((row) => ({ key: `${row.key}Evaluation`, label: row.label, value: row.actual ?? '—', unit: row.unit, machineEvaluation: machineEvaluationText(row.machine_evaluation) })),
   ]
 })
@@ -244,11 +260,11 @@ function setBodyCompositionFiles(files, nextMode) { bodyCompositionMode.value = 
 function selectBodyCompositionFiles(event) { setBodyCompositionFiles(event.target.files, 'files') }
 function selectBodyCompositionFolder(event) { setBodyCompositionFiles(event.target.files, 'folder') }
 function selectAppendBodyCompositionFiles(event) { appendBodyCompositionFiles.value = Array.from(event.target.files || []).filter((file) => /\.pdf$/i.test(file.name)); bodyCompositionMessage.value = ''; bodyCompositionError.value = false }
-function emptyReportProfile() { return { name: '', age: '', projectType: '', athleteType: '', trainingPhase: '', trainingYears: '', currentStatus: '', gender: '', height: '', weight: '', fatFreeMass: '', activityLevel: '' } }
+function emptyReportProfile() { return { name: '', age: '', projectType: '', athleteType: '', trainingPhase: '', trainingYears: '', currentStatus: '', gender: '', height: '', weight: '', fatFreeMass: '', activityLevel: '', foodTargetScale: '' } }
 function emptyBodyRecordDraft() { return { filename: '', name: '', gender: '', age: '', height: '', weight: '', fatFreeMass: '' } }
 function emptyReportReview() { return { categoryEvaluations: {}, energyEvaluation: '', calciumEvaluation: '', overallSuggestions: '', interpretation: '', machineSeeded: false, manualEntryFields: {} } }
 function copyReportReview(review) { return { ...emptyReportReview(), ...(review || {}), categoryEvaluations: { ...(review?.categoryEvaluations || {}) }, manualEntryFields: { ...(review?.manualEntryFields || {}) } } }
-function machineEvaluationText(value) { const text = String(value || '').trim(); if (text === '不足') return '偏少'; if (text === '偏高') return '偏多'; if (text === '适宜') return '适中'; return text === '-' ? '' : text }
+function machineEvaluationText(value) { return String(value ?? '').trim() }
 function machineInterpretation(preview) {
   const nutrition = preview?.nutrition || {}; const lines = []
   if (nutrition.energy?.evaluation === '不足') lines.push('能量摄入偏少，建议结合训练量补充主食等碳水化合物来源。')
@@ -262,6 +278,7 @@ function seedReportReviewFromPreview() {
   Object.entries(preview.category_result || {}).forEach(([category, info]) => { categoryEvaluations[category] = machineEvaluationText(info?.evaluation) })
   const next = { categoryEvaluations, energyEvaluation: machineEvaluationText(preview.nutrition?.energy?.evaluation), calciumEvaluation: machineEvaluationText(preview.nutrition?.calcium?.evaluation), overallSuggestions: (preview.suggestions || []).join('\n') || '请结合实际饮食、训练与健康状况给出建议。', interpretation: machineInterpretation(preview) }
   for (const row of preview.athlete_evaluation?.rows || []) if (['protein', 'carbohydrate', 'fat'].includes(row.key)) next[`${row.key}Evaluation`] = machineEvaluationText(row.machine_evaluation)
+  for (const row of preview.food_standard_evaluation?.rows || []) next[`standard_${row.key}Evaluation`] = machineEvaluationText(row.machine_evaluation)
   const previous = reportReview.value.lastMachine || {}
   const merged = { ...reportReview.value, categoryEvaluations: { ...reportReview.value.categoryEvaluations } }
   for (const [key, value] of Object.entries(next)) {
@@ -286,7 +303,10 @@ function setEvaluation(kind, key, selection) {
   delete reportReview.value.manualEntryFields[fieldKey]
   target[key] = selection
 }
-function manualEvaluationsPayload() { return { categoryEvaluations: { ...reportReview.value.categoryEvaluations }, ...Object.fromEntries(['energyEvaluation', 'calciumEvaluation', 'proteinEvaluation', 'carbohydrateEvaluation', 'fatEvaluation', 'overallSuggestions', 'interpretation'].map((key) => [key, String(reportReview.value[key] || '').trim()])) } }
+function manualEvaluationsPayload() {
+  const manual = buildBatchPayload([selected.value], 'pdf', {}, { [selected.value.id]: reportReview.value }).reviews[selected.value.id]
+  return manual || {}
+}
 function openNutritionReview() { reportErrorMessage.value = ''; reportSuccessMessage.value = ''; nutritionReviewOpen.value = true; scheduleNutritionPreview() }
 function closeNutritionReview() { nutritionReviewOpen.value = false }
 function formatSourceTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString('zh-CN', { hour12: false }) }
@@ -429,13 +449,35 @@ async function resumeLatestNutritionJob() {
     people.value = data.people; localStorage.setItem('nutrition-last-job-id', jobId.value); reportProfiles.value = {}; reportReviews.value = {}; selectPerson(data.people[0] || { id: '', general: {} }); if (data.body_composition_status === 'awaiting_match') loadBodyCompositionMatches(data); successMessage.value = data.message || '已恢复最近一次本地营养任务。'
   } catch (_) { /* 没有可恢复任务时保持新任务页面 */ }
 }
+async function generateAllReports() {
+  if (!jobId.value || !people.value.length || batchGenerating.value) return
+  batchGenerating.value = true; batchMessage.value = ''; batchError.value = ''
+  try {
+    if (selected.value) {
+      reportProfiles.value[selected.value.id] = { ...reportProfile.value, bmi: bmiValue.value }
+      reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
+    }
+    const payload = buildBatchPayload(people.value, batchFormat.value, reportProfiles.value, reportReviews.value)
+    const response = await fetch(`/local-api/nutrition/jobs/${jobId.value}/reports/batch`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    })
+    if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.detail || '批量报告生成失败') }
+    const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement('a')
+    link.href = url; link.download = decodeURIComponent(response.headers.get('X-Report-Filename') || '全部营养报告.zip')
+    document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+    const failures = Number(response.headers.get('X-Report-Failure-Count') || 0)
+    batchMessage.value = `已处理 ${response.headers.get('X-Report-Person-Count')} 人，成功 ${response.headers.get('X-Report-Success-Count')} 份文件。ZIP 已开始下载。`
+    if (failures) batchError.value = `${failures} 份文件未生成，请查看 ZIP 内“导出清单.txt”的具体原因，补齐后重试。`
+  } catch (error) { batchError.value = error.message || '批量报告生成失败' }
+  finally { batchGenerating.value = false }
+}
 async function generateReport(format) {
   if (!selected.value || !jobId.value) return
   reportGenerating.value = format; reportErrorMessage.value = ''; reportSuccessMessage.value = ''
   try {
     reportProfiles.value[selected.value.id] = { ...reportProfile.value }; reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
     const response = await fetch(`/local-api/nutrition/jobs/${jobId.value}/report`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person: selected.value, format, user_overrides: { ...reportProfile.value, bmi: bmiValue.value }, report_date: selected.value.general?.调查日期 || '', auto_evaluation: false, manual_evaluations: manualEvaluationsPayload() })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person: selected.value, format, user_overrides: { ...reportProfile.value, bmi: bmiValue.value }, report_date: selected.value.general?.调查日期 || '', auto_evaluation: Object.keys(manualEvaluationsPayload()).length === 0, manual_evaluations: manualEvaluationsPayload() })
     })
     if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.detail || '报告生成失败') }
     const dataSource = response.headers.get('X-Nutrition-Data-Source') || 'unknown'

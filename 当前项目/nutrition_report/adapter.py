@@ -58,7 +58,7 @@ PERIOD_DIVISORS = {
     "每年": 365.0,
 }
 
-EGG_UNIT_WEIGHT_GRAMS = 45.0
+EGG_UNIT_WEIGHT_GRAMS = 50.0
 
 _NUMBER = r"\d+(?:\.\d+)?"
 _RANGE_RE = re.compile(
@@ -103,6 +103,8 @@ class AdaptedNutritionInput:
 
 def _parse_number_or_range(value: Any, *, field_name: str, food_name: str) -> tuple[float | None, list[dict[str, str]]]:
     text = _text(value).replace("^", "-").replace("—", "-")
+    if re.search(r'(^|[\s(（])[-−]\s*\d', text):
+        return None, [_warning('negative_value', f'{food_name}的{field_name}含负数，未计入营养报告', food=food_name)]
     if not text:
         return None, [_warning(f"missing_{field_name}", f"{food_name}缺少{field_name}，未计入营养报告", food=food_name)]
     match = _RANGE_RE.search(text)
@@ -123,8 +125,12 @@ def _parse_number_or_range(value: Any, *, field_name: str, food_name: str) -> tu
 
 
 def parse_quantity_grams(value: Any, food_name: str) -> tuple[float | None, list[dict[str, str]]]:
-    """换算每次食用量；蛋类按每个 45g，其他食物不猜测个/份/勺重量。"""
+    """换算每次食用量；按用户新增标准蛋类每个50g，其他食物不猜份重。"""
     text = _text(value).lower().replace("，", ",").replace("—", "-").replace("^", "-")
+    # OCR可能在整数与明确单位间残留小数点；只修复完整的单一数值，不猜100/80等歧义。
+    text = re.sub(r'^(\d+)\.\s*(g|kg|ml|l|克|千克|公斤|毫升|升)$', r'\1\2', text)
+    if re.search(r'(^|[\s(（])[-−]\s*\d', text):
+        return None, [_warning('negative_value', f'{food_name}食用量含负数，未计入营养报告', food=food_name)]
     if not text:
         return None, [_warning("missing_quantity", f"{food_name}缺少平均每次食用量，未计入营养报告", food=food_name)]
 
@@ -220,8 +226,9 @@ def _build_user(person: Mapping[str, Any], overrides: Mapping[str, Any] | None) 
         "fatFreeMass": pick("fatFreeMass", "去脂体重"),
         "gender": _normalise_gender(pick("gender", "性别")),
         "bmi": pick("bmi", "BMI"),
-        "activityLevel": pick("activityLevel", "运动量"),
+        "activityLevel": override["activityLevel"] if "activityLevel" in override else pick("activityLevel", "运动量"),
         "physiologicalStage": pick("physiologicalStage", "生理阶段"),
+        "foodTargetScale": pick("foodTargetScale", "食物摄入倍率"),
     }
     return user
 
@@ -257,6 +264,14 @@ def build_payload_from_ocr_person(
         not_eat = _text(row.get("是否不吃")) in {"是", "1", "true", "True", "✓", "√"} or period == "不吃"
         if not_eat:
             source_foods.append({"food": food_name, "status": "not_eaten", "daily_grams": 0.0})
+            continue
+
+        # 用户已确认问卷全部填完：空白摄入字段表示没吃，原始记录保持不变。
+        quantity = _text(row.get('平均每次食用量'))
+        count_text = _text(row.get('次数'))
+        if not quantity or not count_text or not period:
+            source_foods.append({'food': food_name, 'status': 'not_eaten', 'daily_grams': 0.0,
+                                 'reason': 'blank_means_not_eaten'})
             continue
 
         reference = FOOD_REFERENCE_MAP.get(food_name)
@@ -303,7 +318,7 @@ def build_payload_from_ocr_person(
     if not user.get("age") or not user.get("gender") or not user.get("activityLevel"):
         warnings.append(_warning(
             "missing_energy_profile",
-            "年龄、性别或运动量信息不完整，报告无法套用女性 EER 个体能量标准",
+            "选择活动量并填写年龄、性别后，可显示对应的女性EER推荐能量",
             severity="info",
         ))
     if not meals:
@@ -317,6 +332,7 @@ def build_payload_from_ocr_person(
         "autoEvaluation": bool(auto_evaluation),
         "source_person_id": _text(person.get("id")),
         "source_foods": source_foods,
+        "blank_food_policy": "not_eaten",
         "conversion_warnings": warnings,
     }
     if manual_evaluations is not None:

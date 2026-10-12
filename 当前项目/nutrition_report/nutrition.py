@@ -1,7 +1,8 @@
 import json
 from collections import defaultdict
 from pathlib import Path
-from .athlete import evaluate_athlete
+from .athlete import evaluate_athlete, display_number
+from .food_standards import evaluate_food_standards
 
 DIET_RECORD_ONLY_DISCLAIMER = "以上营养成分仅根据记录饮食计算，不包含维生素、矿物质、蛋白粉等其他补充剂摄入。"
 
@@ -39,6 +40,32 @@ class NutritionService:
         food_details, nutrition_total, unmatched_foods = self._calculate_nutrition(merged_meals, user)
         category_result = self._build_category_result_from_foods(food_details)
         athlete, suggestions = evaluate_athlete(user, nutrition_total, category_result, self.athlete_config)
+        food_standard = evaluate_food_standards(front_json, self.food_db, self.athlete_config)
+        if not food_standard['nutrient_record_complete']:
+            suggestions = []
+            for row in athlete['rows']:
+                row.update(gap=None, machine_evaluation='-', evaluation='-')
+            nutrition_total['calcium']['evaluation'] = '-'
+            nutrition_total['energy']['evaluation'] = '-'
+        category_keys = {'nuts': '坚果', 'beans_energy': '豆类', 'tubers_energy': '薯类',
+                         'grains_remainder': '谷类', 'milk': '奶类', 'eggs': '蛋类',
+                         'seafood': '水产品', 'livestock_remainder': '畜禽肉',
+                         'fruit': '水果', 'vegetables': '蔬菜', 'snacks': '零食'}
+        for row in food_standard['rows']:
+            category = category_keys.get(row['key'])
+            if category in category_result:
+                category_result[category]['evaluation'] = row['evaluation']
+                if row['key'] == 'milk':
+                    category_result[category]['equivalent_value'] = row['actual']
+            if row['score'] == 0:
+                evaluation = '超过上限' if row['evaluation'] == '超过' else row['evaluation']
+                suggestions.append(f"{row['label']}{evaluation}：目前 {display_number(row['actual'])} {row['unit']}，参考目标 {row['target']}。")
+        if suggestions:
+            suggestions.append('请结合训练量和完整饮食记录，在营养专业人员指导下调整上述摄入。')
+        # New food rules supersede the old vegetable-only rule, including scope/data gates.
+        vegetable = next(r for r in food_standard['rows'] if r['key'] == 'vegetables')
+        athlete['rows'] = [dict(vegetable) if r['key'] == 'vegetables' else r for r in athlete['rows']]
+        athlete['gap_note'] = '差值=实际摄入−参考目标/边界；负值为不足，区间内为0。比值差值单位为百分点。蔬菜采用2026-10-12新增标准。'
         interpretation = None
 
         if not auto_evaluation:
@@ -56,6 +83,16 @@ class NutritionService:
                     field = f"{key}Evaluation"
                     if field in manual:
                         row["evaluation"] = str(manual[field] or "").strip()
+            for row in food_standard['rows']:
+                overrides = manual.get('standardEvaluations') or {}
+                if row['key'] in overrides:
+                    row['evaluation'] = str(overrides[row['key']] or '').strip()
+                elif category_keys.get(row['key']) in (manual.get('categoryEvaluations') or {}):
+                    row['evaluation'] = category_result[category_keys[row['key']]]['evaluation']
+                category = category_keys.get(row['key'])
+                if category in category_result:
+                    category_result[category]['evaluation'] = row['evaluation']
+            next(r for r in athlete['rows'] if r['key'] == 'vegetables')['evaluation'] = vegetable['evaluation']
 
         report = {
             "user": user,
@@ -65,6 +102,7 @@ class NutritionService:
             "suggestions": suggestions,
             "nutrition": nutrition_total,
             "athlete_evaluation": athlete,
+            "food_standard_evaluation": food_standard,
             "autoEvaluation": auto_evaluation,
             "unmatched_foods": unmatched_foods,
             "food_data_source": dict(self.food_data_source),
@@ -72,7 +110,7 @@ class NutritionService:
         }
 
         # OCR 适配器写入的可追溯信息原样带到报告构建数据中。
-        for key in ("source_person_id", "source_foods", "conversion_warnings"):
+        for key in ("source_person_id", "source_foods", "conversion_warnings", "blank_food_policy"):
             if key in front_json:
                 report[key] = front_json[key]
 
@@ -90,12 +128,9 @@ class NutritionService:
             if cat in category_evals:
                 info["evaluation"] = str(category_evals[cat] or "").strip()
 
-        overall = str(manual.get("overallSuggestions", "")).strip()
-        suggestions = [
-            line.strip()
-            for line in overall.splitlines()
-            if line.strip()
-        ]
+        if 'overallSuggestions' in manual:
+            overall = str(manual.get("overallSuggestions", "")).strip()
+            suggestions = [line.strip() for line in overall.splitlines() if line.strip()]
 
         energy_eval = str(manual.get("energyEvaluation", "")).strip()
         if "energyEvaluation" in manual:
@@ -173,14 +208,22 @@ class NutritionService:
                 }
             })
 
-        energy_standard = None
-        energy_eval = "V2.0未提供总能量标准"
+        user = user or {}
+        energy_standard = self._lookup_energy_eer(user)
+        energy_eval = self._eval_energy_against_standard(total_energy, energy_standard)
+        activity = str(user.get('activityLevel', '')).strip()
+        activity_label = self.female_eer.get('activity_levels', {}).get(activity, {}).get('label', '')
+        standard_note = ('kcal/天 · 女性EER（按活动量）' if energy_standard is not None else
+                         '请选择活动量' if not activity else '请核对年龄、性别与活动量')
 
         nutrition_total = {
             "energy": {
                 "value": round(total_energy, 2),
                 "standard": energy_standard,
-                "evaluation": energy_eval
+                "evaluation": energy_eval,
+                "standard_source": self.female_eer['title'],
+                "standard_note": standard_note,
+                "activity_label": activity_label,
             },
             "protein": round(total_protein, 2),
             "fat": round(total_fat, 2),
@@ -273,7 +316,7 @@ class NutritionService:
         for cat, val in category_sum.items():
             result[cat] = {
                 "value": round(val, 1),
-                "evaluation": "文档未提供该类别标准"
+                "evaluation": "-" if cat in {"饮料", "酒类"} else "文档未提供该类别标准"
             }
 
         return result

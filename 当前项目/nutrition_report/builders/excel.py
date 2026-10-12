@@ -1,6 +1,7 @@
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from pathlib import Path
+import math
 
 
 class NutritionExcelBuilder:
@@ -31,6 +32,21 @@ class NutritionExcelBuilder:
                 for cell in cells:
                     cell.alignment = Alignment(wrap_text=True, vertical="top")
 
+        standard = data.get('food_standard_evaluation')
+        if standard:
+            ws = wb.create_sheet('新增膳食标准')
+            ws.append([standard['source']])
+            ws.append([standard['summary']['text']])
+            ws.append(['项目', '实际值', '单位', '目标', '差值', '规则得分(0/1)', '机器初稿', '最终评价', '口径'])
+            for row in standard['rows']:
+                ws.append([row[k] for k in ('label', 'actual', 'unit', 'target', 'gap', 'score', 'machine_evaluation', 'evaluation', 'note')])
+            for note in standard['warnings']:
+                ws.append([note])
+            for col in 'ABCDEFGHI':
+                ws.column_dimensions[col].width = 26
+            for cells in ws:
+                for cell in cells:
+                    cell.alignment = Alignment(wrap_text=True, vertical='top')
         wb.save(output_path)
 
     def _create_user_sheet(self, wb, data):
@@ -148,7 +164,7 @@ class NutritionExcelBuilder:
             bottom=Side(style="thin")
         )
 
-        headers = ["分类", "摄入量(g)", "评价"]
+        headers = ["分类", "摄入原重(g)", "评价", "奶类鲜奶等价量（按蛋白质估计）(g)"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.fill = header_fill
@@ -170,11 +186,16 @@ class NutritionExcelBuilder:
             ws.cell(row=row_idx, column=3, value=info.get("evaluation", "")).font = cell_font
             ws.cell(row=row_idx, column=3).alignment = cell_alignment
             ws.cell(row=row_idx, column=3).border = thin_border
+            if cat == '奶类':
+                ws.cell(row=row_idx, column=4, value=info.get('equivalent_value'))
             row_idx += 1
 
         ws.column_dimensions["A"].width = 15
         ws.column_dimensions["B"].width = 15
         ws.column_dimensions["C"].width = 15
+        ws.column_dimensions["D"].width = 36
+        ws['D1'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        ws.row_dimensions[1].height = 34
 
     def _create_nutrition_sheet(self, wb, data):
         ws = wb.create_sheet("营养总计")
@@ -205,6 +226,8 @@ class NutritionExcelBuilder:
             ("脂肪", nutrition.get("fat", ""), "g", "供能比评价见专项表"),
             ("碳水化合物", nutrition.get("carbohydrate", ""), "g", "见运动员专项评价"),
             ("钙", nutrition.get("calcium", {}).get("value", ""), "mg/day", nutrition.get("calcium", {}).get("evaluation", "")),
+            ("推荐能量", nutrition.get("energy", {}).get("standard"), "kcal/天", "女性EER（按活动量）"),
+            ("活动量", nutrition.get("energy", {}).get("activity_label") or "未选择", "", ""),
         ]
 
         for row_idx, row_data in enumerate(rows, 2):
@@ -231,7 +254,7 @@ class NutritionExcelBuilder:
         ws.column_dimensions["A"].width = 15
         ws.column_dimensions["B"].width = 42
         ws.column_dimensions["C"].width = 12
-        ws.column_dimensions["D"].width = 15
+        ws.column_dimensions["D"].width = 24
 
     def _create_suggestions_sheet(self, wb, data):
         ws = wb.create_sheet("建议")
@@ -239,7 +262,7 @@ class NutritionExcelBuilder:
         header_fill = PatternFill(start_color="4F75B5", end_color="4F75B5", fill_type="solid")
         header_font = Font(name="微软雅黑", size=11, bold=True, color="FFFFFF")
         cell_font = Font(name="微软雅黑", size=10)
-        cell_alignment = Alignment(horizontal="left", vertical="center")
+        cell_alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
         thin_border = Border(
             left=Side(style="thin"),
             right=Side(style="thin"),
@@ -264,9 +287,12 @@ class NutritionExcelBuilder:
             ws.cell(row=row_idx, column=2, value=suggestion).font = cell_font
             ws.cell(row=row_idx, column=2).alignment = cell_alignment
             ws.cell(row=row_idx, column=2).border = thin_border
+            # 中文按双宽估算行数；避免Excel导出建议被固定行高截断。
+            display_width = sum(2 if ord(c) > 127 else 1 for c in str(suggestion))
+            ws.row_dimensions[row_idx].height = max(30, 16 * max(len(str(suggestion).splitlines()), math.ceil(display_width / 96)) + 8)
 
         ws.column_dimensions["A"].width = 10
-        ws.column_dimensions["B"].width = 50
+        ws.column_dimensions["B"].width = 100
 
     def _create_conversion_notes_sheet(self, wb, data):
         """保留 OCR 频率换算和代表食物替代说明，避免估算依据在导出时丢失。"""
