@@ -83,7 +83,7 @@ import { storedOcrApiUrl } from './runtime-config'
 
 const storageKey = 'medical-ocr-api-url'
 const activeWorkspace = ref('medical')
-const appVersion = `2026-08-15-v${appMetadata.version}`
+const appVersion = `2026-10-12-v${appMetadata.version}`
 const serverUrl = ref(storedOcrApiUrl(storageKey))
 const parseMode = ref(localStorage.getItem('ocr-parse-mode') || 'markdown')
 const processingMode = ref(localStorage.getItem('ocr-processing-mode') || 'fast')

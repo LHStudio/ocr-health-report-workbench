@@ -2,6 +2,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from pathlib import Path
 import math
+from copy import copy
 
 
 class NutritionExcelBuilder:
@@ -47,6 +48,14 @@ class NutritionExcelBuilder:
             for cells in ws:
                 for cell in cells:
                     cell.alignment = Alignment(wrap_text=True, vertical='top')
+        # Apply to actual evaluation cells only; normal values and explanatory text keep their style.
+        for sheet in wb:
+            for row in sheet:
+                for cell in row:
+                    if cell.value in ("不足", "过多"):
+                        font = copy(cell.font)
+                        font.color = "DC2626"
+                        cell.font = font
         wb.save(output_path)
 
     def _create_user_sheet(self, wb, data):
@@ -220,11 +229,12 @@ class NutritionExcelBuilder:
             cell.border = thin_border
 
         nutrition = data.get("nutrition", {})
+        athlete_rows = {row["key"]: row for row in (data.get("athlete_evaluation") or {}).get("rows", [])}
         rows = [
             ("总能量", nutrition.get("energy", {}).get("value", ""), "kcal/day", nutrition.get("energy", {}).get("evaluation", "")),
-            ("蛋白质", nutrition.get("protein", ""), "g", "见运动员专项评价"),
-            ("脂肪", nutrition.get("fat", ""), "g", "供能比评价见专项表"),
-            ("碳水化合物", nutrition.get("carbohydrate", ""), "g", "见运动员专项评价"),
+            ("蛋白质", nutrition.get("protein", ""), "g", athlete_rows.get("protein", {}).get("evaluation", "-")),
+            ("脂肪", nutrition.get("fat", ""), "g", athlete_rows.get("fat", {}).get("evaluation", "-")),
+            ("碳水化合物", nutrition.get("carbohydrate", ""), "g", athlete_rows.get("carbohydrate", {}).get("evaluation", "-")),
             ("钙", nutrition.get("calcium", {}).get("value", ""), "mg/day", nutrition.get("calcium", {}).get("evaluation", "")),
             ("推荐能量", nutrition.get("energy", {}).get("standard"), "kcal/天", "女性EER（按活动量）"),
             ("活动量", nutrition.get("energy", {}).get("activity_label") or "未选择", "", ""),

@@ -17,7 +17,7 @@ class ReportFeedbackTest(unittest.TestCase):
             'meals':[{'name':k,'amount':v} for k,v in amounts.items()]},self.db)
 
     def test_grain_remainder_uses_derived_upper_bound_not_fixed_target(self):
-        for amount, evaluation, score in [(800,'达标',1),(801,'超过',0),(700,'达标',1)]:
+        for amount, evaluation, score in [(800,'适中',1),(801,'过多',0),(700,'适中',1)]:
             result=self.result(谷=amount,豆=50,薯=150)
             row=next(r for r in result['rows'] if r['key']=='grains_remainder')
             self.assertEqual(evaluation,row['evaluation'])
@@ -26,7 +26,7 @@ class ReportFeedbackTest(unittest.TestCase):
             self.assertEqual(10,result['summary']['total'])
         row=next(r for r in self.result(谷=0,豆=0,薯=0)['rows'] if r['key']=='grains_remainder')
         self.assertIsNone(row['score'])
-        self.assertIn('分母为0',row['evaluation'])
+        self.assertEqual('-',row['evaluation'])
 
     def test_poultry_is_in_non_seafood_meat_without_false_warning(self):
         row=next(r for r in self.result(鸡肉=20,牛肉=70,鱼=30)['rows'] if r['key']=='livestock_remainder')

@@ -58,7 +58,7 @@ class NutritionService:
                 if row['key'] == 'milk':
                     category_result[category]['equivalent_value'] = row['actual']
             if row['score'] == 0:
-                evaluation = '超过上限' if row['evaluation'] == '超过' else row['evaluation']
+                evaluation = row['evaluation']
                 suggestions.append(f"{row['label']}{evaluation}：目前 {display_number(row['actual'])} {row['unit']}，参考目标 {row['target']}。")
         if suggestions:
             suggestions.append('请结合训练量和完整饮食记录，在营养专业人员指导下调整上述摄入。')
@@ -291,10 +291,10 @@ class NutritionService:
 
         ratio = value / standard
         if ratio < under_ratio:
-            return rules.get("under_label", "不足")
+            return "不足"
         if ratio <= over_ratio:
-            return rules.get("adequate_label", "适宜")
-        return rules.get("over_label", "偏高")
+            return "适中"
+        return "过多"
 
     def _build_category_result_from_foods(self, food_details):
         # 1. 先把配置里的所有分类都初始化为 0
@@ -316,7 +316,7 @@ class NutritionService:
         for cat, val in category_sum.items():
             result[cat] = {
                 "value": round(val, 1),
-                "evaluation": "-" if cat in {"饮料", "酒类"} else "文档未提供该类别标准"
+                "evaluation": "-"
             }
 
         return result

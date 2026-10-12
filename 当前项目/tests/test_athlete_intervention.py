@@ -16,9 +16,9 @@ class AthleteInterventionTest(unittest.TestCase):
     def test_strength_targets_and_exact_lower_boundary(self):
         rows = self.rows()
         self.assertEqual("119–140 g/天", rows["protein"]["target"])
-        self.assertEqual("适宜", rows["protein"]["evaluation"])
+        self.assertEqual("适中", rows["protein"]["evaluation"])
         self.assertEqual("约 350 g/天", rows["carbohydrate"]["target"])
-        self.assertEqual("参考目标（不判定达标）", rows["carbohydrate"]["evaluation"])
+        self.assertEqual("适中", rows["carbohydrate"]["evaluation"])
 
     def test_team_target_and_preferred_value(self):
         rows = self.rows(athleteType="team")
@@ -29,26 +29,29 @@ class AthleteInterventionTest(unittest.TestCase):
     def test_endurance_has_no_protein_upper_limit(self):
         rows = self.rows(athleteType="endurance")
         self.assertEqual("≥ 84 g/天", rows["protein"]["target"])
-        self.assertEqual("达到参考下限", rows["protein"]["evaluation"])
+        self.assertEqual("适中", rows["protein"]["evaluation"])
         self.assertEqual("560–700 g/天", rows["carbohydrate"]["target"])
 
     def test_age_boundary_and_calcium(self):
         self.assertEqual("≥ 1300 mg/天", self.rows(age=17)["calcium"]["target"])
-        self.assertEqual("达到参考下限", self.rows(age=18)["calcium"]["evaluation"])
+        self.assertEqual("适中", self.rows(age=18)["calcium"]["evaluation"])
         self.assertEqual(-300, self.rows(age=17)["calcium"]["gap"])
 
     def test_invalid_and_missing_numbers_do_not_default(self):
         for invalid in (None, "", "NaN", "Infinity", -1, 0, "70kg"):
             with self.subTest(invalid=invalid):
-                self.assertIn("待补充", self.rows(weight=invalid)["protein"]["evaluation"])
-                self.assertIn("待补充", self.rows(age=invalid)["calcium"]["evaluation"])
+                self.assertEqual("-", self.rows(weight=invalid)["protein"]["evaluation"])
+                self.assertIsNone(self.rows(weight=invalid)["protein"]["gap"])
+                self.assertEqual("-", self.rows(age=invalid)["calcium"]["evaluation"])
+                self.assertIsNone(self.rows(age=invalid)["calcium"]["gap"])
 
     def test_phase_and_project_gates(self):
         for phase in ("competition", "other", ""):
             self.assertTrue(all(row["gap"] is None for key, row in self.rows(trainingPhase=phase).items() if key != 'vegetables'))
-        self.assertIn("待选择", self.rows(athleteType="", projectType="未知项目")["protein"]["evaluation"])
+        self.assertEqual("-", self.rows(athleteType="", projectType="未知项目")["protein"]["evaluation"])
+        self.assertTrue(any("待选择" in w for w in self.report(athleteType="", projectType="未知项目")["athlete_evaluation"]["warnings"]))
         self.assertEqual("105–140 g/天", self.rows(athleteType="", projectType="女足")["protein"]["target"])
-        self.assertEqual("适宜", self.rows(trainingPhase="", currentStatus="正常训练")["protein"]["evaluation"])
+        self.assertEqual("适中", self.rows(trainingPhase="", currentStatus="正常训练")["protein"]["evaluation"])
 
     def test_categories_use_food_rules_and_energy_needs_activity_profile(self):
         report = self.report()

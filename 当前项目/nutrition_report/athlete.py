@@ -51,17 +51,18 @@ def evaluate_athlete(user, nutrition, categories, config):
             if actual is None:
                 status = "无法计算（供能合计为0）"
             elif mode == "approx":
-                status = "参考目标（不判定达标）"
+                status = "不足" if actual < low else "过多" if actual > low else "适中"
                 gap = round(actual - low, 2)
             elif actual < low:
                 status = "不足"
                 gap = round(actual - low, 2)
             elif mode == "range" and actual > high:
-                status = "偏高"
+                status = "过多"
                 gap = round(actual - high, 2)
             else:
-                status = "达到参考下限" if mode == "minimum" else "适宜"
+                status = "适中"
                 gap = 0
+        status = status if status in {"不足", "过多", "适中"} else "-"
         rows.append(dict(key=key, label=label, actual=actual, unit=unit, target=target,
                          gap=gap, machine_evaluation=status, evaluation=status))
 
@@ -80,7 +81,7 @@ def evaluate_athlete(user, nutrition, categories, config):
         if row["actual"] is not None:
             row["actual"] = round(row["actual"], 2)
     for category, info in categories.items():
-        info["evaluation"] = "-" if category in {"饮料", "酒类"} else "文档未提供该类别标准"
+        info["evaluation"] = "-"
     if "蔬菜" in categories:
         categories["蔬菜"]["evaluation"] = rows[-1]["evaluation"]
     # 能量独立采用现有女性EER活动量标准，不被专项V2规则覆盖。
@@ -92,7 +93,7 @@ def evaluate_athlete(user, nutrition, categories, config):
         if row["gap"] is not None and row["gap"] < 0:
             unit = '个百分点' if row['unit'] == '%' else row['unit']
             suggestions.append(f"{row['label']}较参考{'目标' if row['key'] == 'carbohydrate' and len(rule['carbohydrate']) == 1 else '下限'}少 {display_number(abs(row['gap']))} {unit}。")
-        elif row["evaluation"] == "偏高":
+        elif row["evaluation"] == "过多":
             suggestions.append(f"{row['label']}高于参考上限，建议适当减少相关食物摄入。")
     if not reason and rule.get("protein_preferred") and weight:
         suggestions.append(f"团体项目蛋白质优选参考约 {display_number(rule['protein_preferred'] * weight)} g/天（1.7 g/kg）。")

@@ -29,6 +29,11 @@ def _as_text(value: object) -> str:
     return "" if value is None else str(value)
 
 
+def _evaluation_text(value: object) -> str:
+    text = escape(_as_text(value))
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多"} else text
+
+
 class NutritionPDFBuilder:
     def __init__(self, image_dir: str | Path | None = None, font_path: str | Path | None = None):
         # image_dir 保留为兼容旧调用；占比图使用 PDF 原生矢量图，不依赖图片目录。
@@ -195,13 +200,13 @@ class NutritionPDFBuilder:
             [
                 Paragraph("总能量摄入量", category_style),
                 Paragraph(self._format_energy_intake(energy), normal),
-                Paragraph(escape(_as_text(energy.get("evaluation", "-"))), normal),
+                Paragraph(_evaluation_text(energy.get("evaluation", "-")), normal),
             ],
             [Paragraph("三大营养素供能占比", category_style), macro_summary, ""],
             [
                 Paragraph("钙", category_style),
                 Paragraph(f"{escape(_as_text(calcium.get('value', 0)))} mg/day", normal),
-                Paragraph(escape(_as_text(calcium.get("evaluation", "-"))), normal),
+                Paragraph(_evaluation_text(calcium.get("evaluation", "-")), normal),
             ],
             [Paragraph("解读", category_style), Paragraph(self._interpretation(data), left), ""],
             [
@@ -242,7 +247,7 @@ class NutritionPDFBuilder:
             for row in athlete["rows"]:
                 actual = "—" if row["actual"] is None else f"{row['actual']:g} {row['unit']}"
                 values = [row["label"], actual, row["target"], "—" if row["gap"] is None else f"{row['gap']:+g}", row["machine_evaluation"], row["evaluation"]]
-                rows.append([Paragraph(escape(value), normal) for value in values])
+                rows.append([Paragraph(_evaluation_text(value) if i in (4, 5) else escape(value), normal) for i, value in enumerate(values)])
             table = Table(rows, colWidths=[24*mm, 30*mm, 32*mm, 16*mm, 37*mm, 37*mm], repeatRows=1)
             table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F75B5"))]))
             story.extend([Spacer(1, 3*mm), table])
@@ -259,7 +264,10 @@ class NutritionPDFBuilder:
                 score = '未计分' if row['score'] is None else f"{row['score']}/1"
                 values = [row['label'], actual, row['target'] + ('；' + row['note'] if row['note'] else ''),
                           row['machine_evaluation'] + '；' + score, row['evaluation']]
-                rows.append([Paragraph(escape(v), standard_body) for v in values])
+                formatted = [escape(v) for v in values]
+                formatted[3] = _evaluation_text(row['machine_evaluation']) + '；' + escape(score)
+                formatted[4] = _evaluation_text(row['evaluation'])
+                rows.append([Paragraph(v, standard_body) for v in formatted])
             table = Table(rows, colWidths=[28*mm, 27*mm, 43*mm, 39*mm, 39*mm], repeatRows=1)
             table.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), .4, colors.grey),
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F75B5'))]))
@@ -327,7 +335,7 @@ class NutritionPDFBuilder:
             table_data.append([
                 Paragraph(escape(category), category_style),
                 Paragraph(amount_text, normal),
-                Paragraph(escape(_as_text(info.get("evaluation", "-"))), normal),
+                Paragraph(_evaluation_text(info.get("evaluation", "-")), normal),
             ])
         if suggestions is not None:
             suggestion_start = len(table_data)
@@ -446,8 +454,8 @@ class NutritionPDFBuilder:
         calcium_evaluation = (nutrition.get("calcium") or {}).get("evaluation")
         if energy_evaluation == "不足":
             lines.append("能量摄入不足，应增加碳水化合物摄入")
-        elif energy_evaluation == "偏高":
-            lines.append("能量摄入偏高，应适当控制总能量摄入")
+        elif energy_evaluation == "过多":
+            lines.append("能量摄入过多，应适当控制总能量摄入")
         if calcium_evaluation == "不足":
             lines.append("钙摄入不足，应增加奶制品摄入")
         return "<br/>".join(lines) or "暂无"

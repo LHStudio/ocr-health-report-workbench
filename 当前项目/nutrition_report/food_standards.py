@@ -24,14 +24,13 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
                         number(types.get(selected, {}).get('vegetables_g_min')) or 0)
     weight = number(user.get('weight'))
     scale = number(user.get('foodTargetScale'))
-    scope = '' if weight and weight >= 60 else '无法判断：缺少有效体重或体重低于60kg，适用标准待确认'
+    scope = '' if weight and weight >= 60 else '-'
     quantity_scope = scope
     if weight and weight > 70 and (scale is None or scale < 1):
-        quantity_scope = '仅列基础参考：体重超过70kg，待专业人员确认摄入倍率（≥1）'
+        quantity_scope = '-'
     scale = scale if weight and weight > 70 and scale is not None and scale >= 1 else 1
     notes = [
-        '新增标准适用于60–70kg运动员；日均摄入按食物频率折算，不代表单日精确记录。',
-        '超过70kg不自动按体重线性加量；克数目标可由专业人员填写倍率，比值目标不随倍率改变。低于60kg不自动外推。',
+        '60-70kg标准',
         '主食能量=谷类+豆类（包含豆制品）+薯类；豆类至少5%、薯类至少15%，因此谷类占比上限为80%，不是必须达到80%。',
         '水产品占比按肉类日均重量计算；畜禽肉为肉类总量扣除水产品后的部分，包含畜肉和禽肉。',
         '奶粉、奶酪折算鲜奶等价量（按蛋白质估计）=记录克数×该食物每100g蛋白质/鲜奶每100g蛋白质；鲜奶、酸奶按原重。折算只用于奶量评价，营养素不重复计算。',
@@ -101,7 +100,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
 
     rows = []
 
-    def add(key, label, groups, low=None, high=None, ratio=None, target=None, note='', qualitative=None, actual_override=None, advisory=False, over_label='偏高'):
+    def add(key, label, groups, low=None, high=None, ratio=None, target=None, note='', qualitative=None, actual_override=None, advisory=False, over_label='过多'):
         is_ratio = ratio is not None
         unit = '%' if is_ratio else 'g/天'
         blocked = scope if is_ratio or qualitative is not None else quantity_scope
@@ -112,7 +111,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
             numerator, denominator = ratio
             actual = numerator / denominator * 100 if denominator > 0 else None
             if actual is None:
-                blocked = '无法判断：分母为0'
+                blocked = '-'
         else:
             actual = actual_override if actual_override is not None else total(groups)
         lo = low * (1 if is_ratio else scale) if low is not None else None
@@ -121,9 +120,9 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
             target = (f'≤ {hi:g}' if lo is None else f'{lo:g}–{hi:g}' if hi is not None else f'≥ {lo:g}') + ' ' + unit
         status, score, gap = blocked, None, None
         if advisory:
-            # 通用建议/类别说明不依赖体重，也不把未填写的问卷视为零摄入。
+            # 通用建议/类别说明不依赖体重；不替无标准的类别编造定量评价。
             status = qualitative(actual)
-            if blocked:
+            if blocked and blocked != '-':
                 note = '；'.join(filter(None, (note, blocked)))
         elif not status:
             if qualitative is not None:
@@ -133,7 +132,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
             elif hi is not None and actual > hi:
                 status, score, gap = over_label, 0, actual - hi
             else:
-                status, score, gap = '达标', 1, 0
+                status, score, gap = '适中', 1, 0
         rows.append(dict(key=key, label=label, actual=round(actual, 4) if actual is not None else None,
                          unit=unit, target=target, gap=round(gap, 4) if gap is not None else None,
                          score=score, machine_evaluation=status, evaluation=status, note=note))
@@ -149,7 +148,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
     add('tubers_energy', '薯类占主食能量', staples, tubers_min,
         ratio=(total({'薯类'}, 'energy'), staple_energy))
     add('grains_remainder', '谷类占主食能量', staples, high=100-beans_min-tubers_min,
-        ratio=(total({'谷类'}, 'energy'), staple_energy), over_label='超过',
+        ratio=(total({'谷类'}, 'energy'), staple_energy), over_label='过多',
         note='上限=100%-豆类5%-薯类15%；无下限')
     milk_note = (f'鲜奶基准蛋白质 {milk_protein:g} g/100g；' if milk_protein else '') + '；'.join(milk_trace)
     add('milk', '奶类鲜奶等价量（按蛋白质估计）', {'奶类'}, 400, note=milk_note or '鲜奶、酸奶原重；奶粉奶酪按蛋白质折算', actual_override=milk_equivalent)

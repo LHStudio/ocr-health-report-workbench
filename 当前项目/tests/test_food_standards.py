@@ -50,7 +50,7 @@ class FoodStandardsTest(unittest.TestCase):
     def test_under_over_and_near_boundary_not_rounded_into_pass(self):
         rows = self.rows(amounts={**self.amounts, '坚果': 9.999, '果': 500.001, '菜': 199.999})
         self.assertEqual(0, rows['nuts']['score'])
-        self.assertEqual('偏高', rows['fruit']['evaluation'])
+        self.assertEqual('过多', rows['fruit']['evaluation'])
         self.assertEqual('不足', rows['vegetables']['evaluation'])
 
     def test_completed_questionnaire_blanks_and_explicit_not_eaten_are_zero(self):
@@ -100,7 +100,7 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertIn('food_standard_evaluation', report)
         row = next(x for x in report['food_standard_evaluation']['rows'] if x['key'] == 'nuts')
         self.assertEqual('已复核', row['evaluation'])
-        self.assertEqual('达标', row['machine_evaluation'])
+        self.assertEqual('适中', row['machine_evaluation'])
         self.assertEqual(1, row['score'])
 
     def test_partial_manual_override_does_not_erase_machine_suggestions(self):
