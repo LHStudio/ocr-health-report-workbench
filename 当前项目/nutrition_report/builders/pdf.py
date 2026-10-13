@@ -5,6 +5,7 @@ import os
 import re
 from pathlib import Path
 from xml.sax.saxutils import escape
+from .presentation import evaluation_rows, evaluation_warnings
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -239,41 +240,23 @@ class NutritionPDFBuilder:
         story.append(energy_report)
 
         athlete = data.get("athlete_evaluation")
-        if athlete:
+        if evaluation_rows(data):
             story.extend([PageBreak(), Paragraph("运动员专项膳食评价", title)])
-            for line in [athlete["source"] + " · " + athlete["athlete_label"], *athlete["warnings"], athlete["gap_note"]]:
+            if athlete:
+                story.append(Paragraph(escape(athlete["athlete_label"]), quality))
+            for line in evaluation_warnings(data):
                 story.append(Paragraph(escape(line), quality))
-            rows = [[Paragraph(text, header) for text in ["项目", "实际摄入", "参考目标", "差值", "机器初稿", "最终评价"]]]
-            for row in athlete["rows"]:
+            evaluation_body = ParagraphStyle('EvaluationBody', parent=normal, fontSize=9.5, leading=12)
+            rows = [[Paragraph(text, header) for text in ["项目", "实际摄入", "参考目标 / 口径", "差值", "最终评价"]]]
+            for row in evaluation_rows(data):
                 actual = "—" if row["actual"] is None else f"{row['actual']:g} {row['unit']}"
-                values = [row["label"], actual, row["target"], "—" if row["gap"] is None else f"{row['gap']:+g}", row["machine_evaluation"], row["evaluation"]]
-                rows.append([Paragraph(_evaluation_text(value) if i in (4, 5) else escape(value), normal) for i, value in enumerate(values)])
-            table = Table(rows, colWidths=[24*mm, 30*mm, 32*mm, 16*mm, 37*mm, 37*mm], repeatRows=1)
+                target = row["target"] + ('；' + row['note'] if row.get('note') else '')
+                values = [row["label"], actual, target, "—" if row["gap"] is None else f"{row['gap']:+g}", row["evaluation"]]
+                rows.append([Paragraph(_evaluation_text(value) if i == 4 else escape(value), evaluation_body) for i, value in enumerate(values)])
+            table = Table(rows, colWidths=[28*mm, 30*mm, 67*mm, 16*mm, 35*mm], repeatRows=1)
             table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F75B5"))]))
             story.extend([Spacer(1, 3*mm), table])
 
-        standard = data.get('food_standard_evaluation')
-        if standard:
-            story.extend([PageBreak(), Paragraph('新增膳食标准逐项评价', title)])
-            story.append(Paragraph(escape(standard['source']), quality))
-            story.append(Paragraph(escape(standard['summary']['text']), quality))
-            standard_body = ParagraphStyle('FoodStandardBody', parent=normal, fontSize=9.5, leading=12)
-            rows = [[Paragraph(text, header) for text in ['项目', '实际值', '目标 / 口径', '机器初稿 / 规则分', '最终评价']]]
-            for row in standard['rows']:
-                actual = '—' if row['actual'] is None else f"{row['actual']:g} {row['unit']}"
-                score = '未计分' if row['score'] is None else f"{row['score']}/1"
-                values = [row['label'], actual, row['target'] + ('；' + row['note'] if row['note'] else ''),
-                          row['machine_evaluation'] + '；' + score, row['evaluation']]
-                formatted = [escape(v) for v in values]
-                formatted[3] = _evaluation_text(row['machine_evaluation']) + '；' + escape(score)
-                formatted[4] = _evaluation_text(row['evaluation'])
-                rows.append([Paragraph(v, standard_body) for v in formatted])
-            table = Table(rows, colWidths=[28*mm, 27*mm, 43*mm, 39*mm, 39*mm], repeatRows=1)
-            table.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), .4, colors.grey),
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4F75B5'))]))
-            story.extend([Spacer(1, 3*mm), table, Spacer(1, 3*mm)])
-            for note in standard['warnings']:
-                story.append(Paragraph(escape(note), quality))
 
         warnings = data.get("conversion_warnings") or []
         unmatched = data.get("unmatched_foods") or []

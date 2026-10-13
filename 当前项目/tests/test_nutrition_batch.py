@@ -50,7 +50,8 @@ class NutritionBatchTest(unittest.TestCase):
                 else:
                     from io import BytesIO
                     wb = load_workbook(BytesIO(z.read(name)))
-                    self.assertIn('新增膳食标准', wb.sheetnames)
+                    self.assertIn('运动员专项评价', wb.sheetnames)
+                    self.assertNotIn('新增膳食标准', wb.sheetnames)
 
     def test_bad_person_does_not_silently_omit_or_abort_others(self):
         self.people[1]['food_rows'] = []
@@ -77,5 +78,5 @@ class NutritionBatchTest(unittest.TestCase):
             self.assertEqual('automatic', m['results'][1]['evaluation_mode'])
             from io import BytesIO
             wb = load_workbook(BytesIO(z.read(m['results'][0]['file'])))
-            values = [c.value for row in wb['新增膳食标准'] for c in row]
+            values = [c.value for row in wb['运动员专项评价'] for c in row]
             self.assertIn('人工核查', values)

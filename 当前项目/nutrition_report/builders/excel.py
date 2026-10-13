@@ -3,6 +3,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from pathlib import Path
 import math
 from copy import copy
+from .presentation import evaluation_rows, evaluation_warnings
 
 
 class NutritionExcelBuilder:
@@ -19,35 +20,20 @@ class NutritionExcelBuilder:
         self._create_suggestions_sheet(wb, data)
         self._create_conversion_notes_sheet(wb, data)
         athlete = data.get("athlete_evaluation")
-        if athlete:
+        if evaluation_rows(data):
             ws = wb.create_sheet("运动员专项评价")
-            ws.append([athlete["source"], athlete["athlete_label"], athlete["training_phase"]])
-            for note in athlete["warnings"] + [athlete["gap_note"]]:
+            ws.append(["运动员专项膳食评价", (athlete or {}).get("athlete_label", ""), (athlete or {}).get("training_phase", "")])
+            for note in evaluation_warnings(data):
                 ws.append([note])
-            ws.append(["项目", "实际摄入", "单位", "参考目标", "差值", "机器初稿", "最终评价"])
-            for row in athlete["rows"]:
-                ws.append([row[k] for k in ("label", "actual", "unit", "target", "gap", "machine_evaluation", "evaluation")])
+            ws.append(["项目", "实际摄入", "单位", "参考目标", "差值", "最终评价", "口径"])
+            for row in evaluation_rows(data):
+                ws.append([row[k] for k in ("label", "actual", "unit", "target", "gap", "evaluation")] + [row.get("note", "")])
             for column in "ABCDEFG":
                 ws.column_dimensions[column].width = 30
             for cells in ws:
                 for cell in cells:
                     cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-        standard = data.get('food_standard_evaluation')
-        if standard:
-            ws = wb.create_sheet('新增膳食标准')
-            ws.append([standard['source']])
-            ws.append([standard['summary']['text']])
-            ws.append(['项目', '实际值', '单位', '目标', '差值', '规则得分(0/1)', '机器初稿', '最终评价', '口径'])
-            for row in standard['rows']:
-                ws.append([row[k] for k in ('label', 'actual', 'unit', 'target', 'gap', 'score', 'machine_evaluation', 'evaluation', 'note')])
-            for note in standard['warnings']:
-                ws.append([note])
-            for col in 'ABCDEFGHI':
-                ws.column_dimensions[col].width = 26
-            for cells in ws:
-                for cell in cells:
-                    cell.alignment = Alignment(wrap_text=True, vertical='top')
         # Apply to actual evaluation cells only; normal values and explanatory text keep their style.
         for sheet in wb:
             for row in sheet:

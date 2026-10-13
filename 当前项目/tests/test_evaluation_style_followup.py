@@ -69,7 +69,9 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         source=(root/'src/components/NutritionWorkspace.vue').read_text(encoding='utf8')
         self.assertTrue('value="不足"' in source and 'value="过多"' in source)
         self.assertFalse('value="偏少"' in source or 'value="偏多"' in source)
-        self.assertGreaterEqual(source.count('evaluationAlertClass('),7)
+        self.assertIn('evaluationAlertClass(finalEvaluation(row, reportReview))',source)
+        self.assertIn('evaluationAlertClass(reportReview.categoryEvaluations[row.key])',source)
+        self.assertIn('evaluationAlertClass(reportReview[row.key])',source)
         self.assertIn('#dc2626',(root/'src/style.css').read_text(encoding='utf8').lower())
 
     def test_about_version_is_2026_10_12_v5_0_1(self):

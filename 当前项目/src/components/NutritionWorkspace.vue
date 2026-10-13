@@ -121,24 +121,17 @@
             </div>
           </div>
           <section class="nutrition-evaluation-review" aria-label="营养评价人工复核">
-            <div v-if="nutritionPreview?.athlete_evaluation" class="nutrition-preview-panel">
-              <h5>{{ nutritionPreview.athlete_evaluation.source }} · {{ nutritionPreview.athlete_evaluation.athlete_label }}</h5>
-              <p v-for="note in nutritionPreview.athlete_evaluation.warnings" :key="note" class="hint">{{ note }}</p>
-              <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>机器初稿</th></tr></thead><tbody><tr v-for="row in nutritionPreview.athlete_evaluation.rows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}</td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(row.machine_evaluation)">{{ row.machine_evaluation }}</td></tr></tbody></table></div>
-              <p class="hint">{{ nutritionPreview.athlete_evaluation.gap_note }}</p>
+            <div v-if="unifiedEvaluationRows.length" class="nutrition-preview-panel">
+              <h5>运动员专项膳食评价<span v-if="nutritionPreview?.athlete_evaluation"> · {{ nutritionPreview.athlete_evaluation.athlete_label }}</span></h5>
+              <p v-for="note in unifiedEvaluationWarnings" :key="note" class="hint">{{ note }}</p>
+              <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标 / 口径</th><th>差值</th><th>最终评价</th></tr></thead><tbody><tr v-for="row in unifiedEvaluationRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}<span v-if="row.note">；{{ row.note }}</span></td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(finalEvaluation(row, reportReview))">{{ finalEvaluation(row, reportReview) || '—' }}</td></tr></tbody></table></div>
             </div>
-            <section v-if="nutritionPreview?.food_standard_evaluation" class="nutrition-preview-panel" aria-label="新增膳食标准">
-              <h5>{{ nutritionPreview.food_standard_evaluation.source }}</h5>
-              <p><strong>{{ nutritionPreview.food_standard_evaluation.summary.text }}</strong></p>
-              <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际值</th><th>目标</th><th>差值</th><th>规则分</th><th>机器初稿</th></tr></thead><tbody><tr v-for="row in nutritionPreview.food_standard_evaluation.rows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}</td><td>{{ row.gap ?? '—' }}</td><td>{{ row.score == null ? '不计分' : `${row.score}/1` }}</td><td :class="evaluationAlertClass(row.machine_evaluation)">{{ row.machine_evaluation }}</td></tr></tbody></table></div>
-              <details><summary>适用范围与计算口径</summary><p v-for="note in nutritionPreview.food_standard_evaluation.warnings" :key="note" class="hint">{{ note }}</p></details>
-            </section>
             <div class="subsection-title"><div><h4>营养评价人工复核</h4><p>机器评价仅作初稿。请按实际情况逐项选择不足、适中、过多或其他自定义评价，并编辑最终建议和解读。</p></div><div class="review-header-actions"><button class="secondary-button mini-button" type="button" :disabled="!nutritionPreview" @click="resetReportReviewFromMachine">重载机器初稿</button></div></div>
             <p v-if="!nutritionPreview || previewLoading" class="hint">正在计算机器初稿，完成后可复核。</p>
             <template v-else>
-              <div class="mapping-wrap"><table class="mapping-table nutrition-evaluation-table"><thead><tr><th>项目</th><th>当前摄入</th><th>机器初稿</th><th>人工最终评价</th></tr></thead><tbody>
-                <tr v-for="row in categoryReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} g/天</td><td :class="evaluationAlertClass(row.machineEvaluation)">{{ row.machineEvaluation || '—' }}</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview.categoryEvaluations[row.key], `category:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview.categoryEvaluations[row.key])" @change="setEvaluation('category', row.key, $event.target.value)"><option value="">—（不计算）</option><option value="不足">不足</option><option value="适中">适中</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview.categoryEvaluations[row.key], `category:${row.key}`)" v-model="reportReview.categoryEvaluations[row.key]" :class="evaluationAlertClass(reportReview.categoryEvaluations[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
-                <tr v-for="row in nutrientReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} {{ row.unit }}</td><td :class="evaluationAlertClass(row.machineEvaluation)">{{ row.machineEvaluation || '—' }}</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview[row.key], `nutrition:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview[row.key])" @change="setEvaluation('nutrition', row.key, $event.target.value)"><option value="">—（不计算）</option><option value="不足">不足</option><option value="适中">适中</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview[row.key], `nutrition:${row.key}`)" v-model="reportReview[row.key]" :class="evaluationAlertClass(reportReview[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
+              <div class="mapping-wrap"><table class="mapping-table nutrition-evaluation-table"><thead><tr><th>项目</th><th>当前摄入</th><th>人工最终评价</th></tr></thead><tbody>
+                <tr v-for="row in categoryReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} g/天</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview.categoryEvaluations[row.key], `category:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview.categoryEvaluations[row.key])" @change="setEvaluation('category', row.key, $event.target.value)"><option value="">—（不计算）</option><option value="不足">不足</option><option value="适中">适中</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview.categoryEvaluations[row.key], `category:${row.key}`)" v-model="reportReview.categoryEvaluations[row.key]" :class="evaluationAlertClass(reportReview.categoryEvaluations[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
+                <tr v-for="row in nutrientReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} {{ row.unit }}</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview[row.key], `nutrition:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview[row.key])" @change="setEvaluation('nutrition', row.key, $event.target.value)"><option value="">—（不计算）</option><option value="不足">不足</option><option value="适中">适中</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview[row.key], `nutrition:${row.key}`)" v-model="reportReview[row.key]" :class="evaluationAlertClass(reportReview[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
               </tbody></table></div>
               <div class="report-review-textareas"><label>总体建议（可修改机器初稿）<textarea v-model="reportReview.overallSuggestions" rows="8" placeholder="每行一条建议"></textarea></label><label>最终总结 / 报告解读（可修改机器初稿）<textarea v-model="reportReview.interpretation" rows="8" placeholder="请输入最终总结或解读"></textarea></label></div>
               <p class="nutrition-disclaimer-preview">报告将注明：以上营养成分仅根据记录饮食计算，不包含维生素、矿物质、蛋白粉等其他补充剂摄入。</p>
@@ -179,6 +172,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storedOcrApiUrl } from '../runtime-config'
 import { buildBatchPayload } from '../nutrition-batch'
+import { evaluationRows, evaluationWarnings, finalEvaluation } from '../nutrition-presentation'
 
 const serverUrl = ref(storedOcrApiUrl())
 const serverMessage = ref(''); const serverOk = ref(false); const testing = ref(false)
@@ -207,6 +201,8 @@ const bmiValue = computed(() => { const height = Number(reportProfile.value.heig
 const bmiStatus = computed(() => { const bmi = Number(bmiValue.value); if (!bmi) return ''; if (bmi < 18.5) return '偏瘦'; if (bmi < 24) return '正常'; if (bmi < 28) return '超重'; return '肥胖' })
 const energyStandardNote = computed(() => nutritionPreview.value?.nutrition?.energy?.standard_note || '请选择活动量')
 const nutritionDataSource = computed(() => nutritionPreview.value?.food_data_source || {})
+const unifiedEvaluationRows = computed(() => evaluationRows(nutritionPreview.value))
+const unifiedEvaluationWarnings = computed(() => evaluationWarnings(nutritionPreview.value))
 const categoryReviewRows = computed(() => Object.entries(nutritionPreview.value?.category_result || {}).map(([key, info]) => ({ key, label: key, value: key === '奶类' && 'equivalent_value' in info ? `${info.value}（原重），鲜奶等价量（按蛋白质估计）${info.equivalent_value ?? '-'}` : (info?.value ?? 0), machineEvaluation: machineEvaluationText(info?.evaluation) })))
 const nutrientReviewRows = computed(() => {
   const nutrition = nutritionPreview.value?.nutrition || {}
