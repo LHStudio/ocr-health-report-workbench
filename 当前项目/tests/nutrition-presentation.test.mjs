@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation } from '../src/nutrition-presentation.js'
+import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass } from '../src/nutrition-presentation.js'
 
 test('merge by key, standard wins, no mutation or duplicate vegetables', () => {
   const data = { athlete_evaluation: { rows: [{ key: 'protein', evaluation: '不足' }, { key: 'vegetables', evaluation: 'old' }], warnings: ['原文未明确年龄分界，需业务确认。', '缺少体重'] }, food_standard_evaluation: { rows: [{ key: 'vegetables', evaluation: '' }, { key: 'nuts', evaluation: '适中' }], warnings: ['缺少体重'] } }
@@ -28,4 +28,9 @@ test('remove requested wording and move scope into one context line without chan
   assert.equal(evaluationRows(data)[0].note, '每个鸡蛋按50g')
   assert.equal(JSON.stringify(data), before)
   assert.equal(evaluationContext(null), '')
+})
+
+test('snack advice is an alert without coloring normal or partial strings', () => {
+  for (const value of ['不足', '过多', '建议尽量不吃', ' 建议尽量不吃 ']) assert.equal(evaluationAlertClass(value), 'evaluation-alert')
+  for (const value of ['适中', '自定义评价', '建议尽量不吃但尚待核查', null]) assert.equal(evaluationAlertClass(value), '')
 })

@@ -125,7 +125,7 @@
               <h5>运动员专项膳食评价</h5>
               <p class="hint">{{ unifiedEvaluationContext }}</p>
               <p v-for="note in unifiedEvaluationWarnings" :key="note" class="hint">{{ note }}</p>
-              <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>最终评价</th></tr></thead><tbody><tr v-for="row in unifiedEvaluationRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}<span v-if="row.note">；{{ row.note }}</span></td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(finalEvaluation(row, reportReview))">{{ finalEvaluation(row, reportReview) || '—' }}</td></tr></tbody></table></div>
+              <div class="mapping-wrap"><table class="mapping-table athlete-evaluation-table"><colgroup><col style="width: 20%" /><col style="width: 17%" /><col style="width: 39%" /><col style="width: 11%" /><col style="width: 13%" /></colgroup><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>最终评价</th></tr></thead><tbody><tr v-for="row in unifiedEvaluationRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td :class="evaluationAlertClass(row.target)">{{ row.target }}<span v-if="row.note">；{{ row.note }}</span></td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(finalEvaluation(row, reportReview))">{{ finalEvaluation(row, reportReview) || '—' }}</td></tr></tbody></table></div>
             </div>
             <div class="subsection-title"><div><h4>营养评价人工复核</h4><p>机器评价仅作初稿。请按实际情况逐项选择不足、适中、过多或其他自定义评价，并编辑最终建议和解读。</p></div><div class="review-header-actions"><button class="secondary-button mini-button" type="button" :disabled="!nutritionPreview" @click="resetReportReviewFromMachine">重载机器初稿</button></div></div>
             <p v-if="!nutritionPreview || previewLoading" class="hint">正在计算机器初稿，完成后可复核。</p>
@@ -173,7 +173,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storedOcrApiUrl } from '../runtime-config'
 import { buildBatchPayload } from '../nutrition-batch'
-import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation } from '../nutrition-presentation'
+import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass } from '../nutrition-presentation'
 
 const serverUrl = ref(storedOcrApiUrl())
 const serverMessage = ref(''); const serverOk = ref(false); const testing = ref(false)
@@ -262,7 +262,6 @@ function emptyReportProfile() { return { name: '', age: '', projectType: '', ath
 function emptyBodyRecordDraft() { return { filename: '', name: '', gender: '', age: '', height: '', weight: '', fatFreeMass: '' } }
 function emptyReportReview() { return { categoryEvaluations: {}, energyEvaluation: '', calciumEvaluation: '', overallSuggestions: '', interpretation: '', machineSeeded: false, manualEntryFields: {} } }
 function copyReportReview(review) { return { ...emptyReportReview(), ...(review || {}), categoryEvaluations: { ...(review?.categoryEvaluations || {}) }, manualEntryFields: { ...(review?.manualEntryFields || {}) } } }
-function evaluationAlertClass(value) { return ['不足', '过多'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : '' }
 function machineEvaluationText(value) { return String(value ?? '').trim() }
 function machineInterpretation(preview) {
   const nutrition = preview?.nutrition || {}; const lines = []

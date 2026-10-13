@@ -32,7 +32,21 @@ def _as_text(value: object) -> str:
 
 def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多"} else text
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多", "建议尽量不吃"} else text
+
+
+def _table_text(value: object) -> str:
+    """Keep percentage units and parenthesized phrases together when wrapping."""
+    raw = _as_text(value)
+    if raw.strip() == '建议尽量不吃':
+        return _evaluation_text(value)
+    tokens = re.compile(r'[（(][^（）()]+[）)]|[≥≤约]?\s*[+\-]?\d+(?:\.\d+)?(?:[–—-]\d+(?:\.\d+)?)?\s*(?:%|mg/天|g/天|g/100g)')
+    parts = []; start = 0
+    for match in tokens.finditer(raw):
+        parts.extend([escape(raw[start:match.start()]), '<nobr>' + escape(match.group()) + '</nobr>'])
+        start = match.end()
+    parts.append(escape(raw[start:]))
+    return ''.join(parts)
 
 
 class NutritionPDFBuilder:
@@ -247,14 +261,21 @@ class NutritionPDFBuilder:
             for line in evaluation_warnings(data):
                 story.append(Paragraph(escape(line), quality))
             evaluation_body = ParagraphStyle('EvaluationBody', parent=normal, fontSize=9.5, leading=12)
+            final_body = ParagraphStyle('FinalEvaluationBody', parent=evaluation_body, fontSize=8.5, leading=11)
             rows = [[Paragraph(text, header) for text in ["项目", "实际摄入", "参考目标", "差值", "最终评价"]]]
             for row in evaluation_rows(data):
                 actual = "—" if row["actual"] is None else f"{row['actual']:g} {row['unit']}"
-                target = row["target"] + ('；' + row['note'] if row.get('note') else '')
-                values = [row["label"], actual, target, "—" if row["gap"] is None else f"{row['gap']:+g}", row["evaluation"]]
-                rows.append([Paragraph(_evaluation_text(value) if i == 4 else escape(value), evaluation_body) for i, value in enumerate(values)])
-            table = Table(rows, colWidths=[28*mm, 30*mm, 67*mm, 16*mm, 35*mm], repeatRows=1)
-            table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F75B5"))]))
+                # Give the reference value its own line; a long note must not pull its unit away.
+                target_cell = [Paragraph(_table_text(row['target']), evaluation_body)]
+                if row.get('note'):
+                    note = re.sub(r'([（(])', r'<br/>\1', escape(row['note']))
+                    target_cell.append(Paragraph(note, evaluation_body))
+                label = re.sub(r'([（(])', r'<br/>\1', _table_text(row['label']))
+                rows.append([Paragraph(label, evaluation_body), Paragraph(_table_text(actual), evaluation_body), target_cell,
+                             Paragraph("—" if row["gap"] is None else f"{row['gap']:+g}", evaluation_body),
+                             Paragraph(_evaluation_text(row['evaluation']), final_body)])
+            table = Table(rows, colWidths=[34*mm, 30*mm, 70*mm, 20*mm, 22*mm], repeatRows=1)
+            table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F75B5")), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))
             story.extend([Spacer(1, 3*mm), table])
 
 

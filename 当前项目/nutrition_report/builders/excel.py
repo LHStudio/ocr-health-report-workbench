@@ -30,18 +30,18 @@ class NutritionExcelBuilder:
             ws.append(["项目", "实际摄入", "单位", "参考目标", "差值", "最终评价", "口径"])
             for row in evaluation_rows(data):
                 ws.append([row[k] for k in ("label", "actual", "unit", "target", "gap", "evaluation")] + [row.get("note", "")])
-            for column in "ABCDEFG":
-                ws.column_dimensions[column].width = 30
+            for column, width in zip("ABCDEFG", (38, 22, 12, 40, 32, 18, 50)):
+                ws.column_dimensions[column].width = width
             for cells in ws:
                 for cell in cells:
                     cell.alignment = Alignment(wrap_text=True, vertical="top")
             ws['A2'].alignment = Alignment(wrap_text=False, vertical="top")
 
-        # Apply to actual evaluation cells only; normal values and explanatory text keep their style.
+        # Highlight alert evaluations and the exact snack advice; normal values keep their style.
         for sheet in wb:
             for row in sheet:
                 for cell in row:
-                    if cell.value in ("不足", "过多"):
+                    if cell.value in ("不足", "过多", "建议尽量不吃"):
                         font = copy(cell.font)
                         font.color = "DC2626"
                         cell.font = font

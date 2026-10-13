@@ -74,15 +74,19 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         self.assertIn('evaluationAlertClass(reportReview[row.key])',source)
         self.assertIn('#dc2626',(root/'src/style.css').read_text(encoding='utf8').lower())
 
-    def test_about_version_is_2026_10_12_v5_0_1(self):
+    def test_about_version_is_2026_10_13_v5_0_4(self):
         root=Path(__file__).resolve().parents[1]
         package=json.loads((root/'package.json').read_text(encoding='utf8'))
         lock=json.loads((root/'package-lock.json').read_text(encoding='utf8'))
-        self.assertEqual('5.0.1',package['version'])
-        self.assertEqual('5.0.1',lock['version'])
-        self.assertEqual('5.0.1',lock['packages']['']['version'])
+        self.assertEqual('5.0.4',package['version'])
+        self.assertEqual('5.0.4',lock['version'])
+        self.assertEqual('5.0.4',lock['packages']['']['version'])
         app=(root/'src/App.vue').read_text(encoding='utf8')
-        self.assertTrue('`2026-10-12-v${appMetadata.version}`' in app)
+        self.assertTrue('`2026-10-13-v${appMetadata.version}`' in app)
+        readme=(root/'README.md').read_text(encoding='utf8')
+        self.assertIn('当前版本：`2026-10-13-v5.0.4`',readme)
+        self.assertIn('文档更新：2026-10-13',readme)
+        self.assertIn('建议尽量不吃',readme)
 
 
 if __name__=='__main__':unittest.main()

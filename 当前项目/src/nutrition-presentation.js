@@ -1,4 +1,8 @@
 // Display-only union. Do not alter evaluator rows or manual-review storage.
+export function evaluationAlertClass(value) {
+  return ['不足', '过多', '建议尽量不吃'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
+}
+
 export function cleanDisplayText(text = '') {
   for (const [oldText, newText] of [
     ['；参数来自用户提供文档，需营养专业人员审核。', ''],
