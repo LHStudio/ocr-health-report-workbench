@@ -3,7 +3,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from pathlib import Path
 import math
 from copy import copy
-from .presentation import evaluation_rows, evaluation_warnings
+from .presentation import evaluation_rows, evaluation_warnings, evaluation_context
 
 
 class NutritionExcelBuilder:
@@ -22,7 +22,9 @@ class NutritionExcelBuilder:
         athlete = data.get("athlete_evaluation")
         if evaluation_rows(data):
             ws = wb.create_sheet("运动员专项评价")
-            ws.append(["运动员专项膳食评价", (athlete or {}).get("athlete_label", ""), (athlete or {}).get("training_phase", "")])
+            ws.append(["运动员专项膳食评价"])
+            ws.append([evaluation_context(data)])
+            ws.merge_cells('A2:G2')
             for note in evaluation_warnings(data):
                 ws.append([note])
             ws.append(["项目", "实际摄入", "单位", "参考目标", "差值", "最终评价", "口径"])
@@ -33,6 +35,7 @@ class NutritionExcelBuilder:
             for cells in ws:
                 for cell in cells:
                     cell.alignment = Alignment(wrap_text=True, vertical="top")
+            ws['A2'].alignment = Alignment(wrap_text=False, vertical="top")
 
         # Apply to actual evaluation cells only; normal values and explanatory text keep their style.
         for sheet in wb:

@@ -60,7 +60,7 @@ class UnifiedNutritionPresentationTest(unittest.TestCase):
         original = deepcopy(data)
         self.assertEqual(['vegetables','milk'],[r['key'] for r in evaluation_rows(data)])
         self.assertEqual('',evaluation_rows(data)[0]['evaluation'])
-        self.assertEqual(['缺少体重','60-70kg标准'],evaluation_warnings(data))
+        self.assertEqual(['缺少体重'],evaluation_warnings(data))
         self.assertEqual(original,data)
         self.assertEqual([],evaluation_rows({}))
         self.assertEqual(['milk'],[r['key'] for r in evaluation_rows({'food_standard_evaluation':{'rows':[{'key':'milk'}]}})])

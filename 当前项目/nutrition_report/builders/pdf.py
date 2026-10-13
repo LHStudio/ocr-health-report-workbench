@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from xml.sax.saxutils import escape
-from .presentation import evaluation_rows, evaluation_warnings
+from .presentation import evaluation_rows, evaluation_warnings, evaluation_context
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -242,12 +242,12 @@ class NutritionPDFBuilder:
         athlete = data.get("athlete_evaluation")
         if evaluation_rows(data):
             story.extend([PageBreak(), Paragraph("运动员专项膳食评价", title)])
-            if athlete:
-                story.append(Paragraph(escape(athlete["athlete_label"]), quality))
+            if evaluation_context(data):
+                story.append(Paragraph(escape(evaluation_context(data)), quality))
             for line in evaluation_warnings(data):
                 story.append(Paragraph(escape(line), quality))
             evaluation_body = ParagraphStyle('EvaluationBody', parent=normal, fontSize=9.5, leading=12)
-            rows = [[Paragraph(text, header) for text in ["项目", "实际摄入", "参考目标 / 口径", "差值", "最终评价"]]]
+            rows = [[Paragraph(text, header) for text in ["项目", "实际摄入", "参考目标", "差值", "最终评价"]]]
             for row in evaluation_rows(data):
                 actual = "—" if row["actual"] is None else f"{row['actual']:g} {row['unit']}"
                 target = row["target"] + ('；' + row['note'] if row.get('note') else '')

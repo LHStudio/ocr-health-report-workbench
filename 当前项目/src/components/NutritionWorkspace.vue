@@ -122,9 +122,10 @@
           </div>
           <section class="nutrition-evaluation-review" aria-label="营养评价人工复核">
             <div v-if="unifiedEvaluationRows.length" class="nutrition-preview-panel">
-              <h5>运动员专项膳食评价<span v-if="nutritionPreview?.athlete_evaluation"> · {{ nutritionPreview.athlete_evaluation.athlete_label }}</span></h5>
+              <h5>运动员专项膳食评价</h5>
+              <p class="hint">{{ unifiedEvaluationContext }}</p>
               <p v-for="note in unifiedEvaluationWarnings" :key="note" class="hint">{{ note }}</p>
-              <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标 / 口径</th><th>差值</th><th>最终评价</th></tr></thead><tbody><tr v-for="row in unifiedEvaluationRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}<span v-if="row.note">；{{ row.note }}</span></td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(finalEvaluation(row, reportReview))">{{ finalEvaluation(row, reportReview) || '—' }}</td></tr></tbody></table></div>
+              <div class="mapping-wrap"><table class="mapping-table"><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>最终评价</th></tr></thead><tbody><tr v-for="row in unifiedEvaluationRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td>{{ row.target }}<span v-if="row.note">；{{ row.note }}</span></td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(finalEvaluation(row, reportReview))">{{ finalEvaluation(row, reportReview) || '—' }}</td></tr></tbody></table></div>
             </div>
             <div class="subsection-title"><div><h4>营养评价人工复核</h4><p>机器评价仅作初稿。请按实际情况逐项选择不足、适中、过多或其他自定义评价，并编辑最终建议和解读。</p></div><div class="review-header-actions"><button class="secondary-button mini-button" type="button" :disabled="!nutritionPreview" @click="resetReportReviewFromMachine">重载机器初稿</button></div></div>
             <p v-if="!nutritionPreview || previewLoading" class="hint">正在计算机器初稿，完成后可复核。</p>
@@ -172,7 +173,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storedOcrApiUrl } from '../runtime-config'
 import { buildBatchPayload } from '../nutrition-batch'
-import { evaluationRows, evaluationWarnings, finalEvaluation } from '../nutrition-presentation'
+import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation } from '../nutrition-presentation'
 
 const serverUrl = ref(storedOcrApiUrl())
 const serverMessage = ref(''); const serverOk = ref(false); const testing = ref(false)
@@ -202,6 +203,7 @@ const bmiStatus = computed(() => { const bmi = Number(bmiValue.value); if (!bmi)
 const energyStandardNote = computed(() => nutritionPreview.value?.nutrition?.energy?.standard_note || '请选择活动量')
 const nutritionDataSource = computed(() => nutritionPreview.value?.food_data_source || {})
 const unifiedEvaluationRows = computed(() => evaluationRows(nutritionPreview.value))
+const unifiedEvaluationContext = computed(() => evaluationContext(nutritionPreview.value))
 const unifiedEvaluationWarnings = computed(() => evaluationWarnings(nutritionPreview.value))
 const categoryReviewRows = computed(() => Object.entries(nutritionPreview.value?.category_result || {}).map(([key, info]) => ({ key, label: key, value: key === '奶类' && 'equivalent_value' in info ? `${info.value}（原重），鲜奶等价量（按蛋白质估计）${info.equivalent_value ?? '-'}` : (info?.value ?? 0), machineEvaluation: machineEvaluationText(info?.evaluation) })))
 const nutrientReviewRows = computed(() => {
