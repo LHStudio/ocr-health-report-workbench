@@ -1,5 +1,5 @@
 <template>
-  <section class="general-workspace">
+  <div class="workspace-pane">
     <header class="workspace-workbar">
       <div class="workspace-workbar-context">
         <strong>通用识别</strong>
@@ -10,6 +10,8 @@
         <button :class="['workspace-settings-button', { 'needs-attention': !serverUrl }]" type="button" aria-label="打开通用识别设置" @click="settingsOpen = true"><span aria-hidden="true">⚙</span><span class="settings-button-label">设置</span></button>
       </div>
     </header>
+
+    <section class="general-workspace">
 
     <div v-if="settingsOpen" class="settings-backdrop workspace-settings-backdrop" @click.self="settingsOpen = false">
       <section class="settings-dialog workspace-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="general-settings-title">
@@ -59,6 +61,7 @@
       </div>
     </section>
   </section>
+  </div>
 </template>
 
 <script setup>

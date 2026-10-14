@@ -9,7 +9,7 @@ except ModuleNotFoundError:
 class RC6Test(unittest.TestCase):
  def test_version_and_words(self):
   root=Path(__file__).resolve().parents[1]
-  self.assertEqual('6.1.2-RC6',json.loads((root/'package.json').read_text(encoding='utf8'))['version'])
+  self.assertEqual('6.1.2-RC7',json.loads((root/'package.json').read_text(encoding='utf8'))['version'])
   ui=(root/'src/App.vue').read_text(encoding='utf8')
   self.assertIn('`V${appMetadata.version}`',ui);self.assertIn('Build2026.10.14',ui);self.assertIn('<br',ui)
   text='\n'.join(LogicTest().report()['suggestions'])

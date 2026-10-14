@@ -38,6 +38,7 @@ TEMPLATE_ROOT = ROOT / "templates"
 TEMPLATE_ROOT.mkdir(parents=True, exist_ok=True)
 MEDICAL_TEMPLATE_ROOT = ROOT / "data" / "templates"
 MEDICAL_TEMPLATE_ROOT.mkdir(parents=True, exist_ok=True)
+DEFAULT_MEDICAL_TEMPLATE = TEMPLATE_ROOT / "检验结果_病例录入表.xlsx"
 LAST_MEDICAL_TEMPLATE = MEDICAL_TEMPLATE_ROOT / "medical_last_template.xlsx"
 LAST_MEDICAL_TEMPLATE_META = MEDICAL_TEMPLATE_ROOT / "medical_last_template.json"
 MEDICAL_NORMAL_RANGE_CONFIG = MEDICAL_TEMPLATE_ROOT / "medical_normal_ranges.json"
@@ -921,6 +922,9 @@ def cached_medical_template_status() -> dict[str, Any]:
             latest = max(candidates, key=lambda item: item.stat().st_mtime)
             save_as_last_medical_template(latest, latest.name)
     if not LAST_MEDICAL_TEMPLATE.exists():
+        if DEFAULT_MEDICAL_TEMPLATE.exists():
+            return {"exists": True, "filename": DEFAULT_MEDICAL_TEMPLATE.name,
+                    "saved_at": "", "path": str(DEFAULT_MEDICAL_TEMPLATE), "is_default": True}
         return {"exists": False}
     metadata: dict[str, Any] = {}
     try:
@@ -1095,7 +1099,8 @@ def process_reports(
     processing_mode = normalize_processing_mode(processing_mode)
     if template and template.filename and not template.filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="汇总模板仅支持 xlsx 或 xlsm")
-    if not (template and template.filename) and not LAST_MEDICAL_TEMPLATE.exists():
+    cached = cached_medical_template_status()
+    if not (template and template.filename) and not cached["exists"]:
         raise HTTPException(status_code=400, detail="请先上传 xlsx 或 xlsm 汇总模板；之后系统会自动记住该模板")
     if not files or len(files) != len(relative_paths):
         raise HTTPException(status_code=400, detail="报告文件与目录信息不一致，请重新选择 PDF 或文件夹")
@@ -1114,7 +1119,7 @@ def process_reports(
         cached = cached_medical_template_status()
         template_name = Path(str(cached["filename"])).name
         template_path = input_dir / template_name
-        shutil.copy2(LAST_MEDICAL_TEMPLATE, template_path)
+        shutil.copy2(Path(cached["path"]), template_path)
     groups: dict[str, list[Path]] = defaultdict(list)
     for index, pdf in enumerate(files):
         relative = relative_paths[index] or pdf.filename or f"report_{index + 1}.pdf"
@@ -1134,6 +1139,14 @@ def process_reports(
 @app.get("/medical-template-status")
 def medical_template_status():
     return cached_medical_template_status()
+
+
+@app.get("/medical-template")
+def download_medical_template():
+    status = cached_medical_template_status()
+    if not status["exists"]:
+        raise HTTPException(status_code=404, detail="体检汇总模板不存在")
+    return FileResponse(status["path"], filename=status["filename"])
 
 
 @app.get("/medical-normal-ranges")

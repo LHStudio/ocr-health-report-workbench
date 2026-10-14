@@ -87,7 +87,7 @@ class EnergyBlankFollowupTest(unittest.TestCase):
             categories={r[0]:r[2] for r in wb['分类评估'].iter_rows(min_row=2,values_only=True)}
             self.assertEqual('建议尽量不吃',categories['零食'])
             for category in ['饮料','酒类','畜禽肉']:self.assertEqual('-',categories[category])
-            self.assertIn(categories['谷类'],['适中','过多'])
+            self.assertEqual('能量占比偏高',categories['谷类'])
             totals={r[0]:r for r in wb['营养总计'].iter_rows(min_row=2,values_only=True)}
             self.assertEqual(2100,totals['推荐能量'][1])
             self.assertEqual('中等强度',totals['活动量'][1])

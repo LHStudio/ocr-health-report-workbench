@@ -15,7 +15,9 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.graphics.charts.piecharts import Pie
-from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.shapes import Drawing, Rect
+
+MACRO_COLORS = ("#756BB1", "#E28C45", "#4C9BB0")
 from reportlab.platypus import (
     PageBreak,
     Paragraph,
@@ -196,7 +198,7 @@ class NutritionPDFBuilder:
         calcium = nutrition.get("calcium") or {}
         macro_summary = Table(
             [[
-                Paragraph(self._format_macro_energy(nutrition), left),
+                self._build_macro_energy_legend(nutrition, left),
                 self._build_macro_energy_chart(nutrition),
             ]],
             colWidths=[58 * mm, 78 * mm],
@@ -204,7 +206,8 @@ class NutritionPDFBuilder:
         )
         macro_summary.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("LEFTPADDING", (0, 0), (0, 0), 12),
+            ("LEFTPADDING", (1, 0), (1, 0), 0),
             ("RIGHTPADDING", (0, 0), (-1, -1), 0),
             ("TOPPADDING", (0, 0), (-1, -1), 0),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
@@ -424,6 +427,26 @@ class NutritionPDFBuilder:
             for name, gram, calorie in zip(names, grams, calories)
         )
 
+    @classmethod
+    def _build_macro_energy_legend(cls, nutrition: dict, style: ParagraphStyle):
+        text = cls._format_macro_energy(nutrition)
+        if sum(cls._macro_energy_values(nutrition)[1]) <= 0:
+            return Paragraph(text, style)
+        rows = []
+        for color, label in zip(MACRO_COLORS, text.split("<br/>")):
+            swatch = Drawing(8, 8)
+            swatch.add(Rect(0, 0, 8, 8, fillColor=colors.HexColor(color), strokeColor=None))
+            rows.append([swatch, Paragraph(label, style)])
+        legend = Table(rows, colWidths=[6 * mm, 46 * mm])
+        legend.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        return legend
+
     @staticmethod
     def _macro_energy_values(nutrition: dict) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
         grams = (
@@ -457,7 +480,7 @@ class NutritionPDFBuilder:
         pie.slices.fontColor = colors.white
         pie.slices.strokeColor = colors.white
         pie.slices.strokeWidth = 0.8
-        for index, color in enumerate(("#756BB1", "#E28C45", "#4C9BB0")):
+        for index, color in enumerate(MACRO_COLORS):
             pie.slices[index].fillColor = colors.HexColor(color)
         drawing.add(pie)
         return drawing

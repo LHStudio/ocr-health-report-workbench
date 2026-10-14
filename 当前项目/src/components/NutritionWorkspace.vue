@@ -22,7 +22,7 @@
       <label class="drop-zone compact" :class="{ ready: nutritionFiles.length && mode === 'folder' }"><input type="file" accept=".pdf,application/pdf" multiple webkitdirectory directory @change="selectFolder" /><strong>选择问卷文件夹</strong><span>{{ mode === 'folder' && nutritionFiles.length ? `已读取 ${nutritionFiles.length} 份 PDF` : '每个子文件夹自动对应一名受访者' }}</span></label>
     </div>
     <div class="body-composition-upload">
-      <p class="field-label">体成分报告（可选）</p>
+      <div class="section-title"><div><span class="step">2</span><h2>体成分报告（可选）</h2></div></div>
       <div class="upload-actions">
         <label class="drop-zone compact" :class="{ ready: bodyCompositionFiles.length && bodyCompositionMode === 'files' }"><input type="file" accept=".pdf,application/pdf" multiple @change="selectBodyCompositionFiles" /><strong>直接选择体成分 PDF</strong><span>{{ bodyCompositionMode === 'files' && bodyCompositionFiles.length ? `已选 ${bodyCompositionFiles.length} 份体成分报告` : '支持单份或多份报告' }}</span></label>
         <label class="drop-zone compact" :class="{ ready: bodyCompositionFiles.length && bodyCompositionMode === 'folder' }"><input type="file" accept=".pdf,application/pdf" multiple webkitdirectory directory @change="selectBodyCompositionFolder" /><strong>选择体成分文件夹</strong><span>{{ bodyCompositionMode === 'folder' && bodyCompositionFiles.length ? `已读取 ${bodyCompositionFiles.length} 份体成分报告` : '自动读取文件夹内的 PDF 报告' }}</span></label>
@@ -258,7 +258,7 @@ function setBodyCompositionFiles(files, nextMode) { bodyCompositionMode.value = 
 function selectBodyCompositionFiles(event) { setBodyCompositionFiles(event.target.files, 'files') }
 function selectBodyCompositionFolder(event) { setBodyCompositionFiles(event.target.files, 'folder') }
 function selectAppendBodyCompositionFiles(event) { appendBodyCompositionFiles.value = Array.from(event.target.files || []).filter((file) => /\.pdf$/i.test(file.name)); bodyCompositionMessage.value = ''; bodyCompositionError.value = false }
-function emptyReportProfile() { return { name: '', age: '', projectType: '', athleteType: '', trainingPhase: '', trainingYears: '', currentStatus: '', gender: '', height: '', weight: '', fatFreeMass: '', activityLevel: '', foodTargetScale: '' } }
+function emptyReportProfile() { return { name: '', age: '', projectType: '', athleteType: '', trainingPhase: 'training', trainingYears: '', currentStatus: '', gender: '', height: '', weight: '', fatFreeMass: '', activityLevel: '', foodTargetScale: '' } }
 function emptyBodyRecordDraft() { return { filename: '', name: '', gender: '', age: '', height: '', weight: '', fatFreeMass: '' } }
 function emptyReportReview() { return { categoryEvaluations: {}, energyEvaluation: '', calciumEvaluation: '', overallSuggestions: '', interpretation: '', machineSeeded: false, manualEntryFields: {} } }
 function copyReportReview(review) { return { ...emptyReportReview(), ...(review || {}), categoryEvaluations: { ...(review?.categoryEvaluations || {}) }, manualEntryFields: { ...(review?.manualEntryFields || {}) } } }
@@ -316,7 +316,7 @@ function genderForReport(value) { const text = String(value || '').trim().toLowe
 function selectPerson(person) {
   if (selectedId.value) { reportProfiles.value[selectedId.value] = { ...reportProfile.value }; reportReviews.value[selectedId.value] = copyReportReview(reportReview.value) }
   selectedId.value = person.id
-  reportProfile.value = { ...(reportProfiles.value[person.id] || { name: person.general?.姓名 || '', age: person.general?.年龄 || '', projectType: person.general?.项目种类 || '', trainingYears: person.general?.训练年限 || '', currentStatus: person.general?.当前状态 || '', gender: genderForReport(person.general?.性别), height: person.general?.身高 || '', weight: person.general?.体重 || '', fatFreeMass: person.general?.去脂体重 || '', activityLevel: person.general?.运动量 || '' }) }
+  reportProfile.value = { ...emptyReportProfile(), ...(reportProfiles.value[person.id] || { name: person.general?.姓名 || '', age: person.general?.年龄 || '', projectType: person.general?.项目种类 || '', trainingYears: person.general?.训练年限 || '', currentStatus: person.general?.当前状态 || '', gender: genderForReport(person.general?.性别), height: person.general?.身高 || '', weight: person.general?.体重 || '', fatFreeMass: person.general?.去脂体重 || '', activityLevel: person.general?.运动量 || '' }) }
   reportReview.value = copyReportReview(reportReviews.value[person.id])
   nutritionPreview.value = null
   scheduleNutritionPreview()
