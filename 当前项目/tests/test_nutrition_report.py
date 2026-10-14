@@ -177,8 +177,8 @@ class NutritionReportServiceTest(unittest.TestCase):
             self.assertIn("正常训练", page_texts[0])
             self.assertIn("去脂体重", page_texts[0])
             self.assertIn("46.6 kg", page_texts[0])
-            self.assertTrue(all(category in page_texts[0] for category in ("谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类")))
-            self.assertTrue(all(category in page_texts[1] for category in ("豆类", "坚果", "奶类", "零食", "运动营养", "饮料", "酒类")))
+            self.assertTrue(all(category in page_texts[0] for category in ("谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类", "豆类", "坚果", "奶类", "零食", "运动营养", "饮料", "酒类")))
+            self.assertIn("整体评估及建议",page_texts[1])
             self.assertIn("能量及钙摄入量评估报告", page_texts[2])
             self.assertIn("三大营养素供能占比", page_texts[2])
             expected_percentages = NutritionReportServiceTest.service.pdf_builder._build_macro_energy_chart(

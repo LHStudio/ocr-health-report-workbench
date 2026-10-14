@@ -68,7 +68,7 @@
       <span class="about-card-label">关于本系统</span>
       <h1 id="about-title">OCR 识别工作台</h1>
       <p>用于体检报告、食物频率调查、影像报告及通用文件的识别与整理。</p>
-      <div class="about-version"><span>当前版本</span><strong>{{ appVersion }}</strong></div>
+      <div class="about-version"><span>当前版本</span><strong>{{ appVersion }}<br /><span class="about-build">Build2026.10.14</span></strong></div>
     </section>
   </main>
 </template>
@@ -83,7 +83,7 @@ import { storedOcrApiUrl } from './runtime-config'
 
 const storageKey = 'medical-ocr-api-url'
 const activeWorkspace = ref('medical')
-const appVersion = `2026-10-13-v${appMetadata.version}`
+const appVersion = `V${appMetadata.version}`
 const serverUrl = ref(storedOcrApiUrl(storageKey))
 const parseMode = ref(localStorage.getItem('ocr-parse-mode') || 'markdown')
 const processingMode = ref(localStorage.getItem('ocr-processing-mode') || 'fast')

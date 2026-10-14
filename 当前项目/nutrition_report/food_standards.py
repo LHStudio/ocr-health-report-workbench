@@ -149,7 +149,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
         ratio=(total({'薯类'}, 'energy'), staple_energy))
     add('grains_remainder', '谷类占主食能量', staples, high=100-beans_min-tubers_min,
         ratio=(total({'谷类'}, 'energy'), staple_energy), over_label='过多',
-        note='上限=100%-豆类5%-薯类15%；无下限')
+        note='能量占比上限=100%-豆类5%-薯类15%')
     milk_note = (f'鲜奶基准蛋白质 {milk_protein:g} g/100g；' if milk_protein else '') + '；'.join(milk_trace)
     add('milk', '奶类鲜奶等价量（按蛋白质估计）', {'奶类'}, 400, note=milk_note or '鲜奶、酸奶原重；奶粉奶酪按蛋白质折算', actual_override=milk_equivalent)
     add('eggs', '蛋类', {'蛋类'}, 50, note='每个鸡蛋按50g；显式克数不二次折算')

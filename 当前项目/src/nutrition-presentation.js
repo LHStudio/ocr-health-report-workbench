@@ -1,6 +1,6 @@
 // Display-only union. Do not alter evaluator rows or manual-review storage.
 export function evaluationAlertClass(value) {
-  return ['不足', '过多', '建议尽量不吃'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
+  return ['不足', '过多', '建议尽量不吃', '能量占比偏低', '能量占比偏高'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
 }
 
 export function cleanDisplayText(text = '') {
@@ -41,5 +41,7 @@ export function evaluationWarnings(data) {
 export function finalEvaluation(row, review = {}) {
   const field = ['protein', 'carbohydrate', 'fat', 'calcium'].includes(row.key)
     ? `${row.key}Evaluation` : `standard_${row.key}Evaluation`
-  return Object.hasOwn(review, field) ? review[field] : row.evaluation
+  const value = Object.hasOwn(review, field) ? review[field] : row.evaluation
+  return ['beans_energy', 'tubers_energy', 'grains_remainder'].includes(row.key)
+    ? ({ '不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中' }[value] || value) : value
 }

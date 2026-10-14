@@ -32,13 +32,13 @@ def _as_text(value: object) -> str:
 
 def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多", "建议尽量不吃"} else text
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高"} else text
 
 
-def _table_text(value: object) -> str:
+def _table_text(value: object, *, alert=True) -> str:
     """Keep percentage units and parenthesized phrases together when wrapping."""
     raw = _as_text(value)
-    if raw.strip() == '建议尽量不吃':
+    if alert and raw.strip() == '建议尽量不吃':
         return _evaluation_text(value)
     tokens = re.compile(r'[（(][^（）()]+[）)]|[≥≤约]?\s*[+\-]?\d+(?:\.\d+)?(?:[–—-]\d+(?:\.\d+)?)?\s*(?:%|mg/天|g/天|g/100g)')
     parts = []; start = 0
@@ -175,8 +175,8 @@ class NutritionPDFBuilder:
         story.extend([profile_table, Spacer(1, 6 * mm)])
 
         page_groups = [
-            ["谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类"],
-            ["豆类", "坚果", "奶类", "零食", "运动营养食品", "饮料", "酒类"],
+            ["谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类", "豆类", "坚果", "奶类", "零食", "运动营养食品", "饮料", "酒类"],
+            [],
         ]
         for page_index, categories in enumerate(page_groups):
             if page_index:
@@ -233,11 +233,13 @@ class NutritionPDFBuilder:
         energy_report = Table(
             energy_table,
             colWidths=[38 * mm, 108 * mm, 28 * mm],
-            rowHeights=[10 * mm, 9 * mm, 19 * mm, 33 * mm, 12 * mm, 30 * mm, 20 * mm],
+            rowHeights=[12 * mm, 10 * mm, 28 * mm, 55 * mm, 20 * mm, None, None],
+            repeatRows=2,
         )
-        energy_report.setStyle(TableStyle([
+        energy_style = TableStyle([
             ("SPAN", (0, 0), (-1, 0)),
             ("SPAN", (1, 3), (2, 3)),
+            ("SPAN", (1, 5), (2, 5)),
             ("SPAN", (1, -1), (2, -1)),
             ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#BFC4D7")),
             ("BACKGROUND", (0, 2), (0, -1), colors.HexColor("#8D8FB6")),
@@ -250,7 +252,17 @@ class NutritionPDFBuilder:
             ("VALIGN", (1, -1), (-1, -1), "TOP"),
             ("TOPPADDING", (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ]))
+        ])
+        energy_report.setStyle(energy_style)
+        # Measure wrapped paragraphs first: interpretation/disclaimer never use a fixed short height.
+        energy_report.wrap(doc.width, doc.height)
+        measured = list(energy_report._rowHeights)
+        spare = max(0, doc.height - 12 - sum(measured))
+        measured[5] += spare * 0.8
+        measured[6] += spare * 0.2
+        energy_report = Table(energy_table, colWidths=[38 * mm, 108 * mm, 28 * mm],
+                              rowHeights=measured, repeatRows=2)
+        energy_report.setStyle(energy_style)
         story.append(energy_report)
 
         athlete = data.get("athlete_evaluation")
@@ -266,7 +278,7 @@ class NutritionPDFBuilder:
             for row in evaluation_rows(data):
                 actual = "—" if row["actual"] is None else f"{row['actual']:g} {row['unit']}"
                 # Give the reference value its own line; a long note must not pull its unit away.
-                target_cell = [Paragraph(_table_text(row['target']), evaluation_body)]
+                target_cell = [Paragraph(_table_text(row['target'], alert=False), evaluation_body)]
                 if row.get('note'):
                     note = re.sub(r'([（(])', r'<br/>\1', escape(row['note']))
                     target_cell.append(Paragraph(note, evaluation_body))
@@ -326,6 +338,8 @@ class NutritionPDFBuilder:
             [Paragraph("食物摄入量评估报告", header), "", ""],
             [Paragraph("种类", header), Paragraph("每日摄入量", header), Paragraph("评价", header)],
         ]
+        if not categories:
+            table_data.pop()  # Suggestions-only page has no food column headings.
         results = data.get("category_result") or {}
         for category in categories:
             # 当前问卷没有运动营养食品摄入量字段；仅保留标准模板版式，不虚构评价。
@@ -353,14 +367,14 @@ class NutritionPDFBuilder:
                 text = re.sub(r'(?<![\w.])\d+(?:\.\d+)?\s*(?:kcal/天|kcal/day|mg/天|g/天|g/kg|个百分点|%|kg|mg|g)(?![A-Za-z/])',
                               lambda match: '<nobr>' + match.group(0) + '</nobr>', text)
                 table_data.append([Paragraph(f'{index}. {text}', suggestion_style), '', ''])
-        row_heights: list[float | None] = [11 * mm, 9 * mm] + [17 * mm if c == '奶类' else 11 * mm for c in categories]
+        row_heights: list[float | None] = ([11 * mm, 9 * mm] if categories else [11 * mm]) + [17 * mm if c == '奶类' else 11 * mm for c in categories]
         if suggestions is not None:
             row_heights.extend([9 * mm] + [None] * max(1, len(suggestions)))
         report = Table(
             table_data,
             colWidths=[57 * mm, 72 * mm, 45 * mm],
             rowHeights=row_heights,
-            repeatRows=2,
+            repeatRows=2 if categories else 1,
         )
         style = [
             ("SPAN", (0, 0), (-1, 0)),
@@ -457,9 +471,15 @@ class NutritionPDFBuilder:
         energy_evaluation = (nutrition.get("energy") or {}).get("evaluation")
         calcium_evaluation = (nutrition.get("calcium") or {}).get("evaluation")
         if energy_evaluation == "不足":
-            lines.append("能量摄入不足，应增加碳水化合物摄入")
+            lines.append("总能量摄入不足，需结合训练量调整全天饮食。")
         elif energy_evaluation == "过多":
             lines.append("能量摄入过多，应适当控制总能量摄入")
+        carb = next((r for r in (data.get('athlete_evaluation') or {}).get('rows', []) if r['key'] == 'carbohydrate'), {})
+        grains = next((r for r in (data.get('food_standard_evaluation') or {}).get('rows', []) if r['key'] == 'grains_remainder'), {})
+        if carb.get('evaluation') == '不足':
+            lines.append('碳水化合物营养素摄入不足，需结合训练量补充碳水来源。')
+        if grains.get('evaluation') == '过多':
+            lines.append('谷类在主食总能量中占比偏高；建议增加豆类、薯类的搭配。')
         if calcium_evaluation == "不足":
             lines.append("钙摄入不足，应增加奶制品摄入")
         return "<br/>".join(lines) or "暂无"

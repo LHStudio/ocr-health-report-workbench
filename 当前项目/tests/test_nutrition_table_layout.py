@@ -17,7 +17,7 @@ class NutritionTableLayoutTest(unittest.TestCase):
                 spans=[s for p in doc for b in p.get_text('dict')['blocks'] for l in b.get('lines',[]) for s in l['spans']]
                 advice=[s for s in spans if s['text'].strip()=='建议尽量不吃']
                 self.assertTrue(advice)
-                self.assertTrue(all(s['color']==0xDC2626 for s in advice),[(s['text'],s['color']) for s in advice])
+                self.assertTrue(any(s['color']==0 for s in advice),[(s['text'],s['color']) for s in advice])
                 for page in doc:
                     if '运动员专项膳食评价' not in page.get_text():continue
                     lines=[''.join(s['text'] for s in l['spans']).strip() for b in page.get_text('dict')['blocks'] for l in b.get('lines',[])]
@@ -27,7 +27,7 @@ class NutritionTableLayoutTest(unittest.TestCase):
             for w in wb:
                 for row in w:
                     for c in row:
-                        if c.value=='建议尽量不吃':self.assertEqual('DC2626',c.font.color.rgb[-6:])
+                        if c.value=='建议尽量不吃':self.assertEqual('000000' if w.title=='运动员专项评价' and c.column==4 else 'DC2626',c.font.color.rgb[-6:])
             self.assertLess(ws.column_dimensions['F'].width,30)
             self.assertGreater(ws.column_dimensions['A'].width,30)
             self.assertGreater(ws.column_dimensions['D'].width,30)

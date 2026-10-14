@@ -125,7 +125,7 @@
               <h5>运动员专项膳食评价</h5>
               <p class="hint">{{ unifiedEvaluationContext }}</p>
               <p v-for="note in unifiedEvaluationWarnings" :key="note" class="hint">{{ note }}</p>
-              <div class="mapping-wrap"><table class="mapping-table athlete-evaluation-table"><colgroup><col style="width: 20%" /><col style="width: 17%" /><col style="width: 39%" /><col style="width: 11%" /><col style="width: 13%" /></colgroup><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>最终评价</th></tr></thead><tbody><tr v-for="row in unifiedEvaluationRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td :class="evaluationAlertClass(row.target)">{{ row.target }}<span v-if="row.note">；{{ row.note }}</span></td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(finalEvaluation(row, reportReview))">{{ finalEvaluation(row, reportReview) || '—' }}</td></tr></tbody></table></div>
+              <div class="mapping-wrap"><table class="mapping-table athlete-evaluation-table"><colgroup><col style="width: 20%" /><col style="width: 17%" /><col style="width: 39%" /><col style="width: 11%" /><col style="width: 13%" /></colgroup><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>最终评价</th></tr></thead><tbody><tr v-for="row in unifiedEvaluationRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td :class="row.target === '建议尽量不吃' ? '' : evaluationAlertClass(row.target)">{{ row.target }}<span v-if="row.note">；{{ row.note }}</span></td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(finalEvaluation(row, reportReview))">{{ finalEvaluation(row, reportReview) || '—' }}</td></tr></tbody></table></div>
             </div>
             <div class="subsection-title"><div><h4>营养评价人工复核</h4><p>机器评价仅作初稿。请按实际情况逐项选择不足、适中、过多或其他自定义评价，并编辑最终建议和解读。</p></div><div class="review-header-actions"><button class="secondary-button mini-button" type="button" :disabled="!nutritionPreview" @click="resetReportReviewFromMachine">重载机器初稿</button></div></div>
             <p v-if="!nutritionPreview || previewLoading" class="hint">正在计算机器初稿，完成后可复核。</p>
@@ -265,8 +265,12 @@ function copyReportReview(review) { return { ...emptyReportReview(), ...(review 
 function machineEvaluationText(value) { return String(value ?? '').trim() }
 function machineInterpretation(preview) {
   const nutrition = preview?.nutrition || {}; const lines = []
-  if (nutrition.energy?.evaluation === '不足') lines.push('能量摄入偏少，建议结合训练量补充主食等碳水化合物来源。')
+  if (nutrition.energy?.evaluation === '不足') lines.push('总能量摄入不足，需结合训练量调整全天饮食。')
   else if (nutrition.energy?.evaluation === '过多') lines.push('能量摄入偏多，建议结合训练量调整总能量摄入。')
+  const carb = (preview?.athlete_evaluation?.rows || []).find(row => row.key === 'carbohydrate')
+  const grains = (preview?.food_standard_evaluation?.rows || []).find(row => row.key === 'grains_remainder')
+  if (carb?.evaluation === '不足') lines.push('碳水化合物营养素摄入不足，需结合训练量补充碳水来源。')
+  if (grains?.evaluation === '过多') lines.push('谷类在主食总能量中占比偏高；建议增加豆类、薯类的搭配。')
   if (nutrition.calcium?.evaluation === '不足') lines.push('钙摄入偏少，建议优先从奶类、豆制品等食物补充。')
   return lines.join('\n') || '请结合受访者训练、疾病和补充剂使用情况进行最终解读。'
 }

@@ -41,10 +41,17 @@ class NutritionExcelBuilder:
         for sheet in wb:
             for row in sheet:
                 for cell in row:
-                    if cell.value in ("不足", "过多", "建议尽量不吃"):
+                    if cell.value in ("不足", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高"):
                         font = copy(cell.font)
                         font.color = "DC2626"
                         cell.font = font
+        if '运动员专项评价' in wb.sheetnames:
+            for row in wb['运动员专项评价']:
+                cell = row[3] if len(row) > 3 else None
+                if cell is not None and cell.value == '建议尽量不吃':
+                    font = copy(cell.font)
+                    font.color = '000000'
+                    cell.font = font
         wb.save(output_path)
 
     def _create_user_sheet(self, wb, data):

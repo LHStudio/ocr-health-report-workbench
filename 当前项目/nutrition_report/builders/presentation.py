@@ -27,6 +27,9 @@ def evaluation_rows(data):
     for section in ('athlete_evaluation', 'food_standard_evaluation'):
         for row in (data.get(section) or {}).get('rows', []):
             rows[row['key']] = {**row, 'note': clean_display_text(row.get('note', ''))}
+    for row in rows.values():
+        if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
+            row['evaluation'] = {'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row.get('evaluation'), row.get('evaluation'))
     return list(rows.values())
 
 

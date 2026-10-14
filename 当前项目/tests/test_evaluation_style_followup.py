@@ -21,8 +21,8 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         report=self.report()
         evaluations=[r['evaluation'] for r in report['athlete_evaluation']['rows']+report['food_standard_evaluation']['rows']]
         evaluations += [v['evaluation'] for v in report['category_result'].values()]
-        self.assertTrue(set(evaluations)<={'过多','不足','适中','-','建议尽量不吃'},set(evaluations))
-        self.assertEqual('过多',report['category_result']['谷类']['evaluation'])
+        self.assertTrue(set(evaluations)<={'过多','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中'},set(evaluations))
+        self.assertEqual('能量占比偏高',report['category_result']['谷类']['evaluation'])
         service=NutritionService()
         for actual,status in [(1000,'不足'),(2100,'适中'),(3000,'过多')]:
             self.assertEqual(status,service._eval_energy_against_standard(actual,2100))
@@ -78,14 +78,14 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         root=Path(__file__).resolve().parents[1]
         package=json.loads((root/'package.json').read_text(encoding='utf8'))
         lock=json.loads((root/'package-lock.json').read_text(encoding='utf8'))
-        self.assertEqual('5.0.4',package['version'])
-        self.assertEqual('5.0.4',lock['version'])
-        self.assertEqual('5.0.4',lock['packages']['']['version'])
+        self.assertEqual('6.1.2-RC6',package['version'])
+        self.assertEqual('6.1.2-RC6',lock['version'])
+        self.assertEqual('6.1.2-RC6',lock['packages']['']['version'])
         app=(root/'src/App.vue').read_text(encoding='utf8')
-        self.assertTrue('`2026-10-13-v${appMetadata.version}`' in app)
+        self.assertTrue('`V${appMetadata.version}`' in app)
         readme=(root/'README.md').read_text(encoding='utf8')
-        self.assertIn('当前版本：`2026-10-13-v5.0.4`',readme)
-        self.assertIn('文档更新：2026-10-13',readme)
+        self.assertIn('当前版本：`V6.1.2-RC6`',readme)
+        self.assertIn('文档更新：2026-10-14',readme)
         self.assertIn('建议尽量不吃',readme)
 
 

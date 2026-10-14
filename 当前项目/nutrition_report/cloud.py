@@ -26,6 +26,25 @@ class FoodDataResult:
 
 _cache_lock = threading.Lock()
 _cache: dict[str, Any] = {}
+MIN_REQUEST_INTERVAL_SECONDS = 0.020
+_request_lock = threading.Lock()
+_last_request_finished: float | None = None
+
+
+def _paced_get(getter, url, **kwargs):
+    """全进程串行化云端营养查询；上次请求结束到下次开始至少20ms。"""
+    global _last_request_finished
+    with _request_lock:
+        if _last_request_finished is not None:
+            while True:
+                remaining = MIN_REQUEST_INTERVAL_SECONDS - (time.monotonic() - _last_request_finished)
+                if remaining <= 0:
+                    break
+                time.sleep(remaining)
+        try:
+            return getter(url, **kwargs)
+        finally:
+            _last_request_finished = time.monotonic()
 
 
 def _now_iso() -> str:
@@ -54,7 +73,7 @@ def fetch_cloud_foods(
 ) -> dict[str, dict[str, Any]]:
     """读取全部分类及食物；任一分类失败时视为本轮云端查询失败。"""
     root = base_url.rstrip("/")
-    category_data = getter(
+    category_data = _paced_get(getter,
         f"{root}/category",
         params={"pageNum": 1, "pageSize": 50},
         timeout=timeout,
@@ -65,7 +84,7 @@ def fetch_cloud_foods(
         raise RuntimeError("云端食物分类为空")
 
     def load_category(category: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
-        data = getter(
+        data = _paced_get(getter,
             f"{root}/goodsInfo",
             params={"categoryId": category["id"], "pageNum": 1, "pageSize": 200},
             timeout=timeout,

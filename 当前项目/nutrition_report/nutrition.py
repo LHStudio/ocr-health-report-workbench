@@ -51,15 +51,37 @@ class NutritionService:
                          'grains_remainder': '谷类', 'milk': '奶类', 'eggs': '蛋类',
                          'seafood': '水产品', 'livestock_remainder': '畜禽肉',
                          'fruit': '水果', 'vegetables': '蔬菜', 'snacks': '零食'}
-        for row in food_standard['rows']:
+        # Keep table order intact; put quality protein before other food suggestions.
+        for row in sorted(food_standard['rows'], key=lambda r: r['key'] != 'quality_protein'):
             category = category_keys.get(row['key'])
             if category in category_result:
-                category_result[category]['evaluation'] = row['evaluation']
+                category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
                 if row['key'] == 'milk':
                     category_result[category]['equivalent_value'] = row['actual']
             if row['score'] == 0:
                 evaluation = row['evaluation']
-                suggestions.append(f"{row['label']}{evaluation}：目前 {display_number(row['actual'])} {row['unit']}，参考目标 {row['target']}。")
+                if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
+                    evaluation = {'不足': '占比偏低', '过多': '占比偏高'}.get(evaluation, evaluation)
+                display_label = row['label'].replace('占主食能量', '主食能量') if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['label']
+                message = f"{display_label}{evaluation}：目前 {display_number(row['actual'])} {row['unit']}，参考目标 {row['target']}。"
+                if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
+                    # 能量占比不是重量占比；以当前主食总能量及该类记录的加权能量密度折算。
+                    staple_categories = {'谷类', '豆类', '薯类'}
+                    staple_kcal = sum(f['nutrition']['energy'] for f in food_details
+                                      if f['category'] in staple_categories)
+                    current_grams = sum(f['amount'] for f in food_details if f['category'] == category)
+                    category_kcal = sum(f['nutrition']['energy'] for f in food_details if f['category'] == category)
+                    if current_grams > 0 and category_kcal > 0:
+                        percent = {'beans_energy': 5, 'tubers_energy': 15, 'grains_remainder': 80}[row['key']]
+                        target_grams = staple_kcal * percent / 100 / (category_kcal / current_grams)
+                        bound = '≤' if row['key'] == 'grains_remainder' else '≥'
+                        message += (f" 当前该类食物约 {display_number(current_grams)} g/天，"
+                                    f"参考目标 {bound} {display_number(target_grams)} g/天"
+                                    "。")
+                    else:
+                        message += (f" 当前该类食物约 {display_number(current_grams)} g/天；"
+                                    "参考目标暂无法折算克数，需指定食物及其能量密度。")
+                suggestions.append(message)
         if suggestions:
             suggestions.append('请结合训练量和完整饮食记录，在营养专业人员指导下调整上述摄入。')
         # New food rules supersede the old vegetable-only rule, including scope/data gates.
@@ -91,7 +113,7 @@ class NutritionService:
                     row['evaluation'] = category_result[category_keys[row['key']]]['evaluation']
                 category = category_keys.get(row['key'])
                 if category in category_result:
-                    category_result[category]['evaluation'] = row['evaluation']
+                    category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
             next(r for r in athlete['rows'] if r['key'] == 'vegetables')['evaluation'] = vegetable['evaluation']
 
         report = {
