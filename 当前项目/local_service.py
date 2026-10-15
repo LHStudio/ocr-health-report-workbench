@@ -30,6 +30,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from datetime import datetime
 from nutrition_report import NutritionReportService
+from nutrition_report.report_style import normalize_report_style
 
 ROOT = Path(__file__).resolve().parent
 JOB_ROOT = ROOT / "data" / "jobs"
@@ -3397,6 +3398,10 @@ def generate_nutrition_person_report(job_id: str, person_id: str, payload: dict[
     report_format = clean(payload.get("format")).lower()
     if report_format not in {"pdf", "excel"}:
         raise HTTPException(status_code=400, detail="报告格式仅支持 pdf 或 excel")
+    try:
+        report_style = normalize_report_style(payload.get("report_style", "modern"))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     user_overrides = payload.get("user_overrides")
     if user_overrides is not None and not isinstance(user_overrides, dict):
         raise HTTPException(status_code=400, detail="人员补充信息格式不正确")
@@ -3432,6 +3437,7 @@ def generate_nutrition_person_report(job_id: str, person_id: str, payload: dict[
                 person, output_path, user_overrides=user_overrides, report_date=report_date,
                 include_quality_page=include_quality_page,
                 auto_evaluation=auto_evaluation, manual_evaluations=manual_evaluations,
+                report_style=report_style,
             )
             media_type = "application/pdf"
         else:
@@ -3489,6 +3495,10 @@ def generate_nutrition_batch_reports(job_id: str, payload: dict[str, Any]):
     report_format = payload.get('format', 'both')
     if report_format not in {'pdf', 'excel', 'both'}:
         raise HTTPException(status_code=400, detail='批量报告格式仅支持 pdf、excel 或 both')
+    try:
+        report_style = normalize_report_style(payload.get('report_style', 'modern'))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     people = deepcopy(payload.get('people', state.get('people', [])))
     expected = [clean(p.get('id')) for p in state.get('people', []) if isinstance(p, dict)]
     ids = [clean(p.get('id')) for p in people if isinstance(p, dict)] if isinstance(people, list) else []
@@ -3525,7 +3535,9 @@ def generate_nutrition_batch_reports(job_id: str, payload: dict[str, Any]):
                         adapted = service.adapt_ocr_person(person, **options)
                         if not adapted.usable_food_count:
                             raise ValueError('无可换算食物，不能生成以零摄入冒充完整结果的报告；请核对数据')
-                        data = service.build_report_data(adapted.payload)
+                        report_payload = ({**adapted.payload, 'report_style': report_style}
+                                          if fmt == 'pdf' else adapted.payload)
+                        data = service.build_report_data(report_payload)
                         stem_person = dict(person, general={**(person.get('general') or {}),
                                            '姓名': data['user'].get('name') or person_id})
                         filename = f'{index:04d}_{report_filename_stem(stem_person)}' + ('.pdf' if fmt == 'pdf' else '.xlsx')

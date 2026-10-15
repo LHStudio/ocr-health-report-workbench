@@ -45,7 +45,10 @@ class UIReleaseTest(unittest.TestCase):
                 page=next(p for p in doc if '能量及钙摄入量评估报告' in p.get_text())
                 spans=[s for b in page.get_text('dict')['blocks'] for l in b.get('lines',[]) for s in l['spans']]
                 target=[s for s in spans if s['text'].startswith(('蛋白质 ','脂肪 ','碳水 '))]
-                self.assertEqual(3,len(target));self.assertGreater(min(s['bbox'][0] for s in target),180)
+                self.assertEqual(3,len(target))
+                # Legend is now a full-width panel; text must stay in its left half.
+                self.assertGreater(min(s['bbox'][0] for s in target),60)
+                self.assertLess(max(s['bbox'][2] for s in target),page.rect.width/2+35)
                 palette={(0.459,0.420,0.694),(0.886,0.549,0.271),(0.298,0.608,0.690)}
                 squares=[d for d in page.get_drawings() if 7<=d['rect'].width<=10 and 7<=d['rect'].height<=10 and d['fill']]
                 actual={tuple(round(x,3) for x in d['fill']) for d in squares}

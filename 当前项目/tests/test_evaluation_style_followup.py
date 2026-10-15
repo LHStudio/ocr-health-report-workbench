@@ -78,14 +78,14 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         root=Path(__file__).resolve().parents[1]
         package=json.loads((root/'package.json').read_text(encoding='utf8'))
         lock=json.loads((root/'package-lock.json').read_text(encoding='utf8'))
-        self.assertEqual('6.1.2-RC7',package['version'])
-        self.assertEqual('6.1.2-RC7',lock['version'])
-        self.assertEqual('6.1.2-RC7',lock['packages']['']['version'])
+        self.assertEqual('7.3.2-RC7',package['version'])
+        self.assertEqual('7.3.2-RC7',lock['version'])
+        self.assertEqual('7.3.2-RC7',lock['packages']['']['version'])
         app=(root/'src/App.vue').read_text(encoding='utf8')
         self.assertTrue('`V${appMetadata.version}`' in app)
         readme=(root/'README.md').read_text(encoding='utf8')
-        self.assertIn('当前版本：`V6.1.2-RC7`',readme)
-        self.assertIn('文档更新：2026-10-14',readme)
+        self.assertIn('当前版本：`V7.3.2-RC7`',readme)
+        self.assertIn('文档更新：2026-10-15',readme)
         self.assertIn('建议尽量不吃',readme)
 
 

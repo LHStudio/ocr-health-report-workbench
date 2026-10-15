@@ -9,6 +9,7 @@ from .builders.excel import NutritionExcelBuilder
 from .builders.pdf import NutritionPDFBuilder
 from .nutrition import NutritionService
 from .cloud import FoodDataResult, resolve_food_data
+from .report_style import normalize_report_style
 
 
 class NutritionReportService:
@@ -30,7 +31,11 @@ class NutritionReportService:
     def build_report_data(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, Mapping):
             raise TypeError("营养报告输入必须是 JSON 对象")
-        return self.nutrition_service.build_report_data(dict(payload))
+        calculation_payload = dict(payload)
+        report_style = normalize_report_style(calculation_payload.pop("report_style", "modern"))
+        report_data = self.nutrition_service.build_report_data(calculation_payload)
+        report_data["report_style"] = report_style
+        return report_data
 
     def preview_intake(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, Mapping):
@@ -76,7 +81,9 @@ class NutritionReportService:
         include_quality_page: bool = False,
         auto_evaluation: bool = True,
         manual_evaluations: Mapping[str, Any] | None = None,
+        report_style: str = "modern",
     ) -> dict[str, Any]:
+        report_style = normalize_report_style(report_style)
         adapted = self.adapt_ocr_person(
             person,
             user_overrides=user_overrides,
@@ -85,10 +92,11 @@ class NutritionReportService:
             auto_evaluation=auto_evaluation,
             manual_evaluations=manual_evaluations,
         )
-        report_data = self.generate_pdf_from_json(adapted.payload, output_path)
+        report_payload = {**adapted.payload, "report_style": report_style}
+        report_data = self.generate_pdf_from_json(report_payload, output_path)
         return {
             "output_path": str(Path(output_path).resolve()),
-            "payload": adapted.payload,
+            "payload": report_payload,
             "report_data": report_data,
             "warnings": adapted.warnings,
             "usable_food_count": adapted.usable_food_count,
@@ -133,6 +141,7 @@ def generate_pdf_from_ocr_person(
     font_path: str | Path | None = None,
     auto_evaluation: bool = True,
     manual_evaluations: Mapping[str, Any] | None = None,
+    report_style: str = "modern",
 ) -> dict[str, Any]:
     """无 Web 框架依赖的便捷函数。`local_service.py` 可直接调用。"""
     return NutritionReportService(font_path=font_path).generate_pdf_from_ocr_person(
@@ -143,6 +152,7 @@ def generate_pdf_from_ocr_person(
         include_quality_page=include_quality_page,
         auto_evaluation=auto_evaluation,
         manual_evaluations=manual_evaluations,
+        report_style=report_style,
     )
 
 

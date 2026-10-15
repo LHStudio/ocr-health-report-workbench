@@ -1,15 +1,16 @@
 <template>
   <header class="workspace-workbar">
     <div class="workspace-workbar-context"><strong>食物频率核对</strong><span>{{ people.length ? `${people.length} 名人员 · ${saving ? '正在保存当前核对信息…' : '修改内容会保存在当前任务中'}` : '上传问卷、识别并核对营养数据' }}</span></div>
-    <div class="workspace-workbar-actions"><button :class="['workspace-settings-button', { 'needs-attention': !serverUrl }]" type="button" aria-label="打开食物频率设置" title="OCR 服务与汇总模板设置" @click="openNutritionSettings"><span aria-hidden="true">⚙</span><span class="settings-button-label">设置</span></button></div>
+    <div class="workspace-workbar-actions"><button :class="['workspace-settings-button', { 'needs-attention': !serverUrl }]" type="button" aria-label="打开食物频率设置" title="OCR 服务、汇总模板与报告设置" @click="openNutritionSettings"><span aria-hidden="true">⚙</span><span class="settings-button-label">设置</span></button></div>
   </header>
   <section v-if="nutritionSettingsOpen" class="settings-backdrop nutrition-settings-backdrop" @click.self="closeNutritionSettings">
     <section class="settings-dialog nutrition-settings-dialog" role="dialog" aria-modal="true" aria-labelledby="nutrition-settings-title">
-      <div class="settings-head"><div><h2 id="nutrition-settings-title">食物频率设置</h2><p>配置 OCR 服务、识别方式和汇总模板。设置保存在当前浏览器中，模板仅用于当前处理批次。</p></div><button class="dialog-close" type="button" aria-label="关闭食物频率设置" @click="closeNutritionSettings">×</button></div>
+      <div class="settings-head"><div><h2 id="nutrition-settings-title">食物频率设置</h2><p>配置 OCR 服务、识别方式、汇总模板和报告样式。设置保存在当前浏览器中，模板仅用于当前处理批次。</p></div><button class="dialog-close" type="button" aria-label="关闭食物频率设置" @click="closeNutritionSettings">×</button></div>
       <div class="nutrition-settings-content">
         <section class="nutrition-settings-group"><div class="settings-group-title"><span>1</span><div><h3>云端 OCR 服务</h3><p>用于识别食物频率问卷和体成分报告。</p></div></div><div class="input-row"><input v-model.trim="serverUrl" class="text-input" placeholder="https://your-host:8443 或完整 /parse-file 地址" /><button class="secondary-button" :disabled="testing || !serverUrl" @click="testOcr">{{ testing ? '检查中…' : '测试连接' }}</button></div><div class="recognition-options"><label class="parse-mode">识别结果解析来源 <select v-model="parseMode"><option value="markdown">Markdown（推荐：保留勾选列）</option><option value="excel">Excel</option></select></label><label class="parse-mode">识别速度 <select v-model="processingMode"><option value="fast">快速模式（推荐）</option><option value="accurate">精确模式（较慢）</option></select></label></div><p class="mode-help">两种模式都保留 OpenCV 勾选检测。快速模式只在每名受访者的第一页补做姓名 OCR；精确模式会检查更多可能包含姓名或签字的页面。</p><p v-if="serverMessage" :class="['server-state', serverOk ? 'ok' : 'error']">{{ serverMessage }}</p></section>
         <section class="nutrition-settings-group"><div class="settings-group-title"><span>2</span><div><h3>汇总模板</h3><p>可使用自己的 Excel 模板；未选择时使用系统默认模板。</p></div></div><label class="settings-file-picker"><input type="file" accept=".xlsx,.xlsm" @change="selectTemplate" /><strong>选择汇总模板</strong><span>{{ templateFile?.name || '当前使用系统默认模板' }}</span></label><a class="settings-template-download" href="/local-api/nutrition-template" download>下载系统默认模板</a></section>
         <section class="nutrition-settings-group"><div class="settings-group-title"><span>3</span><div><h3>报告附加页</h3><p>默认不生成说明页；如需核对 OCR 换算过程，可主动开启。适用于单人和批量 PDF 导出。</p></div></div><label class="parse-mode"><input v-model="includeQualityPage" type="checkbox" />增加“OCR 换算与数据质量说明”页</label></section>
+        <section class="nutrition-settings-group"><div class="settings-group-title"><span>4</span><div><h3>报告样式</h3><p>默认使用新版报告；可切回原版报告。适用于单人和批量 PDF，不影响 Excel、计算结果或人工评价。</p></div></div><label class="parse-mode">PDF 报告样式 <select v-model="reportStyle" aria-label="营养 PDF 报告样式"><option value="modern">新版报告</option><option value="legacy">原版报告</option></select></label></section>
       </div>
       <div class="settings-actions"><button class="secondary-button" type="button" @click="closeNutritionSettings">取消</button><button class="primary-button" type="button" @click="saveNutritionSettings">保存设置</button></div>
     </section>
@@ -177,6 +178,7 @@ import { buildBatchPayload } from '../nutrition-batch'
 import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass } from '../nutrition-presentation'
 
 const includeQualityPage = ref(localStorage.getItem('nutrition-include-quality-page') === 'true')
+const reportStyle = ref(localStorage.getItem('nutrition-report-style') === 'legacy' ? 'legacy' : 'modern')
 const serverUrl = ref(storedOcrApiUrl())
 const serverMessage = ref(''); const serverOk = ref(false); const testing = ref(false)
 const nutritionFiles = ref([]); const bodyCompositionFiles = ref([]); const mode = ref('folder'); const bodyCompositionMode = ref(''); const templateFile = ref(null); const parseMode = ref(localStorage.getItem('ocr-parse-mode') || 'markdown'); const processingMode = ref(localStorage.getItem('ocr-processing-mode') || 'fast'); const processing = ref(false); const saving = ref(false)
@@ -249,9 +251,9 @@ function setNutritionPage(page) { nutritionPage.value = Math.min(Math.max(1, pag
 function saveUrl() { localStorage.setItem('medical-ocr-api-url', serverUrl.value); serverOk.value = true; serverMessage.value = '云端地址已保存。' }
 function saveParseMode() { localStorage.setItem('ocr-parse-mode', parseMode.value) }
 function saveProcessingMode() { localStorage.setItem('ocr-processing-mode', processingMode.value) }
-function openNutritionSettings() { nutritionSettingsSnapshot.value = { serverUrl: serverUrl.value, parseMode: parseMode.value, processingMode: processingMode.value, templateFile: templateFile.value, includeQualityPage: includeQualityPage.value }; nutritionSettingsOpen.value = true }
-function closeNutritionSettings() { const snapshot = nutritionSettingsSnapshot.value; if (snapshot) { serverUrl.value = snapshot.serverUrl; parseMode.value = snapshot.parseMode; processingMode.value = snapshot.processingMode; templateFile.value = snapshot.templateFile; includeQualityPage.value = snapshot.includeQualityPage }; nutritionSettingsSnapshot.value = null; nutritionSettingsOpen.value = false }
-function saveNutritionSettings() { saveUrl(); saveParseMode(); saveProcessingMode(); localStorage.setItem('nutrition-include-quality-page', String(includeQualityPage.value)); nutritionSettingsSnapshot.value = null; nutritionSettingsOpen.value = false }
+function openNutritionSettings() { nutritionSettingsSnapshot.value = { serverUrl: serverUrl.value, parseMode: parseMode.value, processingMode: processingMode.value, templateFile: templateFile.value, includeQualityPage: includeQualityPage.value, reportStyle: reportStyle.value }; nutritionSettingsOpen.value = true }
+function closeNutritionSettings() { const snapshot = nutritionSettingsSnapshot.value; if (snapshot) { serverUrl.value = snapshot.serverUrl; parseMode.value = snapshot.parseMode; processingMode.value = snapshot.processingMode; templateFile.value = snapshot.templateFile; includeQualityPage.value = snapshot.includeQualityPage; reportStyle.value = snapshot.reportStyle }; nutritionSettingsSnapshot.value = null; nutritionSettingsOpen.value = false }
+function saveNutritionSettings() { saveUrl(); saveParseMode(); saveProcessingMode(); localStorage.setItem('nutrition-include-quality-page', String(includeQualityPage.value)); localStorage.setItem('nutrition-report-style', reportStyle.value); nutritionSettingsSnapshot.value = null; nutritionSettingsOpen.value = false }
 function selectTemplate(event) { templateFile.value = event.target.files?.[0] || null }
 function setFiles(files, nextMode) { mode.value = nextMode; nutritionFiles.value = Array.from(files || []).filter((file) => /\.pdf$/i.test(file.name)); errorMessage.value = ''; successMessage.value = '' }
 function selectFiles(event) { setFiles(event.target.files, 'files') }
@@ -463,6 +465,7 @@ async function generateAllReports() {
     }
     const payload = buildBatchPayload(people.value, batchFormat.value, reportProfiles.value, reportReviews.value)
     payload.include_quality_page = includeQualityPage.value
+    if (batchFormat.value !== 'excel') payload.report_style = reportStyle.value
     const response = await fetch(`/local-api/nutrition/jobs/${jobId.value}/reports/batch`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     })
@@ -482,7 +485,7 @@ async function generateReport(format) {
   try {
     reportProfiles.value[selected.value.id] = { ...reportProfile.value }; reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
     const response = await fetch(`/local-api/nutrition/jobs/${jobId.value}/report`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person: selected.value, format, include_quality_page: includeQualityPage.value, user_overrides: { ...reportProfile.value, bmi: bmiValue.value }, report_date: selected.value.general?.调查日期 || '', auto_evaluation: Object.keys(manualEvaluationsPayload()).length === 0, manual_evaluations: manualEvaluationsPayload() })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person: selected.value, format, include_quality_page: includeQualityPage.value, ...(format === 'pdf' ? { report_style: reportStyle.value } : {}), user_overrides: { ...reportProfile.value, bmi: bmiValue.value }, report_date: selected.value.general?.调查日期 || '', auto_evaluation: Object.keys(manualEvaluationsPayload()).length === 0, manual_evaluations: manualEvaluationsPayload() })
     })
     if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.detail || '报告生成失败') }
     const dataSource = response.headers.get('X-Nutrition-Data-Source') || 'unknown'

@@ -9,9 +9,9 @@ except ModuleNotFoundError:
 class RC6Test(unittest.TestCase):
  def test_version_and_words(self):
   root=Path(__file__).resolve().parents[1]
-  self.assertEqual('6.1.2-RC7',json.loads((root/'package.json').read_text(encoding='utf8'))['version'])
+  self.assertEqual('7.3.2-RC7',json.loads((root/'package.json').read_text(encoding='utf8'))['version'])
   ui=(root/'src/App.vue').read_text(encoding='utf8')
-  self.assertIn('`V${appMetadata.version}`',ui);self.assertIn('Build2026.10.14',ui);self.assertIn('<br',ui)
+  self.assertIn('`V${appMetadata.version}`',ui);self.assertIn('Build2026.10.15',ui);self.assertIn('<br',ui)
   text='\n'.join(LogicTest().report()['suggestions'])
   self.assertNotIn('折算参考目标',text);self.assertNotIn('用于等能量替换估算',text)
  def test_pdf_layout_and_target_color(self):
@@ -24,9 +24,13 @@ class RC6Test(unittest.TestCase):
     page=next(p for p in doc if '能量及钙摄入量评估报告' in p.get_text())
     lines=[l for b in page.get_text('dict')['blocks'] for l in b.get('lines',[])]
     labels={ ''.join(s['text'] for s in l['spans']).strip():l['bbox'] for l in lines}
-    body=[l['bbox'] for l in lines if l['bbox'][0]>150 and any('总能量摄入不足' in s['text'] for s in l['spans'])]
+    body=[l['bbox'] for l in lines if any('总能量摄入不足' in s['text'] for s in l['spans'])]
+    note=next(s['bbox'] for l in lines for s in l['spans'] if s['text'].strip()=='说明')
     self.assertLess(labels['能量及钙摄入量评估报告'][1],80);self.assertLess(labels['项目'][1],120)
-    self.assertTrue(body);self.assertLess(max(b[3] for b in body),labels['说明'][1]);self.assertGreater(labels['说明'][1],600)
+    # Content-sized explanation/note replaces the former full-page filler.
+    self.assertTrue(body);self.assertLess(max(b[3] for b in body),note[1]);self.assertLess(note[1],600)
+    interpretation_bottom=max(l['bbox'][3] for l in lines if min(b[1] for b in body)<=l['bbox'][1]<note[1])
+    self.assertLess(note[1]-interpretation_bottom,30)
     athlete=next(p for p in doc if '运动员专项膳食评价' in p.get_text())
     advice=[s for b in athlete.get_text('dict')['blocks'] for l in b.get('lines',[]) for s in l['spans'] if s['text'].strip()=='建议尽量不吃']
     self.assertTrue(any(s['color']==0 for s in advice),advice)

@@ -42,7 +42,10 @@ class ConciseReportTest(unittest.TestCase):
             path = Path(tmp) / 'report.pdf'
             self.service.pdf_builder.build(data, path)
             with fitz.open(path) as doc:
-                text = '\n'.join(p.get_text() for p in doc if '食物摄入量评估报告' in p.get_text())
+                # Section boundaries, not removed running headers, identify advice pages.
+                start = next(i for i, p in enumerate(doc) if '整体评估及建议' in p.get_text())
+                end = next(i for i, p in enumerate(doc) if '能量及钙摄入量评估报告' in p.get_text())
+                text = '\n'.join(doc[i].get_text() for i in range(start, end))
                 self.assertFalse(re.search(r'\d\s*\n\s*(?:kcal|mg|g)/天', text), text)
                 for value in units:
                     self.assertEqual(14, len(re.findall(re.escape(value).replace(r'\ ', r'[ \u00a0]*'), text)), value)

@@ -190,3 +190,4 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
 .athlete-evaluation-table td:nth-child(2), .athlete-evaluation-table td:nth-child(4) { white-space: nowrap; }
 
 .about-version .about-build { display: inline-block; margin-top: 8px; font-size: 0.9em; font-weight: 400; }
+.nutrition-settings-dialog .settings-actions .secondary-button { flex: 0 0 auto; white-space: nowrap; }
