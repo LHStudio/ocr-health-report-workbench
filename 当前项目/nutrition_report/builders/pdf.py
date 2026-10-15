@@ -179,10 +179,13 @@ class NutritionPDFBuilder:
         ink, muted = colors.HexColor('#243746'), colors.HexColor('#637681')
         navy, teal = colors.HexColor('#183B4E'), colors.HexColor('#087F8C')
         line, pale = colors.HexColor('#DCE5E9'), colors.HexColor('#F3F7F8')
+        grid = colors.HexColor('#CAD3D9')
         width = 174 * mm
         normal = ParagraphStyle('NutritionNormal', fontName=self.font_name,
             fontSize=10.5, leading=15.5, alignment=1, textColor=ink, wordWrap='CJK')
         left = ParagraphStyle('NutritionLeft', parent=normal, alignment=0)
+        profile_label = ParagraphStyle('NutritionProfileLabel', parent=left, textColor=muted)
+        profile_value = ParagraphStyle('NutritionProfileValue', parent=left)
         quality = ParagraphStyle('NutritionQuality', parent=left, fontSize=9, leading=13, textColor=muted)
         title = ParagraphStyle('NutritionTitle', parent=normal, fontName=self.bold_font_name,
             fontSize=18, leading=25, textColor=navy, spaceAfter=12, keepWithNext=True)
@@ -215,19 +218,19 @@ class NutritionPDFBuilder:
 
         story = [heading('营养健康评估报告', '食物摄入量评估报告')]
         user = data.get('user') or {}
-        def value_label(label, value):
-            return Paragraph(f'<font color="#637681">{escape(label)}</font>  '
-                f'{escape(_as_text(value))}', normal)
+        def profile_cell(label, value):
+            return Paragraph(escape(label), profile_label), Paragraph(escape(_as_text(value)), profile_value)
         age = _as_text(user.get('age')).strip()
         ffm = _as_text(user.get('fatFreeMass')).strip()
         profile = Table([
-            [value_label('姓名', user.get('name') or ''), value_label('年龄', age+' 岁' if age else '')],
-            [value_label('项目种类', user.get('projectType') or ''), value_label('训练年限', user.get('trainingYears') or '')],
-            [value_label('当前状态', user.get('currentStatus') or ''), value_label('去脂体重（瘦体重）', ffm+' kg' if ffm else '')],
-        ], colWidths=[width/2]*2)
+            [*profile_cell('姓名', user.get('name') or ''), *profile_cell('年龄', age+' 岁' if age else '')],
+            [*profile_cell('项目种类', user.get('projectType') or ''), *profile_cell('训练年限', user.get('trainingYears') or '')],
+            [*profile_cell('当前状态', user.get('currentStatus') or ''), *profile_cell('去脂体重（瘦体重）', ffm+' kg' if ffm else '')],
+        ], colWidths=[30*mm, 57*mm, 43*mm, 44*mm], splitInRow=1)
         profile.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),pale),
             ('VALIGN',(0,0),(-1,-1),'TOP'), ('LEFTPADDING',(0,0),(-1,-1),10),
-            ('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+            ('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),
+            ('GRID',(0,0),(-1,-1),.5,grid)]))
         story.extend([profile, Spacer(1, 12)])
         categories = ['谷类','薯类','蔬菜','水果','畜禽肉','水产品','蛋类','豆类','坚果','奶类','零食','运动营养食品','饮料','酒类']
         story.append(self._build_food_report(data, categories, normal=normal, header=header,
@@ -250,7 +253,9 @@ class NutritionPDFBuilder:
                 Paragraph(_evaluation_text(calcium.get('evaluation','-')),normal)]]
         energy_table = Table(energy_rows, colWidths=[42*mm,101*mm,31*mm], repeatRows=1, splitInRow=1)
         energy_table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),navy),
-            ('BACKGROUND',(0,1),(0,-1),pale),('LINEBELOW',(0,0),(-1,-1),.5,line),
+            ('BACKGROUND',(0,1),(0,-1),pale),('LINEBELOW',(0,0),(-1,-1),.5,grid),
+            ('BOX',(0,0),(-1,-1),.5,grid),('INNERGRID',(0,1),(-1,-1),.5,grid),
+            ('INNERGRID',(0,0),(-1,0),.6,colors.white),
             ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),10),
             ('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10)]))
         story.append(energy_table)
@@ -290,7 +295,9 @@ class NutritionPDFBuilder:
             table = Table(rows,colWidths=[34*mm,30*mm,62*mm,20*mm,28*mm],repeatRows=1,splitInRow=1)
             table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),navy),
                 ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,pale]),
-                ('LINEBELOW',(0,0),(-1,-1),.4,line),('VALIGN',(0,0),(-1,-1),'TOP'),
+                ('LINEBELOW',(0,0),(-1,-1),.5,grid),('VALIGN',(0,0),(-1,-1),'TOP'),
+                ('BOX',(0,0),(-1,-1),.5,grid),('INNERGRID',(0,1),(-1,-1),.5,grid),
+                ('INNERGRID',(0,0),(-1,0),.6,colors.white),
                 ('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),
                 ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
             story.extend([table,GenerationDateFooter('报告生成日期：'+str(data.get('generated_at') or data.get('generated_date') or ''),self.font_name)])
@@ -370,13 +377,17 @@ class NutritionPDFBuilder:
             ("BACKGROUND", (0, 2), (0, len(categories)+1), colors.HexColor("#EDF4F5")),
             ("TEXTCOLOR", (0, 0), (-1, 1), colors.white),
             ("TEXTCOLOR", (0, 2), (0, len(categories)+1), colors.white),
-            ("LINEBELOW", (0, 0), (-1, len(categories)+1), 0.5, colors.HexColor("#DCE5E9")),
+            ("LINEBELOW", (0, 0), (-1, len(categories)+1), 0.5, colors.HexColor("#CAD3D9")),
+            ("BOX", (0, 0), (-1, len(categories)+1), 0.5, colors.HexColor("#CAD3D9")),
+            ("INNERGRID", (0, 0), (-1, 1), 0.6, colors.white),
             ("FONTNAME", (0, 0), (-1, -1), self.font_name),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("TOPPADDING", (0, 0), (-1, -1), 7),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
         ]
+        if categories:
+            style.append(("INNERGRID", (0, 2), (-1, len(categories)+1), 0.5, colors.HexColor("#CAD3D9")))
         if suggestions is not None:
             for row_index in range(suggestion_start, len(table_data)):
                 style.append(('SPAN', (0, row_index), (-1, row_index)))
