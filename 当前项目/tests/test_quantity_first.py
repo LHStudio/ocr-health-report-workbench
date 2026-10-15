@@ -38,7 +38,8 @@ class QuantityFirstTest(unittest.TestCase):
         self.assertAlmostEqual(want,row['target_grams'],places=4)
         self.assertEqual(20,row['actual'])
         self.assertAlmostEqual(want-20,row['shortfall_grams'],places=4)
-        self.assertIn('谷类',row['note'])
+        self.assertEqual('',row['note'])
+        self.assertIn('谷类',next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='meat')['note'])
         self.assertTrue(any('肉类' in s and '目前' in s and '参考目标' in s and '尚差' in s for s in data['suggestions']))
 
     def test_complete_adequate_intake_then_evaluates_structure(self):

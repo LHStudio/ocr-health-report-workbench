@@ -53,6 +53,52 @@ def _table_text(value: object, *, alert=True) -> str:
     return ''.join(parts)
 
 
+_SUGGESTION_UNIT = r'(?:kcal/天|kcal/day|mg/天|g/天|g/kg|个百分点|%|kg|mg|g)(?![A-Za-z/])'
+_SUGGESTION_NUMBER = r'\d+(?:\.\d+)?(?:[–—-]\d+(?:\.\d+)?)?'
+_SUGGESTION_ATOM = re.compile(_SUGGESTION_NUMBER + r'[^\S\n]*' + _SUGGESTION_UNIT + r'|' + _SUGGESTION_NUMBER + r'|[A-Za-z]+|[^\n]')
+
+
+def _suggestion_markup(text):
+    text = escape(text)
+    return re.sub(_SUGGESTION_NUMBER + r'[^\S\n]*' + _SUGGESTION_UNIT,
+                  lambda m: '<nobr>' + m.group().replace(' ', '\u00a0') + '</nobr>', text)
+
+
+class NaturalSuggestionParagraph(Paragraph):
+    """Break Chinese at glyph boundaries, but keep each numeric value/unit atomic."""
+    def __init__(self, *args, plain_text=None, **kwargs):
+        self.plain_text = plain_text
+        super().__init__(*args, **kwargs)
+
+    def wrap(self, availWidth, availHeight):
+        if self.plain_text is not None:
+            style = self.style
+            lines = []
+            for paragraph in self.plain_text.split('\n'):
+                line = []
+                for atom in _SUGGESTION_ATOM.findall(paragraph):
+                    limit = availWidth - style.leftIndent - style.rightIndent
+                    if not lines:
+                        limit -= style.firstLineIndent
+                    candidate = ''.join(line) + atom
+                    if line and pdfmetrics.stringWidth(candidate, style.fontName, style.fontSize) > limit - .1:
+                        # Avoid a closing punctuation mark or an opening bracket orphan.
+                        carry = []
+                        if (atom[0] in '，。；：、！？）】》' or line[-1] in '（【《') and len(line) > 1:
+                            carry = [line.pop()]
+                            while carry[0][0] in '，。；：、！？）】》' and len(line) > 1:
+                                carry.insert(0, line.pop())
+                        lines.append(''.join(line).rstrip())
+                        line = carry
+                        if not line and atom.isspace():
+                            continue
+                    line.append(atom)
+                lines.append(''.join(line).rstrip())
+            markup = '<br/>'.join(_suggestion_markup(line) for line in lines)
+            Paragraph.__init__(self, markup, style)
+        return super().wrap(availWidth, availHeight)
+
+
 class GenerationDateFooter(Flowable):
     """Attach the date to the last athlete-table page, including split tables."""
     def __init__(self, text, font_name):
@@ -389,12 +435,9 @@ class NutritionPDFBuilder:
             suggestion_style = ParagraphStyle('NutritionSuggestion', parent=normal, alignment=0,
                 fontSize=10, leading=15, leftIndent=14, firstLineIndent=-14)
             for index, item in enumerate(suggestions or ['暂无自动建议'], 1):
-                text = escape(_as_text(item)).replace('\n', '<br/>')
-                # 数值与单位整体换行，避免把 g/天 或 mg/天拆成碎片。
-                # ReportLab's <nobr> alone still permits breaks at ASCII spaces.
-                text = re.sub(r'(?<![\d.])\d+(?:\.\d+)?(?:[–—-]\d+(?:\.\d+)?)?\s*(?:kcal/天|kcal/day|mg/天|g/天|g/kg|个百分点|%|kg|mg|g)(?![A-Za-z/])',
-                              lambda match: '<nobr>' + match.group(0).replace(' ', '\u00a0') + '</nobr>', text)
-                table_data.append([Paragraph(f'{index}. {text}', suggestion_style), '', ''])
+                plain = f'{index}. {_as_text(item)}'
+                table_data.append([NaturalSuggestionParagraph(_suggestion_markup(plain), suggestion_style,
+                                                               plain_text=plain), '', ''])
         row_heights: list[float | None] = ([11 * mm, 9 * mm] if categories else [11 * mm]) + [17 * mm if c == '奶类' else 11 * mm for c in categories]
         if suggestions is not None:
             row_heights.extend([9 * mm] + [None] * max(1, len(suggestions)))

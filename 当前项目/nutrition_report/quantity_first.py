@@ -25,7 +25,7 @@ def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, catego
             message += f"碳水化合物目前 {display_number(carb['actual'])} g/天，参考目标 {carb['target']}，尚差 {display_number(-carb['gap'])} g/天；"
         notes.append(message + '应先增加主食，谷类、豆类、薯类均可补充。')
     if protein_low:
-        notes.append(f"先补足蛋白质：目前 {display_number(protein['actual'])} g/天，参考目标 {protein['target']}，尚差 {display_number(-protein['gap'])} g/天；增加肉类（含水产品）、奶类和蛋类等蛋白质来源，达标后再考虑结构占比。")
+        notes.append(f"先补足蛋白质：目前 {display_number(protein['actual'])} g/天，参考目标 {protein['target']}，尚差 {display_number(-protein['gap'])} g/天；增加肉类（含水产品）、奶类和蛋类等蛋白质来源。")
 
     for row in standard['rows']:
         key = row['key']
@@ -86,8 +86,8 @@ def meat_reference(protein_row, foods, food_db, complete):
     if target is None:
         message='肉类（含水产品）参考目标暂无法折算：请先核对总蛋白质目标、完整饮食记录及肉类蛋白质含量。'
     else:
-        message=f'肉类（含水产品）：目前 {display_number(actual)} g/天，参考目标约 {display_number(target)} g/天，按谷、奶、蛋扣除口径估算尚差 {display_number(shortfall)} g/天。'
-        message+= '总蛋白质不足，优先补量，肉、奶、蛋均可增加。' if protein_row['evaluation']=='不足' else '总蛋白质已满足，不按此估算缺口机械加量，再结合结构占比调整。'
+        message=f'肉类（含水产品）：目前 {display_number(actual)} g/天，参考目标约 {display_number(target)} g/天，'
+        message+= '总蛋白质不足，可优先补充。' if protein_row['evaluation']=='不足' else '总蛋白质已满足，结合结构调整。'
         if '加权蛋白质密度折算' not in basis:
             message += basis + '。'
     return row,message

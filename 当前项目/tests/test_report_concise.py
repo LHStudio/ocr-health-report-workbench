@@ -29,7 +29,8 @@ class ConciseReportTest(unittest.TestCase):
         self.assertNotIn('加权蛋白质密度折算', rows['meat']['note'])
         raw = {r['key']: r for r in data['food_standard_evaluation']['rows']}
         self.assertIn('加权蛋白质密度折算', raw['meat']['note'])
-        self.assertIn('谷类蛋白质', rows['meat']['note'])
+        self.assertEqual('', rows['meat']['note'])
+        self.assertIn('谷类蛋白质', raw['meat']['note'])
 
     def test_pdf_suggestion_numbers_and_units_never_wrap_apart(self):
         data = self.service.build_report_data(self.payload)
@@ -45,6 +46,30 @@ class ConciseReportTest(unittest.TestCase):
                 self.assertFalse(re.search(r'\d\s*\n\s*(?:kcal|mg|g)/天', text), text)
                 for value in units:
                     self.assertEqual(14, len(re.findall(re.escape(value).replace(r'\ ', r'[ \u00a0]*'), text)), value)
+
+    def test_meat_sentence_and_protein_advice_are_the_requested_short_version(self):
+        data = self.service.build_report_data(self.payload)
+        self.assertEqual('肉类（含水产品）：目前 20 g/天，参考目标约 448.4 g/天，总蛋白质不足，可优先补充。', data['suggestions'][11])
+        self.assertNotIn('达标后再考虑结构占比', '\n'.join(data['suggestions']))
+        self.assertEqual('', next(r for r in evaluation_rows(data) if r['key'] == 'meat')['note'])
+        raw = next(r for r in data['food_standard_evaluation']['rows'] if r['key'] == 'meat')
+        self.assertAlmostEqual(448.442211, raw['target_grams'], places=5)
+        self.assertAlmostEqual(428.442211, raw['shortfall_grams'], places=5)
+
+    def test_chinese_protein_advice_fills_the_line_before_wrapping(self):
+        data = self.service.build_report_data(self.payload)
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf = Path(tmp) / 'report.pdf'; self.service.pdf_builder.build(data, pdf)
+            with fitz.open(pdf) as doc:
+                page = next(p for p in doc if '整体评估及建议' in p.get_text())
+                lines = [l for b in page.get_text('dict')['blocks'] for l in b.get('lines', [])]
+                first = next(l for l in lines if '先补足蛋白质' in ''.join(s['text'] for s in l['spans']))
+                text = ''.join(s['text'] for s in first['spans'])
+                self.assertIn('85.3 g/天', text)
+                self.assertGreater(first['bbox'][2], page.rect.width - 116)
+                for line in lines:
+                    text = ''.join(s['text'] for s in line['spans']).strip()
+                    self.assertFalse(text.startswith(('）', '，', '。', '；', '、')), text)
 
     def test_remove_two_warnings_and_include_generation_time_in_pdf_and_excel(self):
         import openpyxl

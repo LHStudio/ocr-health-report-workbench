@@ -99,5 +99,5 @@ def attach_gram_display(report, food_db, merged_meals):
                 display['note'] = ('缺少有效食物能量密度，暂无法折算目标克数。'
                                    if '缺少有效食物能量密度' in display['note'] else '')
             elif key == 'meat':
-                display['note'] = display['note'].replace('按当前肉类（含水产品）加权蛋白质密度折算。', '')
+                display['note'] = ''
             row['display'] = display
