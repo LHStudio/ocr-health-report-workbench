@@ -238,6 +238,7 @@ def build_payload_from_ocr_person(
     *,
     user_overrides: Mapping[str, Any] | None = None,
     report_date: str | None = None,
+    include_quality_page: bool = False,
     auto_evaluation: bool = True,
     manual_evaluations: Mapping[str, Any] | None = None,
 ) -> AdaptedNutritionInput:
@@ -329,6 +330,7 @@ def build_payload_from_ocr_person(
         "user": user,
         "meals": meals,
         "date": effective_date,
+        "include_quality_page": include_quality_page is True,
         "autoEvaluation": bool(auto_evaluation),
         "source_person_id": _text(person.get("id")),
         "source_foods": source_foods,

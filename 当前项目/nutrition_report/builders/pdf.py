@@ -19,6 +19,8 @@ from reportlab.graphics.shapes import Drawing, Rect
 
 MACRO_COLORS = ("#756BB1", "#E28C45", "#4C9BB0")
 from reportlab.platypus import (
+    Flowable,
+    KeepInFrame,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -34,7 +36,7 @@ def _as_text(value: object) -> str:
 
 def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高"} else text
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"} else text
 
 
 def _table_text(value: object, *, alert=True) -> str:
@@ -42,13 +44,31 @@ def _table_text(value: object, *, alert=True) -> str:
     raw = _as_text(value)
     if alert and raw.strip() == '建议尽量不吃':
         return _evaluation_text(value)
-    tokens = re.compile(r'[（(][^（）()]+[）)]|[≥≤约]?\s*[+\-]?\d+(?:\.\d+)?(?:[–—-]\d+(?:\.\d+)?)?\s*(?:%|mg/天|g/天|g/100g)')
+    tokens = re.compile(r'[（(][^（）()]+[）)]|[≥≤约]?\s*[+\-]?\d+(?:\.\d+)?(?:[–—-]\d+(?:\.\d+)?)?\s*(?:%|kcal/天|mg/天|g/天|g/100g)')
     parts = []; start = 0
     for match in tokens.finditer(raw):
-        parts.extend([escape(raw[start:match.start()]), '<nobr>' + escape(match.group()) + '</nobr>'])
+        parts.extend([escape(raw[start:match.start()]), '<nobr>' + escape(match.group().replace(' ', '\u00a0')) + '</nobr>'])
         start = match.end()
     parts.append(escape(raw[start:]))
     return ''.join(parts)
+
+
+class GenerationDateFooter(Flowable):
+    """Attach the date to the last athlete-table page, including split tables."""
+    def __init__(self, text, font_name):
+        super().__init__()
+        self.text, self.font_name = text, font_name
+        self.width, self.height = 1, 1
+
+    def draw(self):
+        canvas = self.canv
+        canvas.saveState()
+        # Flowable coordinates are translated; reset to the page coordinate system.
+        canvas.resetTransforms()
+        canvas.setFont(self.font_name, 9)
+        canvas.setFillColor(colors.HexColor('#555555'))
+        canvas.drawRightString(A4[0]-18*mm, 11*mm, self.text)
+        canvas.restoreState()
 
 
 class NutritionPDFBuilder:
@@ -270,11 +290,11 @@ class NutritionPDFBuilder:
 
         athlete = data.get("athlete_evaluation")
         if evaluation_rows(data):
-            story.extend([PageBreak(), Paragraph("运动员专项膳食评价", title)])
+            athlete_story = [Paragraph("运动员专项膳食评价", title)]
             if evaluation_context(data):
-                story.append(Paragraph(escape(evaluation_context(data)), quality))
+                athlete_story.append(Paragraph(escape(evaluation_context(data)), quality))
             for line in evaluation_warnings(data):
-                story.append(Paragraph(escape(line), quality))
+                athlete_story.append(Paragraph(escape(line), quality))
             evaluation_body = ParagraphStyle('EvaluationBody', parent=normal, fontSize=9.5, leading=12)
             final_body = ParagraphStyle('FinalEvaluationBody', parent=evaluation_body, fontSize=8.5, leading=11)
             rows = [[Paragraph(text, header) for text in ["项目", "实际摄入", "参考目标", "差值", "最终评价"]]]
@@ -291,39 +311,43 @@ class NutritionPDFBuilder:
                              Paragraph(_evaluation_text(row['evaluation']), final_body)])
             table = Table(rows, colWidths=[34*mm, 30*mm, 70*mm, 20*mm, 22*mm], repeatRows=1)
             table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F75B5")), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))
-            story.extend([Spacer(1, 3*mm), table])
+            athlete_story.extend([Spacer(1, 3*mm), table, GenerationDateFooter(
+                '报告生成日期：' + str(data.get('generated_at') or data.get('generated_date') or ''), self.font_name)])
 
 
-        warnings = data.get("conversion_warnings") or []
-        unmatched = data.get("unmatched_foods") or []
-        source = data.get("food_data_source") or {}
-        story.extend([PageBreak(), Paragraph("OCR 换算与数据质量说明", ParagraphStyle("QualityTitle", parent=title, fontSize=14, leading=17)), Spacer(1, 2 * mm)])
-        story.append(Paragraph(
-            "食物频率已折算为日均摄入量；无法可靠确定频率、次数或克数的项目不会静默计入。以下项目请在使用报告前复核。",
-            quality,
-        ))
-        story.append(Spacer(1, 1 * mm))
-        messages = [item.get("message", item) if isinstance(item, dict) else item for item in warnings]
-        messages.extend(f"{item.get('name', '未知食物')}未在营养数据库中匹配" for item in unmatched if isinstance(item, dict))
-        unique_messages = list(dict.fromkeys(_as_text(item) for item in messages if _as_text(item)))
-        if not unique_messages:
-            story.append(Paragraph("未发现额外的 OCR 换算警示。", quality))
-        for index, message in enumerate(unique_messages, 1):
-            story.append(Paragraph(f"{index}. {escape(message)}", quality))
-            story.append(Spacer(1, 0.4 * mm))
-        source_lines = [
-            f"营养数据来源：{_as_text(source.get('label') or '未记录')}",
-            f"查询时间：{_as_text(source.get('queried_at') or '-')}",
-            f"云端地址：{_as_text(source.get('base_url') or '-')}",
-            f"云端状态：{_as_text(source.get('message') or '未记录')}",
-            f"人员文件夹：{_as_text(data.get('source_person_id') or '-')}",
-        ]
-        if source.get("error"):
-            source_lines.append(f"回退原因：{_as_text(source.get('error'))}")
-        story.extend([Spacer(1, 2 * mm), Paragraph("报告数据记录", quality), Spacer(1, 0.5 * mm)])
-        for line in source_lines:
-            story.append(Paragraph(escape(line), quality))
-            story.append(Spacer(1, 0.3 * mm))
+            story.extend([PageBreak(), KeepInFrame(doc.width, doc.height-12, athlete_story, mode='shrink')])
+
+        if data.get("include_quality_page") is True:
+            warnings = data.get("conversion_warnings") or []
+            unmatched = data.get("unmatched_foods") or []
+            source = data.get("food_data_source") or {}
+            story.extend([PageBreak(), Paragraph("OCR 换算与数据质量说明", ParagraphStyle("QualityTitle", parent=title, fontSize=14, leading=17)), Spacer(1, 2 * mm)])
+            story.append(Paragraph(
+                "食物频率已折算为日均摄入量；无法可靠确定频率、次数或克数的项目不会静默计入。以下项目请在使用报告前复核。",
+                quality,
+            ))
+            story.append(Spacer(1, 1 * mm))
+            messages = [item.get("message", item) if isinstance(item, dict) else item for item in warnings]
+            messages.extend(f"{item.get('name', '未知食物')}未在营养数据库中匹配" for item in unmatched if isinstance(item, dict))
+            unique_messages = list(dict.fromkeys(_as_text(item) for item in messages if _as_text(item)))
+            if not unique_messages:
+                story.append(Paragraph("未发现额外的 OCR 换算警示。", quality))
+            for index, message in enumerate(unique_messages, 1):
+                story.append(Paragraph(f"{index}. {escape(message)}", quality))
+                story.append(Spacer(1, 0.4 * mm))
+            source_lines = [
+                f"营养数据来源：{_as_text(source.get('label') or '未记录')}",
+                f"查询时间：{_as_text(source.get('queried_at') or '-')}",
+                f"云端地址：{_as_text(source.get('base_url') or '-')}",
+                f"云端状态：{_as_text(source.get('message') or '未记录')}",
+                f"人员文件夹：{_as_text(data.get('source_person_id') or '-')}",
+            ]
+            if source.get("error"):
+                source_lines.append(f"回退原因：{_as_text(source.get('error'))}")
+            story.extend([Spacer(1, 2 * mm), Paragraph("报告数据记录", quality), Spacer(1, 0.5 * mm)])
+            for line in source_lines:
+                story.append(Paragraph(escape(line), quality))
+                story.append(Spacer(1, 0.3 * mm))
 
         doc.build(story)
 
@@ -367,8 +391,9 @@ class NutritionPDFBuilder:
             for index, item in enumerate(suggestions or ['暂无自动建议'], 1):
                 text = escape(_as_text(item)).replace('\n', '<br/>')
                 # 数值与单位整体换行，避免把 g/天 或 mg/天拆成碎片。
-                text = re.sub(r'(?<![\w.])\d+(?:\.\d+)?\s*(?:kcal/天|kcal/day|mg/天|g/天|g/kg|个百分点|%|kg|mg|g)(?![A-Za-z/])',
-                              lambda match: '<nobr>' + match.group(0) + '</nobr>', text)
+                # ReportLab's <nobr> alone still permits breaks at ASCII spaces.
+                text = re.sub(r'(?<![\d.])\d+(?:\.\d+)?(?:[–—-]\d+(?:\.\d+)?)?\s*(?:kcal/天|kcal/day|mg/天|g/天|g/kg|个百分点|%|kg|mg|g)(?![A-Za-z/])',
+                              lambda match: '<nobr>' + match.group(0).replace(' ', '\u00a0') + '</nobr>', text)
                 table_data.append([Paragraph(f'{index}. {text}', suggestion_style), '', ''])
         row_heights: list[float | None] = ([11 * mm, 9 * mm] if categories else [11 * mm]) + [17 * mm if c == '奶类' else 11 * mm for c in categories]
         if suggestions is not None:
@@ -501,7 +526,7 @@ class NutritionPDFBuilder:
         grains = next((r for r in (data.get('food_standard_evaluation') or {}).get('rows', []) if r['key'] == 'grains_remainder'), {})
         if carb.get('evaluation') == '不足':
             lines.append('碳水化合物营养素摄入不足，需结合训练量补充碳水来源。')
-        if grains.get('evaluation') == '过多':
+        if grains.get('evaluation_basis') == 'ratio' and grains.get('evaluation') in {'过多', '能量占比偏高'}:
             lines.append('谷类在主食总能量中占比偏高；建议增加豆类、薯类的搭配。')
         if calcium_evaluation == "不足":
             lines.append("钙摄入不足，应增加奶制品摄入")

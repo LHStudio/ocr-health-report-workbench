@@ -3407,6 +3407,9 @@ def generate_nutrition_person_report(job_id: str, person_id: str, payload: dict[
     if not auto_evaluation and manual_evaluations is None:
         raise HTTPException(status_code=400, detail="请先提交人工复核后的营养评价")
 
+    include_quality_page = payload.get('include_quality_page', False)
+    if not isinstance(include_quality_page, bool):
+        raise HTTPException(status_code=400, detail='说明页开关必须为布尔值')
     report_date = clean(payload.get("report_date")) or None
     extension = ".pdf" if report_format == "pdf" else ".xlsx"
     label = "营养健康评估报告" if report_format == "pdf" else "营养分析报告"
@@ -3427,12 +3430,14 @@ def generate_nutrition_person_report(job_id: str, person_id: str, payload: dict[
         if report_format == "pdf":
             result = service.generate_pdf_from_ocr_person(
                 person, output_path, user_overrides=user_overrides, report_date=report_date,
+                include_quality_page=include_quality_page,
                 auto_evaluation=auto_evaluation, manual_evaluations=manual_evaluations,
             )
             media_type = "application/pdf"
         else:
             result = service.generate_excel_from_ocr_person(
                 person, output_path, user_overrides=user_overrides, report_date=report_date,
+                include_quality_page=include_quality_page,
                 auto_evaluation=auto_evaluation, manual_evaluations=manual_evaluations,
             )
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -3490,6 +3495,9 @@ def generate_nutrition_batch_reports(job_id: str, payload: dict[str, Any]):
     if (not ids or len(ids) != len(people) or '' in ids or len(set(ids)) != len(ids)
             or set(ids) != set(expected) or len(ids) != len(expected)):
         raise HTTPException(status_code=400, detail='批量导出必须包含当前任务全部人员，人员标识不得为空、重复或来自其他任务')
+    include_quality_page = payload.get('include_quality_page', False)
+    if not isinstance(include_quality_page, bool):
+        raise HTTPException(status_code=400, detail='说明页开关必须为布尔值')
     profiles, reviews = deepcopy(payload.get('profiles', {})), deepcopy(payload.get('reviews', {}))
     for name, mapping in [('profiles', profiles), ('reviews', reviews)]:
         if not isinstance(mapping, dict) or set(mapping) - set(ids) or any(not isinstance(v, dict) for v in mapping.values()):
@@ -3508,7 +3516,7 @@ def generate_nutrition_batch_reports(job_id: str, payload: dict[str, Any]):
             for index, person in enumerate(people, 1):
                 person_id = clean(person['id'])
                 review = reviews.get(person_id)
-                options = dict(user_overrides=profiles.get(person_id),
+                options = dict(user_overrides=profiles.get(person_id), include_quality_page=include_quality_page,
                                auto_evaluation=not bool(review), manual_evaluations=review)
                 for fmt in formats:
                     entry = dict(person_id=person_id, format=fmt,

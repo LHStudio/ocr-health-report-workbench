@@ -9,6 +9,7 @@
       <div class="nutrition-settings-content">
         <section class="nutrition-settings-group"><div class="settings-group-title"><span>1</span><div><h3>云端 OCR 服务</h3><p>用于识别食物频率问卷和体成分报告。</p></div></div><div class="input-row"><input v-model.trim="serverUrl" class="text-input" placeholder="https://your-host:8443 或完整 /parse-file 地址" /><button class="secondary-button" :disabled="testing || !serverUrl" @click="testOcr">{{ testing ? '检查中…' : '测试连接' }}</button></div><div class="recognition-options"><label class="parse-mode">识别结果解析来源 <select v-model="parseMode"><option value="markdown">Markdown（推荐：保留勾选列）</option><option value="excel">Excel</option></select></label><label class="parse-mode">识别速度 <select v-model="processingMode"><option value="fast">快速模式（推荐）</option><option value="accurate">精确模式（较慢）</option></select></label></div><p class="mode-help">两种模式都保留 OpenCV 勾选检测。快速模式只在每名受访者的第一页补做姓名 OCR；精确模式会检查更多可能包含姓名或签字的页面。</p><p v-if="serverMessage" :class="['server-state', serverOk ? 'ok' : 'error']">{{ serverMessage }}</p></section>
         <section class="nutrition-settings-group"><div class="settings-group-title"><span>2</span><div><h3>汇总模板</h3><p>可使用自己的 Excel 模板；未选择时使用系统默认模板。</p></div></div><label class="settings-file-picker"><input type="file" accept=".xlsx,.xlsm" @change="selectTemplate" /><strong>选择汇总模板</strong><span>{{ templateFile?.name || '当前使用系统默认模板' }}</span></label><a class="settings-template-download" href="/local-api/nutrition-template" download>下载系统默认模板</a></section>
+        <section class="nutrition-settings-group"><div class="settings-group-title"><span>3</span><div><h3>报告附加页</h3><p>默认不生成说明页；如需核对 OCR 换算过程，可主动开启。适用于单人和批量 PDF 导出。</p></div></div><label class="parse-mode"><input v-model="includeQualityPage" type="checkbox" />增加“OCR 换算与数据质量说明”页</label></section>
       </div>
       <div class="settings-actions"><button class="secondary-button" type="button" @click="closeNutritionSettings">取消</button><button class="primary-button" type="button" @click="saveNutritionSettings">保存设置</button></div>
     </section>
@@ -175,6 +176,7 @@ import { storedOcrApiUrl } from '../runtime-config'
 import { buildBatchPayload } from '../nutrition-batch'
 import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass } from '../nutrition-presentation'
 
+const includeQualityPage = ref(localStorage.getItem('nutrition-include-quality-page') === 'true')
 const serverUrl = ref(storedOcrApiUrl())
 const serverMessage = ref(''); const serverOk = ref(false); const testing = ref(false)
 const nutritionFiles = ref([]); const bodyCompositionFiles = ref([]); const mode = ref('folder'); const bodyCompositionMode = ref(''); const templateFile = ref(null); const parseMode = ref(localStorage.getItem('ocr-parse-mode') || 'markdown'); const processingMode = ref(localStorage.getItem('ocr-processing-mode') || 'fast'); const processing = ref(false); const saving = ref(false)
@@ -211,8 +213,8 @@ const nutrientReviewRows = computed(() => {
   return [
     { key: 'energyEvaluation', label: '总能量', value: nutrition.energy?.value ?? '—', unit: 'kcal/天', machineEvaluation: machineEvaluationText(nutrition.energy?.evaluation) },
     { key: 'calciumEvaluation', label: '钙', value: nutrition.calcium?.value ?? '—', unit: 'mg/天', machineEvaluation: machineEvaluationText(nutrition.calcium?.evaluation) },
-    ...(nutritionPreview.value?.food_standard_evaluation?.rows || []).map((row) => ({ key: `standard_${row.key}Evaluation`, label: row.label, value: row.actual ?? '—', unit: row.unit, machineEvaluation: machineEvaluationText(row.machine_evaluation) })),
-    ...(nutritionPreview.value?.athlete_evaluation?.rows || []).filter((row) => ['protein', 'carbohydrate', 'fat'].includes(row.key)).map((row) => ({ key: `${row.key}Evaluation`, label: row.label, value: row.actual ?? '—', unit: row.unit, machineEvaluation: machineEvaluationText(row.machine_evaluation) })),
+    ...unifiedEvaluationRows.value.filter(row => !['protein','carbohydrate','fat','calcium'].includes(row.key)).map((row) => ({ key: `standard_${row.key}Evaluation`, label: row.label, value: row.actual ?? '—', unit: row.unit, machineEvaluation: machineEvaluationText(row.machine_evaluation) })),
+    ...unifiedEvaluationRows.value.filter((row) => ['protein', 'carbohydrate', 'fat'].includes(row.key)).map((row) => ({ key: `${row.key}Evaluation`, label: row.label, value: row.actual ?? '—', unit: row.unit, machineEvaluation: machineEvaluationText(row.machine_evaluation) })),
   ]
 })
 const canExportReviewedReport = computed(() => !!(selected.value && nutritionPreview.value && !previewLoading.value))
@@ -247,9 +249,9 @@ function setNutritionPage(page) { nutritionPage.value = Math.min(Math.max(1, pag
 function saveUrl() { localStorage.setItem('medical-ocr-api-url', serverUrl.value); serverOk.value = true; serverMessage.value = '云端地址已保存。' }
 function saveParseMode() { localStorage.setItem('ocr-parse-mode', parseMode.value) }
 function saveProcessingMode() { localStorage.setItem('ocr-processing-mode', processingMode.value) }
-function openNutritionSettings() { nutritionSettingsSnapshot.value = { serverUrl: serverUrl.value, parseMode: parseMode.value, processingMode: processingMode.value, templateFile: templateFile.value }; nutritionSettingsOpen.value = true }
-function closeNutritionSettings() { const snapshot = nutritionSettingsSnapshot.value; if (snapshot) { serverUrl.value = snapshot.serverUrl; parseMode.value = snapshot.parseMode; processingMode.value = snapshot.processingMode; templateFile.value = snapshot.templateFile }; nutritionSettingsSnapshot.value = null; nutritionSettingsOpen.value = false }
-function saveNutritionSettings() { saveUrl(); saveParseMode(); saveProcessingMode(); nutritionSettingsSnapshot.value = null; nutritionSettingsOpen.value = false }
+function openNutritionSettings() { nutritionSettingsSnapshot.value = { serverUrl: serverUrl.value, parseMode: parseMode.value, processingMode: processingMode.value, templateFile: templateFile.value, includeQualityPage: includeQualityPage.value }; nutritionSettingsOpen.value = true }
+function closeNutritionSettings() { const snapshot = nutritionSettingsSnapshot.value; if (snapshot) { serverUrl.value = snapshot.serverUrl; parseMode.value = snapshot.parseMode; processingMode.value = snapshot.processingMode; templateFile.value = snapshot.templateFile; includeQualityPage.value = snapshot.includeQualityPage }; nutritionSettingsSnapshot.value = null; nutritionSettingsOpen.value = false }
+function saveNutritionSettings() { saveUrl(); saveParseMode(); saveProcessingMode(); localStorage.setItem('nutrition-include-quality-page', String(includeQualityPage.value)); nutritionSettingsSnapshot.value = null; nutritionSettingsOpen.value = false }
 function selectTemplate(event) { templateFile.value = event.target.files?.[0] || null }
 function setFiles(files, nextMode) { mode.value = nextMode; nutritionFiles.value = Array.from(files || []).filter((file) => /\.pdf$/i.test(file.name)); errorMessage.value = ''; successMessage.value = '' }
 function selectFiles(event) { setFiles(event.target.files, 'files') }
@@ -270,7 +272,7 @@ function machineInterpretation(preview) {
   const carb = (preview?.athlete_evaluation?.rows || []).find(row => row.key === 'carbohydrate')
   const grains = (preview?.food_standard_evaluation?.rows || []).find(row => row.key === 'grains_remainder')
   if (carb?.evaluation === '不足') lines.push('碳水化合物营养素摄入不足，需结合训练量补充碳水来源。')
-  if (grains?.evaluation === '过多') lines.push('谷类在主食总能量中占比偏高；建议增加豆类、薯类的搭配。')
+  if (grains?.evaluation_basis === 'ratio' && ['过多', '能量占比偏高'].includes(grains?.evaluation)) lines.push('谷类在主食总能量中占比偏高；建议增加豆类、薯类的搭配。')
   if (nutrition.calcium?.evaluation === '不足') lines.push('钙摄入偏少，建议优先从奶类、豆制品等食物补充。')
   return lines.join('\n') || '请结合受访者训练、疾病和补充剂使用情况进行最终解读。'
 }
@@ -460,6 +462,7 @@ async function generateAllReports() {
       reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
     }
     const payload = buildBatchPayload(people.value, batchFormat.value, reportProfiles.value, reportReviews.value)
+    payload.include_quality_page = includeQualityPage.value
     const response = await fetch(`/local-api/nutrition/jobs/${jobId.value}/reports/batch`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
     })
@@ -479,7 +482,7 @@ async function generateReport(format) {
   try {
     reportProfiles.value[selected.value.id] = { ...reportProfile.value }; reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
     const response = await fetch(`/local-api/nutrition/jobs/${jobId.value}/report`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person: selected.value, format, user_overrides: { ...reportProfile.value, bmi: bmiValue.value }, report_date: selected.value.general?.调查日期 || '', auto_evaluation: Object.keys(manualEvaluationsPayload()).length === 0, manual_evaluations: manualEvaluationsPayload() })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ person: selected.value, format, include_quality_page: includeQualityPage.value, user_overrides: { ...reportProfile.value, bmi: bmiValue.value }, report_date: selected.value.general?.调查日期 || '', auto_evaluation: Object.keys(manualEvaluationsPayload()).length === 0, manual_evaluations: manualEvaluationsPayload() })
     })
     if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.detail || '报告生成失败') }
     const dataSource = response.headers.get('X-Nutrition-Data-Source') || 'unknown'

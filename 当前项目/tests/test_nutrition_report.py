@@ -161,7 +161,7 @@ class NutritionReportServiceTest(unittest.TestCase):
                 page_texts = [page.get_text() for page in pdf_document]
                 pdf_text = "\n".join(page_texts)
                 image_counts = [len(page.get_images(full=True)) for page in pdf_document]
-            self.assertGreaterEqual(len(page_texts), 5)
+            self.assertEqual(len(page_texts), 4)
             self.assertNotIn('新增膳食标准逐项评价', pdf_text)
             self.assertIn('坚果', page_texts[3])
             self.assertIn("运动员专项膳食评价", page_texts[3])
@@ -189,10 +189,10 @@ class NutritionReportServiceTest(unittest.TestCase):
             # 饼图直接写成 PDF 矢量绘图，不应重新产生位图或临时 PNG。
             self.assertFalse(any(image_counts))
             self.assertNotIn("营养数据来源", page_texts[0])
-            self.assertIn("本地食物营养库", pdf_text)
-            self.assertIn("查询时间", pdf_text)
-            self.assertIn("营养数据来源", page_texts[-1])
-            self.assertIn("OCR 换算与数据质量说明", page_texts[-1])
+            self.assertNotIn("营养数据来源", pdf_text)
+            self.assertNotIn("查询时间", pdf_text)
+            self.assertIn("报告生成日期", page_texts[-1])
+            self.assertNotIn("OCR 换算与数据质量说明", pdf_text)
             self.assertEqual(4, pdf_result["usable_food_count"])
             self.assertEqual(2100, pdf_result["report_data"]["nutrition"]["energy"]["standard"])
 

@@ -2,6 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass } from '../src/nutrition-presentation.js'
 
+test('hide the requested milk conversion and vegetable explanations without changing raw warnings', () => {
+  const warnings = ['奶粉、奶酪折算鲜奶等价量（按蛋白质估计）=记录克数', '蔬菜最低400g/天，原有运动分类要求更高时取更高下限。', '缺少体重']
+  const data = { food_standard_evaluation: { warnings } }
+  assert.deepEqual(evaluationWarnings(data), ['缺少体重'])
+  assert.equal(data.food_standard_evaluation.warnings.length, 3)
+})
+
 test('merge by key, standard wins, no mutation or duplicate vegetables', () => {
   const data = { athlete_evaluation: { rows: [{ key: 'protein', evaluation: '不足' }, { key: 'vegetables', evaluation: 'old' }], warnings: ['原文未明确年龄分界，需业务确认。', '缺少体重'] }, food_standard_evaluation: { rows: [{ key: 'vegetables', evaluation: '' }, { key: 'nuts', evaluation: '适中' }], warnings: ['缺少体重'] } }
   const before = JSON.stringify(data)
@@ -24,7 +31,7 @@ test('remove requested wording and move scope into one context line without chan
   const data = { athlete_evaluation: { athlete_label: '力量为主', rows: [], warnings: ['仅训练期；参数来自用户提供文档，需营养专业人员审核。'] }, food_standard_evaluation: { rows: [{ key: 'eggs', note: '每个鸡蛋按50g；显式克数不二次折算' }], warnings: ['60-70kg标准', '主食能量=谷类+豆类+薯类；豆类至少5%、薯类至少15%，因此谷类占比上限为80%，不是必须达到80%。', '蔬菜最低400g/天，原有运动分类要求更高时取更高下限；采用最低量规则，不以先前500g封顶。'] } }
   const before = JSON.stringify(data)
   assert.equal(evaluationContext(data), '力量为主 · 仅训练期 · 60-70kg标准')
-  assert.deepEqual(evaluationWarnings(data), ['主食能量=谷类+豆类+薯类；豆类至少5%、薯类至少15%。', '蔬菜最低400g/天，原有运动分类要求更高时取更高下限。'])
+  assert.deepEqual(evaluationWarnings(data), [])
   assert.equal(evaluationRows(data)[0].note, '每个鸡蛋按50g')
   assert.equal(JSON.stringify(data), before)
   assert.equal(evaluationContext(null), '')
@@ -42,3 +49,10 @@ test('staple ratings describe energy share, not food grams; manual values stay s
   assert.equal(evaluationAlertClass('能量占比偏高'), 'evaluation-alert')
   assert.equal(evaluationAlertClass('能量占比适中'), '')
 })
+
+ test('quantity-first values stay insufficient, and display projection uses grams', () => {
+  const row={key:'beans_energy',actual:5,unit:'%',evaluation:'不足',evaluation_basis:'quantity_first',display:{actual:12.35,unit:'g/天',target:'≥ 15.00 g/天'}}
+  assert.equal(finalEvaluation(row),'不足')
+  assert.equal(evaluationRows({food_standard_evaluation:{rows:[row]}})[0].unit,'g/天')
+  assert.equal(evaluationRows({food_standard_evaluation:{rows:[row]}})[0].actual,12.35)
+ })

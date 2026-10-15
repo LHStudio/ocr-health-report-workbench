@@ -64,7 +64,8 @@ def evaluate_athlete(user, nutrition, categories, config):
                 gap = 0
         status = status if status in {"不足", "过多", "适中"} else "-"
         rows.append(dict(key=key, label=label, actual=actual, unit=unit, target=target,
-                         gap=gap, machine_evaluation=status, evaluation=status))
+                         gap=gap, machine_evaluation=status, evaluation=status,
+                         target_min=bounds[0] if bounds else None, target_max=bounds[-1] if bounds else None))
 
     for key, label in (("protein", "蛋白质"), ("carbohydrate", "碳水化合物")):
         bounds = [round(n * weight, 4) for n in rule[key]] if rule and weight else None

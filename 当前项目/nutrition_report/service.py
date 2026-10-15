@@ -53,6 +53,7 @@ class NutritionReportService:
         *,
         user_overrides: Mapping[str, Any] | None = None,
         report_date: str | None = None,
+        include_quality_page: bool = False,
         auto_evaluation: bool = True,
         manual_evaluations: Mapping[str, Any] | None = None,
     ) -> AdaptedNutritionInput:
@@ -60,6 +61,7 @@ class NutritionReportService:
             person,
             user_overrides=user_overrides,
             report_date=report_date,
+            include_quality_page=include_quality_page,
             auto_evaluation=auto_evaluation,
             manual_evaluations=manual_evaluations,
         )
@@ -71,6 +73,7 @@ class NutritionReportService:
         *,
         user_overrides: Mapping[str, Any] | None = None,
         report_date: str | None = None,
+        include_quality_page: bool = False,
         auto_evaluation: bool = True,
         manual_evaluations: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -78,6 +81,7 @@ class NutritionReportService:
             person,
             user_overrides=user_overrides,
             report_date=report_date,
+            include_quality_page=include_quality_page,
             auto_evaluation=auto_evaluation,
             manual_evaluations=manual_evaluations,
         )
@@ -97,6 +101,7 @@ class NutritionReportService:
         *,
         user_overrides: Mapping[str, Any] | None = None,
         report_date: str | None = None,
+        include_quality_page: bool = False,
         auto_evaluation: bool = True,
         manual_evaluations: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -104,6 +109,7 @@ class NutritionReportService:
             person,
             user_overrides=user_overrides,
             report_date=report_date,
+            include_quality_page=include_quality_page,
             auto_evaluation=auto_evaluation,
             manual_evaluations=manual_evaluations,
         )
@@ -123,6 +129,7 @@ def generate_pdf_from_ocr_person(
     *,
     user_overrides: Mapping[str, Any] | None = None,
     report_date: str | None = None,
+    include_quality_page: bool = False,
     font_path: str | Path | None = None,
     auto_evaluation: bool = True,
     manual_evaluations: Mapping[str, Any] | None = None,
@@ -133,6 +140,7 @@ def generate_pdf_from_ocr_person(
         output_path,
         user_overrides=user_overrides,
         report_date=report_date,
+        include_quality_page=include_quality_page,
         auto_evaluation=auto_evaluation,
         manual_evaluations=manual_evaluations,
     )
@@ -144,6 +152,7 @@ def generate_excel_from_ocr_person(
     *,
     user_overrides: Mapping[str, Any] | None = None,
     report_date: str | None = None,
+    include_quality_page: bool = False,
     auto_evaluation: bool = True,
     manual_evaluations: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -153,6 +162,7 @@ def generate_excel_from_ocr_person(
         output_path,
         user_overrides=user_overrides,
         report_date=report_date,
+        include_quality_page=include_quality_page,
         auto_evaluation=auto_evaluation,
         manual_evaluations=manual_evaluations,
     )

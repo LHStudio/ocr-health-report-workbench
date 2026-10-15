@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile, unittest
 import fitz, openpyxl
 from nutrition_report import NutritionReportService
+from nutrition_report.builders.presentation import evaluation_rows
 
 
 class UnifiedNutritionPresentationTest(unittest.TestCase):
@@ -31,15 +32,14 @@ class UnifiedNutritionPresentationTest(unittest.TestCase):
             for phrase in banned:
                 self.assertNotIn(phrase,all_text)
                 self.assertNotIn(phrase,cells)
-            expected = {r['key']:r for r in self.report['athlete_evaluation']['rows']}
-            expected.update({r['key']:r for r in self.report['food_standard_evaluation']['rows']})
+            expected = {r['key']:r for r in evaluation_rows(self.report)}
             for row in expected.values():
                 matching = [v for v in values if v[0] == row['label']]
                 self.assertEqual(1,len(matching),row['label'])
                 actual = matching[0]
                 self.assertEqual((row['actual'],row['unit'],row['target'],row['gap']),actual[1:5])
                 # Empty strings are stored as blank cells by openpyxl, not missing decisions.
-                expected_status = ({'不足':'能量占比偏低','过多':'能量占比偏高','适中':'能量占比适中'}.get(row['evaluation'],row['evaluation']) if row['key'] in {'beans_energy','tubers_energy','grains_remainder'} else row['evaluation'])
+                expected_status = ({'不足':'能量占比偏低','过多':'能量占比偏高','适中':'能量占比适中'}.get(row['evaluation'],row['evaluation']) if row.get('evaluation_basis') not in {'quantity_first','quantity_unknown'} and row['key'] in {'beans_energy','tubers_energy','grains_remainder'} else row['evaluation'])
                 self.assertEqual(expected_status,actual[5] or '')
                 self.assertIn(''.join(row['label'].split()),''.join(evaluation_text.split()))
             for manual in ['人工蛋白质','人工坚果']:

@@ -135,7 +135,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
                 status, score, gap = '适中', 1, 0
         rows.append(dict(key=key, label=label, actual=round(actual, 4) if actual is not None else None,
                          unit=unit, target=target, gap=round(gap, 4) if gap is not None else None,
-                         score=score, machine_evaluation=status, evaluation=status, note=note))
+                         score=score, machine_evaluation=status, evaluation=status, note=note, target_min=lo, target_max=hi))
 
     staples = {'谷类', '豆类', '薯类'}
     meat = {'畜禽肉', '水产品'}

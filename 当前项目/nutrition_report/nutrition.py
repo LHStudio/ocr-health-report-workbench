@@ -1,4 +1,7 @@
 import json
+from datetime import datetime, timezone, timedelta
+from .quantity_first import apply_quantity_priority
+from .gram_display import attach_gram_display
 from collections import defaultdict
 from pathlib import Path
 from .athlete import evaluate_athlete, display_number
@@ -47,6 +50,12 @@ class NutritionService:
                 row.update(gap=None, machine_evaluation='-', evaluation='-')
             nutrition_total['calcium']['evaluation'] = '-'
             nutrition_total['energy']['evaluation'] = '-'
+        priority_notes, meat_message = apply_quantity_priority(
+            nutrition_total, athlete, food_standard, food_details, self.food_db, category_result, self.athlete_config)
+        if priority_notes:
+            suggestions = priority_notes + [s for s in suggestions if not s.startswith(('蛋白质较', '碳水化合物较', '蛋白质高于', '碳水化合物高于'))]
+        suggestions = [s for s in suggestions if not s.startswith('团体项目蛋白质优选参考')]
+        attach_gram_display(dict(nutrition=nutrition_total, athlete_evaluation=athlete, food_standard_evaluation=food_standard, foods=food_details), self.food_db, merged_meals)
         category_keys = {'nuts': '坚果', 'beans_energy': '豆类', 'tubers_energy': '薯类',
                          'grains_remainder': '谷类', 'milk': '奶类', 'eggs': '蛋类',
                          'seafood': '水产品', 'livestock_remainder': '畜禽肉',
@@ -55,33 +64,23 @@ class NutritionService:
         for row in sorted(food_standard['rows'], key=lambda r: r['key'] != 'quality_protein'):
             category = category_keys.get(row['key'])
             if category in category_result:
-                category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
+                category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row.get('evaluation_basis') == 'ratio' and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
                 if row['key'] == 'milk':
                     category_result[category]['equivalent_value'] = row['actual']
+            if row.get('evaluation_basis') == 'quantity_first' and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder', 'seafood'}:
+                grams = sum(f['amount'] for f in food_details if f['category'] == category)
+                suggestions.append(f"{category}：目前 {display_number(grams)} g/天；先补足{'主食' if row['key'] != 'seafood' else '蛋白质'}总量，可增加本类摄入。")
             if row['score'] == 0:
                 evaluation = row['evaluation']
                 if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
                     evaluation = {'不足': '占比偏低', '过多': '占比偏高'}.get(evaluation, evaluation)
-                display_label = row['label'].replace('占主食能量', '主食能量') if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['label']
-                message = f"{display_label}{evaluation}：目前 {display_number(row['actual'])} {row['unit']}，参考目标 {row['target']}。"
-                if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
-                    # 能量占比不是重量占比；以当前主食总能量及该类记录的加权能量密度折算。
-                    staple_categories = {'谷类', '豆类', '薯类'}
-                    staple_kcal = sum(f['nutrition']['energy'] for f in food_details
-                                      if f['category'] in staple_categories)
-                    current_grams = sum(f['amount'] for f in food_details if f['category'] == category)
-                    category_kcal = sum(f['nutrition']['energy'] for f in food_details if f['category'] == category)
-                    if current_grams > 0 and category_kcal > 0:
-                        percent = {'beans_energy': 5, 'tubers_energy': 15, 'grains_remainder': 80}[row['key']]
-                        target_grams = staple_kcal * percent / 100 / (category_kcal / current_grams)
-                        bound = '≤' if row['key'] == 'grains_remainder' else '≥'
-                        message += (f" 当前该类食物约 {display_number(current_grams)} g/天，"
-                                    f"参考目标 {bound} {display_number(target_grams)} g/天"
-                                    "。")
-                    else:
-                        message += (f" 当前该类食物约 {display_number(current_grams)} g/天；"
-                                    "参考目标暂无法折算克数，需指定食物及其能量密度。")
+                shown = row.get('display') or row
+                message = f"{shown['label']}{evaluation}：目前 {display_number(shown['actual'])} {shown['unit']}，参考目标 {shown['target']}。"
+                if row['unit'] == '%':
+                    message += ' 目标克数按当前摄入及食物密度估算；先满足总量，再调整结构。'
                 suggestions.append(message)
+        if food_standard['nutrient_record_complete']:
+            suggestions.insert(min(11, len(suggestions)), meat_message)
         if suggestions:
             suggestions.append('请结合训练量和完整饮食记录，在营养专业人员指导下调整上述摄入。')
         # New food rules supersede the old vegetable-only rule, including scope/data gates.
@@ -113,12 +112,16 @@ class NutritionService:
                     row['evaluation'] = category_result[category_keys[row['key']]]['evaluation']
                 category = category_keys.get(row['key'])
                 if category in category_result:
-                    category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
+                    category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row.get('evaluation_basis') == 'ratio' and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
             next(r for r in athlete['rows'] if r['key'] == 'vegetables')['evaluation'] = vegetable['evaluation']
 
+        generated = datetime.now(timezone(timedelta(hours=8)))
         report = {
             "user": user,
             "date": front_json.get("date"),
+            "generated_date": generated.date().isoformat(),
+            "generated_at": generated.strftime('%Y-%m-%d %H:%M:%S'),
+            "include_quality_page": front_json.get("include_quality_page") is True,
             "foods": food_details,
             "category_result": category_result,
             "suggestions": suggestions,
@@ -139,6 +142,7 @@ class NutritionService:
         if interpretation is not None:
             report["interpretation"] = interpretation
 
+        attach_gram_display(report, self.food_db, merged_meals)
         return report
 
     def build_intake_preview(self, front_json):

@@ -21,8 +21,8 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         report=self.report()
         evaluations=[r['evaluation'] for r in report['athlete_evaluation']['rows']+report['food_standard_evaluation']['rows']]
         evaluations += [v['evaluation'] for v in report['category_result'].values()]
-        self.assertTrue(set(evaluations)<={'过多','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中'},set(evaluations))
-        self.assertEqual('能量占比偏高',report['category_result']['谷类']['evaluation'])
+        self.assertTrue(set(evaluations)<={'过多','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中','占比偏低','占比偏高','占比适中'},set(evaluations))
+        self.assertEqual('不足',report['category_result']['谷类']['evaluation'])
         service=NutritionService()
         for actual,status in [(1000,'不足'),(2100,'适中'),(3000,'过多')]:
             self.assertEqual(status,service._eval_energy_against_standard(actual,2100))

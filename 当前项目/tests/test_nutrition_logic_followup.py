@@ -12,15 +12,16 @@ class LogicTest(unittest.TestCase):
   payload={'user':{'name':'合成示例','weight':61.9,'age':25,'gender':'female','activityLevel':'2','athleteType':'strength','trainingPhase':'training'},'meals':[{'name':n,'amount':g} for n,g in amounts.items()]}
   return NutritionService(food_db=db).build_report_data(payload)
  def test_logic(self):
-  r=self.report(); self.assertEqual('能量占比偏高',r['category_result']['谷类']['evaluation'])
+  r=self.report(); self.assertEqual('不足',r['category_result']['谷类']['evaluation'])
   self.assertEqual('不足',next(x for x in r['athlete_evaluation']['rows'] if x['key']=='carbohydrate')['evaluation'])
-  self.assertTrue(r['suggestions'][4].startswith('肉蛋奶优质蛋白占比'))
+  self.assertTrue(any('先补足蛋白质' in s for s in r['suggestions']))
   grain=next(x for x in evaluation_rows(r) if x['key']=='grains_remainder')
-  self.assertEqual('能量占比偏高',grain['evaluation'])
-  self.assertIn('能量占比上限',grain['note'])
+  self.assertEqual('不足',grain['evaluation'])
+  self.assertEqual('',grain['note'])
+  self.assertIn('先补足主食',next(x for x in r['food_standard_evaluation']['rows'] if x['key']=='grains_remainder')['note'])
   text=NutritionPDFBuilder._interpretation(r)
   self.assertNotIn('能量摄入不足，应增加碳水化合物摄入',text)
-  self.assertIn('豆类、薯类',text)
+  self.assertNotIn('占比偏高',text)
   self.assertIn('碳水化合物营养素摄入不足',text)
   r['nutrition']['energy']['evaluation']='不足'
   r['athlete_evaluation']['rows']=[]

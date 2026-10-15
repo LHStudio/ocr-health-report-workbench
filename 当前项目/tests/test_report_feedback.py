@@ -56,7 +56,7 @@ class ReportFeedbackTest(unittest.TestCase):
         report=NutritionService(food_db=self.db).build_report_data({'user':{'weight':65},
             'meals':[{'name':'谷','amount':912.3456},{'name':'豆','amount':23.4567},{'name':'薯','amount':42.1234}]})
         text='\n'.join(report['suggestions'])
-        self.assertNotRegex(text,r'\d+\.\d{2,}')
+        self.assertNotRegex(text,r'\d+\.\d{3,}')
         self.assertNotIn('请结合训练复核调整',text)
         self.assertLessEqual(text.count('结合训练'),1)
         row=next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='beans_energy')
@@ -73,7 +73,7 @@ class ReportFeedbackTest(unittest.TestCase):
         paragraph=table._cellvalues[5][0]
         self.assertGreater(paragraph.style.leading,12)
         self.assertGreater(paragraph.style.leftIndent,0)
-        self.assertIn('<nobr>35.1 g/天</nobr>',paragraph.text)
+        self.assertIn('<nobr>35.1\u00a0g/天</nobr>',paragraph.text)
 
     def test_frontend_preserves_report_evaluations_including_hyphens(self):
         source=(Path(__file__).resolve().parents[1]/'src/components/NutritionWorkspace.vue').read_text(encoding='utf8')

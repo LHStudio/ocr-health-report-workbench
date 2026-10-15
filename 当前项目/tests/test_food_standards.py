@@ -1,5 +1,6 @@
 import unittest
 from nutrition_report.nutrition import NutritionService
+from nutrition_report.food_standards import evaluate_food_standards
 from nutrition_report.adapter import build_payload_from_ocr_person, FOOD_REFERENCE_MAP
 
 
@@ -21,9 +22,9 @@ class FoodStandardsTest(unittest.TestCase):
             'meals': [{'name': k, 'amount': v} for k, v in (amounts or self.amounts).items()]})
 
     def rows(self, **kw):
-        report = self.report(**kw)
-        self.assertIn('food_standard_evaluation', report)
-        return {r['key']: r for r in report['food_standard_evaluation']['rows']}
+        # Test the internal mathematical rules independently of the new quantity gate.
+        payload = {'user': {'weight':65, **(kw.get('user') or {})}, 'meals':[{'name':k,'amount':v} for k,v in (kw.get('amounts') or self.amounts).items()]}
+        return {r['key']:r for r in evaluate_food_standards(payload,self.db,self.service.athlete_config)['rows']}
 
     def test_all_ten_numeric_rules_at_inclusive_boundaries(self):
         rows = self.rows()
@@ -33,7 +34,7 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertEqual(5, rows['beans_energy']['actual'])
         self.assertEqual(15, rows['tubers_energy']['actual'])
         self.assertEqual(30, rows['seafood']['actual'])
-        self.assertEqual(100, self.report()['food_standard_evaluation']['summary']['attainment_percent'])
+        self.assertIsNone(self.report()['food_standard_evaluation']['summary']['attainment_percent'])
 
     def test_energy_not_weight_and_protein_not_food_mass(self):
         self.db['豆']['energy'] = 200
@@ -45,7 +46,8 @@ class FoodStandardsTest(unittest.TestCase):
         rows = {r['key']: r for r in report['food_standard_evaluation']['rows']}
         self.assertAlmostEqual(9.5238, rows['beans_energy']['actual'], places=3)
         self.assertAlmostEqual(40.7407, rows['quality_protein']['actual'], places=3)
-        self.assertEqual(0, rows['quality_protein']['score'])
+        self.assertIsNone(rows['quality_protein']['score'])
+        self.assertEqual('-', rows['quality_protein']['evaluation'])
 
     def test_under_over_and_near_boundary_not_rounded_into_pass(self):
         rows = self.rows(amounts={**self.amounts, '坚果': 9.999, '果': 500.001, '菜': 199.999})
@@ -87,7 +89,7 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertIn('food_standard_evaluation', r)
         rows = {x['key']: x for x in r['food_standard_evaluation']['rows']}
         self.assertEqual(1, rows['eggs']['score'])
-        self.assertEqual(1, rows['quality_protein']['score'])
+        self.assertIsNone(rows['quality_protein']['score'])
         payload['user'].update(athleteType='team', trainingPhase='training', age=20)
         report = NutritionService().build_report_data(payload)
         self.assertTrue(all('记录不完整' not in row['machine_evaluation'] for row in
@@ -122,7 +124,8 @@ class FoodStandardsTest(unittest.TestCase):
             {'name': k, 'amount': v} for k, v in self.amounts.items()]})
         row = next(r for r in report['food_standard_evaluation']['rows'] if r['key'] == 'quality_protein')
         self.assertEqual(50, row['actual'])
-        self.assertEqual(1, row['score'])
+        self.assertIsNone(row['score'])  # Total protein adequacy is not known.
+        self.assertEqual(1,self.rows()['quality_protein']['score'])
         self.assertEqual(0, self.rows(amounts={**self.amounts, '鱼': 29.999})['seafood']['score'])
 
     def test_vegetables_400_minimum_and_higher_project_rule(self):

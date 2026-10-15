@@ -20,11 +20,11 @@ class AthleteInterventionTest(unittest.TestCase):
         self.assertEqual("约 350 g/天", rows["carbohydrate"]["target"])
         self.assertEqual("适中", rows["carbohydrate"]["evaluation"])
 
-    def test_team_target_and_preferred_value(self):
+    def test_team_target_and_hidden_preferred_suggestion(self):
         rows = self.rows(athleteType="team")
         self.assertEqual("105–140 g/天", rows["protein"]["target"])
         self.assertEqual("约 490 g/天", rows["carbohydrate"]["target"])
-        self.assertTrue(any("119 g/天" in s for s in self.report(athleteType="team")["suggestions"]))
+        self.assertFalse(any("蛋白质优选参考" in s for s in self.report(athleteType="team")["suggestions"]))
 
     def test_endurance_has_no_protein_upper_limit(self):
         rows = self.rows(athleteType="endurance")
