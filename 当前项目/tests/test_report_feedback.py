@@ -31,9 +31,11 @@ class ReportFeedbackTest(unittest.TestCase):
     def test_poultry_is_in_non_seafood_meat_without_false_warning(self):
         row=next(r for r in self.result(鸡肉=20,牛肉=70,鱼=30)['rows'] if r['key']=='livestock_remainder')
         self.assertEqual('畜禽肉',row['label'])
-        self.assertEqual(90,row['actual'])
-        self.assertEqual('-',row['evaluation'])
-        self.assertIn('水产品',row['target'])
+        self.assertEqual(75,row['actual'])
+        self.assertEqual('过多',row['evaluation'])
+        self.assertEqual('≤ 70 %',row['target'])
+        self.assertIsNone(row['score'])
+        self.assertIn('水产品',row['note'])
 
     def test_snacks_show_only_requested_advice_for_positive_zero_and_missing(self):
         for amount in [0,10]:

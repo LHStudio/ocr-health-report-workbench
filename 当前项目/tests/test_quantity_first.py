@@ -24,11 +24,11 @@ class QuantityFirstTest(unittest.TestCase):
             self.assertEqual('不足',data['category_result'][cat]['evaluation'],cat)
         suggestions='\n'.join(data['suggestions'])
         self.assertIn('增加主食',suggestions)
-        self.assertIn('先补足蛋白质',suggestions)
+        self.assertIn('蛋白质不足：',suggestions)
         self.assertNotIn('占比偏高',suggestions)
         self.assertNotIn('适当减少',suggestions)
         self.assertNotIn('占比偏高',self.service.pdf_builder._interpretation(data))
-        self.assertTrue(data['suggestions'][11].startswith('肉类（含水产品）'))
+        self.assertEqual(1,sum(s.startswith('肉类（含水产品）') for s in data['suggestions']))
 
     def test_meat_target_subtracts_protein_not_food_weight(self):
         data=self.service.build_report_data(self.payload); row=self.rows(data)['meat']

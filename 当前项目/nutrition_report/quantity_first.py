@@ -2,7 +2,7 @@
 from .athlete import display_number
 
 STAPLE_RATIOS = {'beans_energy', 'tubers_energy', 'grains_remainder'}
-PROTEIN_RATIOS = {'seafood', 'quality_protein'}
+PROTEIN_RATIOS = {'seafood', 'quality_protein', 'livestock_remainder'}
 
 
 def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, categories, config):
@@ -11,7 +11,7 @@ def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, catego
     energy = nutrition['energy']
     protein, carb = rows['protein'], rows['carbohydrate']
     energy_known = complete and energy.get('standard') is not None
-    staple_low = complete and ((energy_known and energy['value'] < energy['standard']) or carb['evaluation'] == '不足')
+    staple_low = complete and ((energy_known and energy['evaluation'] in {'不足', '过少'}) or carb['evaluation'] == '不足')
     protein_low = complete and protein['evaluation'] == '不足'
     staple_ready = energy_known and not staple_low
     protein_ready = complete and protein['evaluation'] in {'适中', '过多'}
@@ -25,7 +25,7 @@ def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, catego
             message += f"碳水化合物目前 {display_number(carb['actual'])} g/天，参考目标 {carb['target']}，尚差 {display_number(-carb['gap'])} g/天；"
         notes.append(message + '应先增加主食，谷类、豆类、薯类均可补充。')
     if protein_low:
-        notes.append(f"先补足蛋白质：目前 {display_number(protein['actual'])} g/天，参考目标 {protein['target']}，尚差 {display_number(-protein['gap'])} g/天；增加肉类（含水产品）、奶类和蛋类等蛋白质来源。")
+        notes.append(f"蛋白质不足：目前 {display_number(protein['actual'])} g/天，参考目标 {protein['target']}，尚差 {display_number(-protein['gap'])} g/天；增加肉类（含水产品）、奶类和蛋类等蛋白质来源。")
 
     for row in standard['rows']:
         key = row['key']
@@ -45,7 +45,7 @@ def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, catego
     if protein_low:
         for row in standard['rows']:
             if row['key'] in {'milk', 'eggs', 'livestock_remainder'}:
-                row.update(evaluation='不足', machine_evaluation='不足', evaluation_basis='quantity_first')
+                row.update(evaluation='不足', machine_evaluation='不足', score=None, gap=None, evaluation_basis='quantity_first')
                 row['note'] += '；先补足总蛋白质。'
         for category in {'奶类', '蛋类', '畜禽肉', '水产品'}:
             categories[category]['evaluation'] = '不足'

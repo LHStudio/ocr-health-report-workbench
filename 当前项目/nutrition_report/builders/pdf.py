@@ -42,7 +42,7 @@ def _as_text(value: object) -> str:
 
 def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"} else text
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过少", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"} else text
 
 
 def _table_text(value: object, *, alert=True) -> str:
@@ -345,7 +345,8 @@ class NutritionPDFBuilder:
             amount_text = "-" if value in (None, "", "-") else f"{escape(_as_text(value))} g"
             if category == '奶类' and 'equivalent_value' in info:
                 equivalent = info['equivalent_value']
-                amount_text += '<br/>鲜奶等价量（按蛋白质估计）：' + ('-' if equivalent is None else f'{equivalent:g} g')
+                equivalent_text = '-' if equivalent is None else f'{equivalent:.2f}'.rstrip('0').rstrip('.') + ' g'
+                amount_text += '<br/>鲜奶等价量（按蛋白质估计）：<nobr>' + equivalent_text + '</nobr>'
             table_data.append([
                 Paragraph(escape(category), category_style),
                 Paragraph(amount_text, normal),
@@ -366,7 +367,7 @@ class NutritionPDFBuilder:
             row_heights.extend([9 * mm] + [None] * max(1, len(suggestions)))
         report = Table(
             table_data,
-            colWidths=[57 * mm, 72 * mm, 45 * mm],
+            colWidths=[39 * mm, 81 * mm, 54 * mm],
             rowHeights=row_heights,
             repeatRows=2 if categories else 1,
             splitInRow=1 if categories else 0,
@@ -490,7 +491,7 @@ class NutritionPDFBuilder:
         lines = []
         energy_evaluation = (nutrition.get("energy") or {}).get("evaluation")
         calcium_evaluation = (nutrition.get("calcium") or {}).get("evaluation")
-        if energy_evaluation == "不足":
+        if energy_evaluation in {"不足", "过少"}:
             lines.append("总能量摄入不足，需结合训练量调整全天饮食。")
         elif energy_evaluation == "过多":
             lines.append("能量摄入过多，应适当控制总能量摄入")

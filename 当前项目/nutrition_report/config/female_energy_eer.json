@@ -190,8 +190,8 @@
   "evaluation_rules": {
     "under_ratio": 0.9,
     "over_ratio": 1.1,
-    "under_label": "不足",
+    "under_label": "过少",
     "adequate_label": "适宜",
-    "over_label": "偏高"
+    "over_label": "过多"
   }
 }

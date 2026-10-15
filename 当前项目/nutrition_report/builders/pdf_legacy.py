@@ -36,7 +36,7 @@ def _as_text(value: object) -> str:
 
 def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"} else text
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过少", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"} else text
 
 
 def _table_text(value: object, *, alert=True) -> str:
@@ -561,7 +561,7 @@ class NutritionPDFBuilder:
         lines = []
         energy_evaluation = (nutrition.get("energy") or {}).get("evaluation")
         calcium_evaluation = (nutrition.get("calcium") or {}).get("evaluation")
-        if energy_evaluation == "不足":
+        if energy_evaluation in {"不足", "过少"}:
             lines.append("总能量摄入不足，需结合训练量调整全天饮食。")
         elif energy_evaluation == "过多":
             lines.append("能量摄入过多，应适当控制总能量摄入")

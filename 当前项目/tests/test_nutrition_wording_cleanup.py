@@ -17,10 +17,10 @@ class NutritionWordingCleanupTest(unittest.TestCase):
             with fitz.open(pdf) as doc:
                 text=''.join(''.join(p.get_text().split()) for p in doc)
                 lines=[''.join(s['text'] for s in line['spans']) for p in doc for b in p.get_text('dict')['blocks'] for line in b.get('lines',[])]
-            self.assertIn('力量为主 · 仅训练期 · 60-70kg标准',lines)
+            self.assertIn('力量为主 · 仅训练期 · 基础膳食参考标准',lines)
             wb=openpyxl.load_workbook(xlsx); ws=wb['运动员专项评价']
             cells=''.join(''.join(str(c.value or '').split()) for w in wb for row in w for c in row)
-            self.assertEqual('力量为主 · 仅训练期 · 60-70kg标准',ws['A2'].value)
+            self.assertEqual('力量为主 · 仅训练期 · 基础膳食参考标准',ws['A2'].value)
             for t in banned:self.assertNotIn(t,text);self.assertNotIn(t,cells)
             self.assertNotIn('每个鸡蛋按50g',text)
             self.assertNotIn('每个鸡蛋按50g',cells)

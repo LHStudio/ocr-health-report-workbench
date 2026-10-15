@@ -134,7 +134,7 @@
             <template v-else>
               <div class="mapping-wrap"><table class="mapping-table nutrition-evaluation-table"><thead><tr><th>项目</th><th>当前摄入</th><th>人工最终评价</th></tr></thead><tbody>
                 <tr v-for="row in categoryReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} g/天</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview.categoryEvaluations[row.key], `category:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview.categoryEvaluations[row.key])" @change="setEvaluation('category', row.key, $event.target.value)"><option value="">—（不计算）</option><option value="不足">不足</option><option value="适中">适中</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview.categoryEvaluations[row.key], `category:${row.key}`)" v-model="reportReview.categoryEvaluations[row.key]" :class="evaluationAlertClass(reportReview.categoryEvaluations[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
-                <tr v-for="row in nutrientReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} {{ row.unit }}</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview[row.key], `nutrition:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview[row.key])" @change="setEvaluation('nutrition', row.key, $event.target.value)"><option value="">—（不计算）</option><option value="不足">不足</option><option value="适中">适中</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview[row.key], `nutrition:${row.key}`)" v-model="reportReview[row.key]" :class="evaluationAlertClass(reportReview[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
+                <tr v-for="row in nutrientReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} {{ row.unit }}</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview[row.key], `nutrition:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview[row.key])" @change="setEvaluation('nutrition', row.key, $event.target.value)"><option value="">—（不计算）</option><option :value="row.key === 'energyEvaluation' ? '过少' : '不足'">{{ row.key === 'energyEvaluation' ? '过少' : '不足' }}</option><option :value="row.key === 'energyEvaluation' ? '适宜' : '适中'">{{ row.key === 'energyEvaluation' ? '适宜' : '适中' }}</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview[row.key], `nutrition:${row.key}`)" v-model="reportReview[row.key]" :class="evaluationAlertClass(reportReview[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
               </tbody></table></div>
               <div class="report-review-textareas"><label>总体建议（可修改机器初稿）<textarea v-model="reportReview.overallSuggestions" rows="8" placeholder="每行一条建议"></textarea></label><label>最终总结 / 报告解读（可修改机器初稿）<textarea v-model="reportReview.interpretation" rows="8" placeholder="请输入最终总结或解读"></textarea></label></div>
               <p class="nutrition-disclaimer-preview">报告将注明：以上营养成分仅根据记录饮食计算，不包含维生素、矿物质、蛋白粉等其他补充剂摄入。</p>
@@ -269,7 +269,7 @@ function copyReportReview(review) { return { ...emptyReportReview(), ...(review 
 function machineEvaluationText(value) { return String(value ?? '').trim() }
 function machineInterpretation(preview) {
   const nutrition = preview?.nutrition || {}; const lines = []
-  if (nutrition.energy?.evaluation === '不足') lines.push('总能量摄入不足，需结合训练量调整全天饮食。')
+  if (['不足', '过少'].includes(nutrition.energy?.evaluation)) lines.push('总能量摄入不足，需结合训练量调整全天饮食。')
   else if (nutrition.energy?.evaluation === '过多') lines.push('能量摄入偏多，建议结合训练量调整总能量摄入。')
   const carb = (preview?.athlete_evaluation?.rows || []).find(row => row.key === 'carbohydrate')
   const grains = (preview?.food_standard_evaluation?.rows || []).find(row => row.key === 'grains_remainder')
@@ -296,14 +296,14 @@ function seedReportReviewFromPreview() {
   reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
 }
 function resetReportReviewFromMachine() { reportReview.value = emptyReportReview(); seedReportReviewFromPreview() }
-function evaluationSelection(value, fieldKey) { const text = String(value || '').trim(); if (reportReview.value.manualEntryFields?.[fieldKey] || (text && !['不足', '适中', '过多'].includes(text))) return 'other'; return text }
+function evaluationSelection(value, fieldKey) { const text = String(value || '').trim(); const options = fieldKey === 'nutrition:energyEvaluation' ? ['过少', '适宜', '过多'] : ['不足', '适中', '过多']; if (reportReview.value.manualEntryFields?.[fieldKey] || (text && !options.includes(text))) return 'other'; return text }
 function isManualEvaluation(value, fieldKey) { return evaluationSelection(value, fieldKey) === 'other' }
 function setEvaluation(kind, key, selection) {
   const fieldKey = `${kind === 'category' ? 'category' : 'nutrition'}:${key}`
   const target = kind === 'category' ? reportReview.value.categoryEvaluations : reportReview.value
   if (selection === 'other') {
     reportReview.value.manualEntryFields[fieldKey] = true
-    if (['不足', '适中', '过多'].includes(String(target[key] || '').trim())) target[key] = ''
+    if (['不足', '适中', '过少', '适宜', '过多'].includes(String(target[key] || '').trim())) target[key] = ''
     return
   }
   delete reportReview.value.manualEntryFields[fieldKey]

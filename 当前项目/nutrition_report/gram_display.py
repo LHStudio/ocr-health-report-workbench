@@ -56,10 +56,11 @@ def attach_gram_display(report, food_db, merged_meals):
                         note = f'无当前食物密度，参考克数以{representative}估算，变更食物后需复核。' if density else '缺少有效食物能量密度，暂无法折算目标克数。'
                     factor = staple_energy/100/density if density and complete else None
                     display['label'] = category
-                elif key=='seafood':
-                    actual = total({'水产品'}) if complete else None
+                elif key in {'seafood', 'livestock_remainder'}:
+                    category = '水产品' if key == 'seafood' else '畜禽肉'
+                    actual = total({category}) if complete else None
                     factor = total({'畜禽肉','水产品'})/100 if complete else None
-                    display['label'] = '水产品'
+                    display['label'] = category
                     note = '参考克数按当前肉类总重量换算。'
                 elif key=='quality_protein':
                     actual = total({'畜禽肉','水产品','蛋类','奶类'}, 'protein') if complete else None

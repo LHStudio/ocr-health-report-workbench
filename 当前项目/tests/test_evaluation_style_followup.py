@@ -24,12 +24,12 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         self.assertTrue(set(evaluations)<={'过多','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中','占比偏低','占比偏高','占比适中'},set(evaluations))
         self.assertEqual('不足',report['category_result']['谷类']['evaluation'])
         service=NutritionService()
-        for actual,status in [(1000,'不足'),(2100,'适中'),(3000,'过多')]:
+        for actual,status in [(1000,'过少'),(2100,'适宜'),(3000,'过多')]:
             self.assertEqual(status,service._eval_energy_against_standard(actual,2100))
 
-    def test_scope_note_is_short_and_does_not_change_gates(self):
+    def test_base_reference_note_does_not_claim_weight_suppression(self):
         data=self.report()['food_standard_evaluation']
-        self.assertIn('60-70kg标准',data['warnings'])
+        self.assertIn('基础膳食参考标准',data['warnings'])
         text=json.dumps(data,ensure_ascii=False)
         for phrase in ['不自动按体重线性加量','倍率，比值目标','低于60kg不自动外推']:
             self.assertNotIn(phrase,text)

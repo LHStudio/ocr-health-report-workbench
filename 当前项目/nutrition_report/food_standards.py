@@ -24,13 +24,12 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
                         number(types.get(selected, {}).get('vegetables_g_min')) or 0)
     weight = number(user.get('weight'))
     scale = number(user.get('foodTargetScale'))
-    scope = '' if weight and weight >= 60 else '-'
-    quantity_scope = scope
-    if weight and weight > 70 and (scale is None or scale < 1):
-        quantity_scope = '-'
+    # These existing fixed targets and dimensionless ratios remain evaluable
+    # outside 60-70 kg; only actual missing intake/denominators block scoring.
+    # Retain an explicitly supplied >70 kg scaling factor, never invent one.
     scale = scale if weight and weight > 70 and scale is not None and scale >= 1 else 1
     notes = [
-        '60-70kg标准',
+        '基础膳食参考标准',
         '主食能量=谷类+豆类（包含豆制品）+薯类；豆类至少5%、薯类至少15%，因此谷类占比上限为80%，不是必须达到80%。',
         '水产品占比按肉类日均重量计算；畜禽肉为肉类总量扣除水产品后的部分，包含畜肉和禽肉。',
         '奶粉、奶酪折算鲜奶等价量（按蛋白质估计）=记录克数×该食物每100g蛋白质/鲜奶每100g蛋白质；鲜奶、酸奶按原重。折算只用于奶量评价，营养素不重复计算。',
@@ -103,7 +102,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
     def add(key, label, groups, low=None, high=None, ratio=None, target=None, note='', qualitative=None, actual_override=None, advisory=False, over_label='过多'):
         is_ratio = ratio is not None
         unit = '%' if is_ratio else 'g/天'
-        blocked = scope if is_ratio or qualitative is not None else quantity_scope
+        blocked = ''
         if not complete(groups):
             actual = None
             blocked = '-'  # 非空但无法换算的条目保留在换算说明，不误计为0。
@@ -155,8 +154,9 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
     add('eggs', '蛋类', {'蛋类'}, 50, note='每个鸡蛋按50g；显式克数不二次折算')
     add('seafood', '水产品占肉类重量', meat, 30,
         ratio=(total({'水产品'}), total(meat)))
-    add('livestock_remainder', '畜禽肉', {'畜禽肉'}, target='肉类总量扣除水产品后的部分（含禽肉）',
-        qualitative=lambda _: '-', advisory=True)
+    add('livestock_remainder', '畜禽肉', meat, high=70,
+        ratio=(total({'畜禽肉'}), total(meat)), note='占比上限=100%-水产品最低占比30%，不新增独立计分项')
+    rows[-1]['score'] = None  # Same constraint as seafood, not a second scored rule.
     add('fruit', '水果', {'水果'}, 200, 500)
     add('vegetables', '蔬菜', {'蔬菜'}, vegetable_min,
         note=f'取400g与原有分类标准的较高值：{vegetable_min:g}g/天（基础体重）')

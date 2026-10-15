@@ -64,13 +64,13 @@ class FoodStandardsTest(unittest.TestCase):
             self.assertEqual(want, row['score'])
             self.assertIsNone(r['food_standard_evaluation']['summary']['attainment_percent'])
 
-    def test_zero_denominators_and_weight_scope(self):
+    def test_zero_denominators_stay_unscored_and_explicit_scale_is_preserved(self):
         rows = self.rows(amounts={'坚果': 10})
         for key in ('beans_energy', 'tubers_energy', 'seafood', 'quality_protein'):
             self.assertIsNone(rows[key]['score'])
         for weight in ('', 'NaN', 59):
-            self.assertIsNone(self.rows(user={'weight': weight})['nuts']['score'])
-        self.assertIsNone(self.rows(user={'weight': 80})['milk']['score'])
+            self.assertEqual(1,self.rows(user={'weight': weight})['nuts']['score'])
+        self.assertEqual(1,self.rows(user={'weight': 80})['milk']['score'])
         self.assertEqual('≥ 480 g/天', self.rows(user={'weight': 80, 'foodTargetScale': 1.2})['milk']['target'])
         self.assertEqual(0, self.rows(user={'weight': 80, 'foodTargetScale': 1.2})['milk']['score'])
 
@@ -78,8 +78,9 @@ class FoodStandardsTest(unittest.TestCase):
         rows = self.rows(amounts={**self.amounts, '糕点': 10, '鸡肉': 20})
         self.assertIsNone(rows['snacks']['score'])
         self.assertIn('尽量不吃', rows['snacks']['evaluation'])
-        self.assertEqual('-', rows['livestock_remainder']['evaluation'])
-        self.assertEqual(90, rows['livestock_remainder']['actual'])
+        self.assertEqual('过多', rows['livestock_remainder']['evaluation'])
+        self.assertEqual(75, rows['livestock_remainder']['actual'])
+        self.assertIsNone(rows['livestock_remainder']['score'])
 
     def test_one_egg_is_50g_and_unlisted_foods_are_not_eaten(self):
         payload = build_payload_from_ocr_person({'general': {'体重': 65}, 'food_rows': [

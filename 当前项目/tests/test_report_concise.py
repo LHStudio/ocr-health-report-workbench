@@ -52,7 +52,7 @@ class ConciseReportTest(unittest.TestCase):
 
     def test_meat_sentence_and_protein_advice_are_the_requested_short_version(self):
         data = self.service.build_report_data(self.payload)
-        self.assertEqual('肉类（含水产品）：目前 20 g/天，参考目标约 448.4 g/天，总蛋白质不足，可优先补充。', data['suggestions'][11])
+        self.assertEqual('肉类（含水产品）：目前 20 g/天，参考目标约 448.4 g/天，总蛋白质不足，可优先补充。', next(s for s in data['suggestions'] if s.startswith('肉类（含水产品）')))
         self.assertNotIn('达标后再考虑结构占比', '\n'.join(data['suggestions']))
         self.assertEqual('', next(r for r in evaluation_rows(data) if r['key'] == 'meat')['note'])
         raw = next(r for r in data['food_standard_evaluation']['rows'] if r['key'] == 'meat')
@@ -66,7 +66,7 @@ class ConciseReportTest(unittest.TestCase):
             with fitz.open(pdf) as doc:
                 page = next(p for p in doc if '整体评估及建议' in p.get_text())
                 lines = [l for b in page.get_text('dict')['blocks'] for l in b.get('lines', [])]
-                first = next(l for l in lines if '先补足蛋白质' in ''.join(s['text'] for s in l['spans']))
+                first = next(l for l in lines if '蛋白质不足：' in ''.join(s['text'] for s in l['spans']))
                 text = ''.join(s['text'] for s in first['spans'])
                 self.assertIn('85.3 g/天', text)
                 self.assertGreater(first['bbox'][2], page.rect.width - 116)

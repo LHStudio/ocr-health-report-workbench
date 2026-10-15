@@ -26,7 +26,7 @@ class EnergyBlankFollowupTest(unittest.TestCase):
         for activity,value in [('1',1700),('2',2100),('3',2450)]:
             row=self.report(activityLevel=activity)['nutrition']['energy']
             self.assertEqual(value,row['standard'])
-            self.assertEqual('不足',row['evaluation'])
+            self.assertEqual('过少',row['evaluation'])
             self.assertIn('EER',row['standard_source'])
         row=self.report(activityLevel='')['nutrition']['energy']
         self.assertIsNone(row['standard'])

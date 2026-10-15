@@ -17,7 +17,7 @@ def evaluation_context(data):
     for section in ('athlete_evaluation', 'food_standard_evaluation'):
         for note in (data.get(section) or {}).get('warnings', []):
             note = clean_display_text(note)
-            if note in ('仅训练期', '60-70kg标准') and note not in parts:
+            if note in ('仅训练期', '60-70kg标准', '基础膳食参考标准') and note not in parts:
                 parts.append(note)
     return ' · '.join(p for p in parts if p)
 
@@ -44,6 +44,6 @@ def evaluation_warnings(data):
                 continue
             if not any(text in note for text in ('原文未明确年龄分界', '每项定量规则达标')) and note not in notes:
                 note = clean_display_text(note)
-                if note not in ('仅训练期', '60-70kg标准') and note not in notes:
+                if note not in ('仅训练期', '60-70kg标准', '基础膳食参考标准') and note not in notes:
                     notes.append(note)
     return notes

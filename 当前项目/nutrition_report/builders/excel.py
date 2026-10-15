@@ -41,7 +41,7 @@ class NutritionExcelBuilder:
         for sheet in wb:
             for row in sheet:
                 for cell in row:
-                    if cell.value in ("不足", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"):
+                    if cell.value in ("不足", "过少", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"):
                         font = copy(cell.font)
                         font.color = "DC2626"
                         cell.font = font

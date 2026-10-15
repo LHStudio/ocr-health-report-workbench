@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import datetime, timezone, timedelta
 from .quantity_first import apply_quantity_priority
 from .gram_display import attach_gram_display
@@ -53,7 +54,9 @@ class NutritionService:
         priority_notes, meat_message = apply_quantity_priority(
             nutrition_total, athlete, food_standard, food_details, self.food_db, category_result, self.athlete_config)
         if priority_notes:
-            suggestions = priority_notes + [s for s in suggestions if not s.startswith(('蛋白质较', '碳水化合物较', '蛋白质高于', '碳水化合物高于'))]
+            # Replace duplicate deficit wording, but never suppress a different
+            # nutrient's excess warning merely because one total is deficient.
+            suggestions = priority_notes + [s for s in suggestions if not s.startswith(('蛋白质较', '碳水化合物较'))]
         suggestions = [s for s in suggestions if not s.startswith('团体项目蛋白质优选参考')]
         attach_gram_display(dict(nutrition=nutrition_total, athlete_evaluation=athlete, food_standard_evaluation=food_standard, foods=food_details), self.food_db, merged_meals)
         category_keys = {'nuts': '坚果', 'beans_energy': '豆类', 'tubers_energy': '薯类',
@@ -312,15 +315,15 @@ class NutritionService:
         except Exception:
             return "-"
 
-        if standard <= 0:
+        if not math.isfinite(value) or not math.isfinite(standard) or value < 0 or standard <= 0:
             return "-"
 
         ratio = value / standard
         if ratio < under_ratio:
-            return "不足"
+            return rules.get("under_label", "过少")
         if ratio <= over_ratio:
-            return "适中"
-        return "过多"
+            return rules.get("adequate_label", "适宜")
+        return rules.get("over_label", "过多")
 
     def _build_category_result_from_foods(self, food_details):
         # 1. 先把配置里的所有分类都初始化为 0
