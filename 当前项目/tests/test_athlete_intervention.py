@@ -55,12 +55,12 @@ class AthleteInterventionTest(unittest.TestCase):
 
     def test_categories_use_food_rules_and_energy_needs_activity_profile(self):
         report = self.report()
-        self.assertEqual("-", report["category_result"]["蛋类"]["evaluation"])
+        self.assertEqual("不足", report["category_result"]["蛋类"]["evaluation"])
         self.assertEqual("-", report["nutrition"]["energy"]["evaluation"])
         self.assertIsNone(report['nutrition']['energy']['standard'])
-        self.assertIsNone(self.rows()["vegetables"]["gap"])
+        self.assertEqual(-300, self.rows()["vegetables"]["gap"])
         vegetable = next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='vegetables')
-        self.assertEqual(-300, vegetable['component_gap'])
+        self.assertEqual(-300, vegetable['gap'])
 
     def test_fat_percentage_and_zero_energy(self):
         row = self.rows()["fat"]

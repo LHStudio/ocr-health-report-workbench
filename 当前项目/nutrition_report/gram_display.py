@@ -58,8 +58,10 @@ def attach_gram_display(report, food_db, merged_meals):
                     display['label'] = category
                 elif key in {'seafood', 'livestock_remainder'}:
                     category = '水产品' if key == 'seafood' else '畜禽肉'
-                    actual = total({category}) if complete else None
-                    factor = total({'畜禽肉','水产品'})/100 if complete else None
+                    # A missing staple must not hide independently known meat data.
+                    meat_known = complete or row.get('actual') is not None
+                    actual = total({category}) if meat_known else None
+                    factor = total({'畜禽肉','水产品'})/100 if meat_known else None
                     display['label'] = category
                     note = '参考克数按当前肉类总重量换算。'
                 elif key=='quality_protein':
@@ -91,7 +93,7 @@ def attach_gram_display(report, food_db, merged_meals):
                 # Round only the display string, never the internal comparison boundary.
                 display['target'] = re.sub(r'\d+(?:\.\d+)?', lambda m:fmt(float(m.group())), str(display['target']))
             if row.get('evaluation_basis', '').startswith('energy_'):
-                display['target'] = {'energy_excess':'先控制总量','energy_deficit':'先补足总量','energy_unknown':'总量待确认'}[row['evaluation_basis']]
+                display['target'] = {'energy_excess':'先控制主食总量','energy_deficit':'先补足主食总量','energy_unknown':'主食总量待确认'}[row['evaluation_basis']]
                 display['gap'] = None
                 display['note'] = ''
             for field in ('actual', 'gap'):

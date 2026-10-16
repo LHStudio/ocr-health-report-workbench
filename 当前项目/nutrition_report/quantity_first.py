@@ -10,8 +10,8 @@ def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, catego
     complete = standard['nutrient_record_complete']
     energy = nutrition['energy']
     protein, carb = rows['protein'], rows['carbohydrate']
-    # The EER tolerance is the ONLY switch for food-group evaluations. Macro
-    # gram targets stay independent; they must not reopen a total-quantity gate.
+    # The EER tolerance gates ONLY grains, beans and tubers. Non-staple
+    # quantities/proportions keep their own rules regardless of total energy.
     state = ({'适宜':'adequate','适中':'adequate','过多':'excess','过少':'deficit','不足':'deficit'}
              .get(energy.get('evaluation'), 'unknown') if complete else 'unknown')
     standard['energy_gate'] = state
@@ -22,36 +22,32 @@ def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, catego
         message += f"总能量目前 {display_number(energy['value'])} kcal/天，参考目标 {display_number(energy['standard'])} kcal/天；"
         if carb['evaluation'] == '不足':
             message += f"碳水化合物目前 {display_number(carb['actual'])} g/天，参考目标 {carb['target']}，尚差 {display_number(-carb['gap'])} g/天；"
-        notes.append(message + '应先增加全天饮食总量，暂不按食物结构占比判断增减。')
+        notes.append(message + '应先增加主食，谷类、豆类、薯类均按过少评价，暂不按主食内部占比判断增减；其他食物仍按各自标准评价。')
         if protein['evaluation'] == '不足':
-            notes.append(f"蛋白质不足：目前 {display_number(protein['actual'])} g/天，参考目标 {protein['target']}，尚差 {display_number(-protein['gap'])} g/天；补足全天饮食总量时兼顾蛋白质来源。")
+            notes.append(f"蛋白质不足：目前 {display_number(protein['actual'])} g/天，参考目标 {protein['target']}，尚差 {display_number(-protein['gap'])} g/天；蛋白质来源按各自参考目标调整。")
     elif state == 'excess':
-        notes.append(f"总能量过多：目前 {display_number(energy['value'])} kcal/天，参考目标 {display_number(energy['standard'])} kcal/天；应先控制全天饮食总量，暂不按食物结构占比提出加量建议。")
+        notes.append(f"总能量过多：目前 {display_number(energy['value'])} kcal/天，参考目标 {display_number(energy['standard'])} kcal/天；应先控制主食总量，谷类、豆类、薯类均按过多评价，暂不按主食内部占比提出加量建议；其他食物仍按各自标准评价。")
     elif state == 'adequate':
         notes.append('总能量适宜：保持全天饮食总量，按各类食物占比和既有参考目标调整搭配，以替换为主，不整体加量。')
 
     for row in standard['rows']:
         key = row['key']
-        if key == 'snacks':
+        if key not in STAPLE_RATIOS | PROTEIN_RATIOS:
             continue
-        if state != 'adequate':
+        if key in STAPLE_RATIOS and state != 'adequate':
             status = {'excess':'过多','deficit':'过少','unknown':'-'}[state]
             row['component_evaluation'] = row['evaluation']
             row['component_score'] = row['score']
             row['component_gap'] = row['gap']
             row.update(evaluation=status, machine_evaluation=status, score=None, gap=None,
                        evaluation_basis='energy_' + state)
-            row['note'] += '；食物评价依据总能量方向；总量适宜后再评价各类结构。'
+            row['note'] += '；仅谷类、豆类、薯类评价依据总能量方向；能量适宜后再评价主食内部占比。'
         elif key in STAPLE_RATIOS | PROTEIN_RATIOS:
             mapping = {'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'} if key in STAPLE_RATIOS else {'不足': '占比偏低', '过多': '占比偏高', '适中': '占比适中'}
             row.update(evaluation=mapping.get(row['evaluation'], row['evaluation']),
                        machine_evaluation=mapping.get(row['machine_evaluation'], row['machine_evaluation']), evaluation_basis='ratio')
     meat_row, meat_message = meat_reference(protein, foods, food_db, complete)
-    if state != 'adequate':
-        status = {'excess':'过多','deficit':'过少','unknown':'-'}[state]
-        meat_row.update(evaluation=status,machine_evaluation=status,gap=None,evaluation_basis='energy_'+state)
-        meat_message = ''
-    else:
+    if state == 'adequate':
         meat_message = meat_message.replace('总蛋白质不足，可优先补充。','在保持总能量的前提下调整蛋白质来源搭配。')
     standard['rows'].insert(next(i for i, r in enumerate(standard['rows']) if r['key'] == 'seafood'), meat_row)
     judged = [r for r in standard['rows'] if r['score'] is not None]

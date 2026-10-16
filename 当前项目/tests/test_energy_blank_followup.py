@@ -41,7 +41,7 @@ class EnergyBlankFollowupTest(unittest.TestCase):
         self.assertEqual(0,blanks['奶酪']['daily_grams'])
         report=self.report()
         self.assertTrue(report['food_standard_evaluation']['nutrient_record_complete'])
-        self.assertEqual('过少',report['category_result']['坚果']['evaluation'])
+        self.assertEqual('不足',report['category_result']['坚果']['evaluation'])
         self.assertNotIn('记录不完整',json.dumps(report,ensure_ascii=False))
         self.assertNotIn('摄入小计',json.dumps(report,ensure_ascii=False))
 
@@ -88,7 +88,7 @@ class EnergyBlankFollowupTest(unittest.TestCase):
             self.assertEqual('建议尽量不吃',categories['零食'])
             for category in ['饮料','酒类']:self.assertEqual('-',categories[category])
             self.assertEqual('过少',categories['谷类'])
-            self.assertEqual('过少',categories['畜禽肉'])
+            self.assertEqual('-',categories['畜禽肉'])  # No meat denominator: do not invent an energy-based result.
             totals={r[0]:r for r in wb['营养总计'].iter_rows(min_row=2,values_only=True)}
             self.assertEqual(2100,totals['推荐能量'][1])
             self.assertEqual('中等强度',totals['活动量'][1])

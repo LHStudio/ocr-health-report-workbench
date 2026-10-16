@@ -24,7 +24,7 @@ class NutritionWordingCleanupTest(unittest.TestCase):
             for t in banned:self.assertNotIn(t,text);self.assertNotIn(t,cells)
             self.assertNotIn('每个鸡蛋按50g',text)
             self.assertNotIn('每个鸡蛋按50g',cells)
-            self.assertIn('先补足总量',text)
+            self.assertIn('先补足主食总量',text)
             self.assertEqual('≥ 50 g/天',next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='eggs')['target'])
             self.assertNotIn('豆类至少5%、薯类至少15%',text)
             self.assertIn('参考目标',text)

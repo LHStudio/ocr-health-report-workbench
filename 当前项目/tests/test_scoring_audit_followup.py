@@ -60,18 +60,18 @@ class ScoringAuditFollowupTest(unittest.TestCase):
         self.assertEqual('能量占比偏高',row['evaluation'])
         self.assertFalse(any('应先增加主食' in s for s in report['suggestions']))
 
-    def test_protein_priority_does_not_leave_passed_scores_on_insufficient_rows(self):
+    def test_energy_deficit_preserves_independent_milk_and_egg_scores(self):
         data=self.service.build_report_data({'user':{**self.user,'weight':65},'meals':[{'name':'鲜奶','amount':500},{'name':'蛋类','amount':50}]})
         rows={r['key']:r for r in data['food_standard_evaluation']['rows']}
         for key in ['milk','eggs']:
-            self.assertEqual('过少',rows[key]['evaluation'])
-            self.assertIsNone(rows[key]['score'])
-            self.assertIsNone(rows[key]['gap'])
+            self.assertEqual('适中',rows[key]['evaluation'])
+            self.assertEqual(1,rows[key]['score'])
+            self.assertEqual(0,rows[key]['gap'])
 
-    def test_energy_deficit_suppresses_opposing_protein_reduction_advice(self):
+    def test_energy_deficit_preserves_independent_protein_reduction_advice(self):
         data=self.service.build_report_data({'user':self.user,'meals':[{'name':'牛肉','amount':1000}]})
-        self.assertFalse(any('蛋白质高于参考上限' in s for s in data['suggestions']))
-        self.assertTrue(any('先增加全天饮食总量' in s for s in data['suggestions']))
+        self.assertTrue(any('蛋白质高于参考上限' in s for s in data['suggestions']))
+        self.assertTrue(any('先增加主食' in s for s in data['suggestions']))
         self.assertEqual('过多',next(r for r in data['athlete_evaluation']['rows'] if r['key']=='protein')['evaluation'])
 
     def test_low_protein_advice_uses_requested_heading(self):

@@ -22,7 +22,7 @@ class LogicTest(unittest.TestCase):
   text=NutritionPDFBuilder._interpretation(r)
   self.assertNotIn('能量摄入不足，应增加碳水化合物摄入',text)
   self.assertNotIn('占比偏高',text)
-  self.assertIn('先补足全天饮食总量',text)
+  self.assertIn('先补足主食总量',text)
   r['nutrition']['energy']['evaluation']='不足'
   r['athlete_evaluation']['rows']=[]
   self.assertNotIn('碳水化合物摄入不足',NutritionPDFBuilder._interpretation(r))

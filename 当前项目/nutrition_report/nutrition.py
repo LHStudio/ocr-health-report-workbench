@@ -54,9 +54,10 @@ class NutritionService:
         priority_notes, meat_message = apply_quantity_priority(
             nutrition_total, athlete, food_standard, food_details, self.food_db, category_result, self.athlete_config)
         energy_gate = food_standard['energy_gate']
-        # Independent nutrient targets remain visible in the specialist table.
-        # Do not let their advice contradict the active total-energy direction.
-        suggestions = priority_notes + (suggestions if energy_gate == 'adequate' else [])
+        # Only staple/carbohydrate advice follows the total-energy gate.
+        # Preserve independent protein, fat and other non-staple advice.
+        suggestions = priority_notes + [s for s in suggestions
+                                        if energy_gate == 'adequate' or not s.startswith('碳水化合物')]
         suggestions = [s for s in suggestions if not s.startswith('团体项目蛋白质优选参考')]
         attach_gram_display(dict(nutrition=nutrition_total, athlete_evaluation=athlete, food_standard_evaluation=food_standard, foods=food_details), self.food_db, merged_meals)
         category_keys = {'nuts': '坚果', 'beans_energy': '豆类', 'tubers_energy': '薯类',
@@ -136,9 +137,9 @@ class NutritionService:
             "food_data_source": dict(self.food_data_source),
             "nutrition_disclaimer": DIET_RECORD_ONLY_DISCLAIMER,
             "energy_guidance": ('总能量适宜，保持全天总量，按食物结构调整搭配。' if energy_gate == 'adequate'
-                                else '能量摄入过多，应先控制全天饮食总量，暂不评价食物结构占比。' if energy_gate == 'excess'
-                                else '总能量摄入不足，应先补足全天饮食总量，暂不评价食物结构占比。' if energy_gate == 'deficit'
-                                else '总能量是否适宜尚无法确认，暂不判断食物总量方向或结构占比。'),
+                                else '能量摄入过多，应先控制主食总量；谷类、豆类、薯类均为过多，其他食物按各自标准评价。' if energy_gate == 'excess'
+                                else '总能量摄入不足，应先补足主食总量；谷类、豆类、薯类均为过少，其他食物按各自标准评价。' if energy_gate == 'deficit'
+                                else '总能量是否适宜尚无法确认，暂不判断主食总量方向或内部占比；其他食物按已有数据和各自标准评价。'),
         }
 
         # OCR 适配器写入的可追溯信息原样带到报告构建数据中。

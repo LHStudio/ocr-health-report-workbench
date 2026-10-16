@@ -27,25 +27,25 @@ class EnergyGateFollowupTest(unittest.TestCase):
             self.assertNotIn('补充碳水来源',builder._interpretation(r))
             self.assertIn('保持',builder._interpretation(r))
 
-    def test_outside_band_all_defined_food_groups_follow_energy_direction(self):
+    def test_outside_band_only_staple_groups_follow_energy_direction(self):
         for energy,status,basis in [(1889.99,'过少','energy_deficit'),(2310.01,'过多','energy_excess')]:
             with self.subTest(energy=energy):
                 r=self.report(energy)
                 for row in r['food_standard_evaluation']['rows']:
-                    if row['key']=='snacks': continue
+                    if row['key'] not in {'beans_energy','tubers_energy','grains_remainder'}: continue
                     self.assertEqual(status,row['evaluation'],row['key'])
                     self.assertEqual(basis,row['evaluation_basis'])
                     self.assertIsNone(row['score'])
                     self.assertIsNone(row['gap'])
-                self.assertNotIn('占比偏',''.join(r['suggestions']))
-                self.assertEqual(0,r['food_standard_evaluation']['summary']['evaluated'])
+                self.assertNotIn('谷类能量占比偏',''.join(r['suggestions']))
+                self.assertGreater(r['food_standard_evaluation']['summary']['evaluated'],0)
                 if status=='过多':
                     combined=''.join(r['suggestions'])+NutritionPDFBuilder._interpretation(r)
-                    for wrong in ['应先增加','可增加','补充碳水','应增加奶制品','可优先补充']:
+                    for wrong in ['应先增加主食','补充碳水']:
                         self.assertNotIn(wrong,combined)
                     self.assertIn('控制',combined)
                 else:
-                    self.assertNotIn('建议适当减少',''.join(r['suggestions']))
+                    self.assertIn('应先增加主食',''.join(r['suggestions']))
 
     def test_inclusive_band_boundaries_enter_structure_even_below_macro_target(self):
         for energy in [1890,1995,2100,2310]:
@@ -56,7 +56,7 @@ class EnergyGateFollowupTest(unittest.TestCase):
         r=self.report(user=dict(gender='male',age=23,weight=54.6,athleteType='team',trainingPhase='training'))
         self.assertEqual('-',r['nutrition']['energy']['evaluation'])
         for row in r['food_standard_evaluation']['rows']:
-            if row['key']!='snacks': self.assertEqual('-',row['evaluation'])
+            if row['key'] in {'beans_energy','tubers_energy','grains_remainder'}: self.assertEqual('-',row['evaluation'])
 
     def test_incomplete_records_and_manual_blanks_remain_authoritative(self):
         r=self.report(conversion_warnings=[dict(code='unresolved_period',food='主食')],source_foods=[])
@@ -70,7 +70,7 @@ class EnergyGateFollowupTest(unittest.TestCase):
         for energy in [1800,2500]:
             r=self.report(energy)
             for row in r['food_standard_evaluation']['rows']:
-                if row['key']=='snacks': continue
+                if row['key'] not in {'beans_energy','tubers_energy','grains_remainder'}: continue
                 self.assertNotIn('%',row['display']['target'])
                 self.assertIn('总量',row['display']['target'])
 

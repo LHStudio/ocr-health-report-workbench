@@ -52,9 +52,9 @@ class ConciseReportTest(unittest.TestCase):
 
     def test_meat_sentence_and_protein_advice_are_the_requested_short_version(self):
         data = self.service.build_report_data(self.payload)
-        self.assertFalse(any(s.startswith('肉类（含水产品）') for s in data['suggestions']))
+        self.assertTrue(any(s.startswith('肉类（含水产品）') for s in data['suggestions']))
         self.assertTrue(any(s.startswith('蛋白质不足：') for s in data['suggestions']))
-        self.assertEqual('先补足总量',next(r for r in evaluation_rows(data) if r['key']=='meat')['target'])
+        self.assertEqual('约 448.44 g/天',next(r for r in evaluation_rows(data) if r['key']=='meat')['target'])
         self.assertNotIn('达标后再考虑结构占比', '\n'.join(data['suggestions']))
         self.assertEqual('', next(r for r in evaluation_rows(data) if r['key'] == 'meat')['note'])
         raw = next(r for r in data['food_standard_evaluation']['rows'] if r['key'] == 'meat')
