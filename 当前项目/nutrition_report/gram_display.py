@@ -90,6 +90,10 @@ def attach_gram_display(report, food_db, merged_meals):
             else:
                 # Round only the display string, never the internal comparison boundary.
                 display['target'] = re.sub(r'\d+(?:\.\d+)?', lambda m:fmt(float(m.group())), str(display['target']))
+            if row.get('evaluation_basis', '').startswith('energy_'):
+                display['target'] = {'energy_excess':'先控制总量','energy_deficit':'先补足总量','energy_unknown':'总量待确认'}[row['evaluation_basis']]
+                display['gap'] = None
+                display['note'] = ''
             for field in ('actual', 'gap'):
                 if display.get(field) is not None:
                     display[field] = round(display[field], 2)

@@ -21,8 +21,8 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         report=self.report()
         evaluations=[r['evaluation'] for r in report['athlete_evaluation']['rows']+report['food_standard_evaluation']['rows']]
         evaluations += [v['evaluation'] for v in report['category_result'].values()]
-        self.assertTrue(set(evaluations)<={'过多','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中','占比偏低','占比偏高','占比适中'},set(evaluations))
-        self.assertEqual('不足',report['category_result']['谷类']['evaluation'])
+        self.assertTrue(set(evaluations)<={'过多','过少','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中','占比偏低','占比偏高','占比适中'},set(evaluations))
+        self.assertEqual('过少',report['category_result']['谷类']['evaluation'])
         service=NutritionService()
         for actual,status in [(1000,'过少'),(2100,'适宜'),(3000,'过多')]:
             self.assertEqual(status,service._eval_energy_against_standard(actual,2100))
@@ -42,7 +42,7 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
             service.pdf_builder.build(report,pdf);service.excel_builder.build(report,xlsx)
             with fitz.open(pdf) as doc:
                 spans=[s for p in doc for b in p.get_text('dict')['blocks'] if 'lines' in b for l in b['lines'] for s in l['spans']]
-            alerts=[s for s in spans if s['text'].strip() in {'不足','过多'}]
+            alerts=[s for s in spans if s['text'].strip() in {'不足','过少','过多'}]
             self.assertTrue(alerts)
             self.assertTrue(all(s['color']==0xDC2626 for s in alerts),[(s['text'],s['color']) for s in alerts])
             normal=[s for s in spans if s['text'].strip()=='适中']
@@ -53,7 +53,7 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
             for w in wb:
                 for row in w:
                     for c in row:
-                        if c.value in {'不足','过多'}:
+                        if c.value in {'不足','过少','过多'}:
                             self.assertEqual('rgb',c.font.color.type if c.font.color else None)
                             self.assertEqual('DC2626',c.font.color.rgb[-6:]);checked+=1
                         elif c.value=='适中':
@@ -85,7 +85,7 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         self.assertTrue('`V${appMetadata.version}`' in app)
         readme=(root/'README.md').read_text(encoding='utf8')
         self.assertIn('当前版本：`V7.3.2-RC7`',readme)
-        self.assertIn('文档更新：2026-10-15',readme)
+        self.assertIn('文档更新：2026-10-16',readme)
         self.assertIn('建议尽量不吃',readme)
 
 

@@ -29,7 +29,7 @@ def evaluation_rows(data):
             display = {**row, **(row.get('display') or {})}
             rows[row['key']] = {**display, 'note': clean_display_text(display.get('note', ''))}
     for row in rows.values():
-        if row.get('evaluation_basis') not in {'quantity_first', 'quantity_unknown'} and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
+        if row.get('evaluation_basis') in {None, 'ratio'} and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
             row['evaluation'] = {'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row.get('evaluation'), row.get('evaluation'))
     return list(rows.values())
 

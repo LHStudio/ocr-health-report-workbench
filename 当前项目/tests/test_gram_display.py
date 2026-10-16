@@ -8,7 +8,7 @@ from nutrition_report.builders.presentation import evaluation_rows, evaluation_w
 class GramDisplayTest(unittest.TestCase):
     def setUp(self):
         self.service=NutritionReportService(prefer_cloud=False)
-        self.payload={'user':{'name':'克数验证','age':22,'gender':'female','weight':65,'activityLevel':'2','athleteType':'team','trainingPhase':'training'},
+        self.payload={'user':{'name':'克数验证','age':22,'gender':'female','weight':65,'activityLevel':'3','athleteType':'team','trainingPhase':'training'},
             'meals':[{'name':'米饭','amount':1234.56789},{'name':'豆腐','amount':123.45678},{'name':'土豆','amount':234.56789},
                      {'name':'牛肉','amount':456.78901},{'name':'鲜奶','amount':456.78901},{'name':'蛋类','amount':56.78901}]}
 

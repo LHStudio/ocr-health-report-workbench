@@ -14,7 +14,7 @@ class ScoringAuditFollowupTest(unittest.TestCase):
         self.service=NutritionReportService(prefer_cloud=False)
         self.user=dict(name='判分回归样例',gender='female',age=23,weight=57.8,
                        activityLevel='2',athleteType='team',trainingPhase='training')
-        self.payload=dict(user=self.user,meals=[{'name':'米饭','amount':2000},{'name':'牛肉','amount':500}])
+        self.payload=dict(user=self.user,meals=[{'name':'米饭','amount':1400},{'name':'牛肉','amount':500}])
 
     def test_complete_57kg_intake_keeps_every_defined_food_evaluation(self):
         report=self.service.build_report_data(self.payload)
@@ -64,14 +64,15 @@ class ScoringAuditFollowupTest(unittest.TestCase):
         data=self.service.build_report_data({'user':{**self.user,'weight':65},'meals':[{'name':'鲜奶','amount':500},{'name':'蛋类','amount':50}]})
         rows={r['key']:r for r in data['food_standard_evaluation']['rows']}
         for key in ['milk','eggs']:
-            self.assertEqual('不足',rows[key]['evaluation'])
+            self.assertEqual('过少',rows[key]['evaluation'])
             self.assertIsNone(rows[key]['score'])
             self.assertIsNone(rows[key]['gap'])
 
-    def test_protein_excess_warning_survives_carbohydrate_priority(self):
+    def test_energy_deficit_suppresses_opposing_protein_reduction_advice(self):
         data=self.service.build_report_data({'user':self.user,'meals':[{'name':'牛肉','amount':1000}]})
-        self.assertTrue(any('蛋白质高于参考上限' in s for s in data['suggestions']))
-        self.assertTrue(any('应先增加主食' in s for s in data['suggestions']))
+        self.assertFalse(any('蛋白质高于参考上限' in s for s in data['suggestions']))
+        self.assertTrue(any('先增加全天饮食总量' in s for s in data['suggestions']))
+        self.assertEqual('过多',next(r for r in data['athlete_evaluation']['rows'] if r['key']=='protein')['evaluation'])
 
     def test_low_protein_advice_uses_requested_heading(self):
         data=self.service.build_report_data({'user':self.user,'meals':[{'name':'米饭','amount':100}]})

@@ -487,6 +487,9 @@ class NutritionPDFBuilder:
     def _interpretation(data: dict) -> str:
         if data.get("interpretation"):
             return "<br/>".join(escape(line.strip()) for line in _as_text(data["interpretation"]).splitlines() if line.strip())
+        gate = {'适宜':'adequate','适中':'adequate','过多':'excess','过少':'deficit','不足':'deficit'}.get((data.get('nutrition') or {}).get('energy', {}).get('evaluation'), 'unknown')
+        if data.get('energy_guidance') and gate == (data.get('food_standard_evaluation') or {}).get('energy_gate'):
+            return escape(data['energy_guidance'])
         nutrition = data.get("nutrition") or {}
         lines = []
         energy_evaluation = (nutrition.get("energy") or {}).get("evaluation")

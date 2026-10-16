@@ -44,6 +44,30 @@ export function finalEvaluation(row, review = {}) {
   const field = ['protein', 'carbohydrate', 'fat', 'calcium'].includes(row.key)
     ? `${row.key}Evaluation` : `standard_${row.key}Evaluation`
   const value = Object.hasOwn(review, field) ? review[field] : row.evaluation
-  return !['quantity_first', 'quantity_unknown'].includes(row.evaluation_basis) && ['beans_energy', 'tubers_energy', 'grains_remainder'].includes(row.key)
+  return [undefined, null, 'ratio'].includes(row.evaluation_basis) && ['beans_energy', 'tubers_energy', 'grains_remainder'].includes(row.key)
     ? ({ '不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中' }[value] || value) : value
+}
+
+// A single editable control per food identity. Keep the standard control,
+// which already has precedence in PDF/Excel export, not two conflicting aliases.
+export const foodReviewAliases = { nuts:'坚果', beans_energy:'豆类', tubers_energy:'薯类', grains_remainder:'谷类', milk:'奶类', eggs:'蛋类', seafood:'水产品', livestock_remainder:'畜禽肉', fruit:'水果', vegetables:'蔬菜', snacks:'零食' }
+export function reviewCategoryRows(data) {
+  const represented = new Set((data?.food_standard_evaluation?.rows || []).map(row => foodReviewAliases[row.key]))
+  return Object.entries(data?.category_result || {}).filter(([key]) => !represented.has(key)).map(([key, info]) => ({key,label:key,value:info?.value ?? '—',machineEvaluation:String(info?.evaluation ?? '').trim()}))
+}
+export function coalesceReviewAliases(review, data) {
+  const next = {...review, categoryEvaluations:{...review.categoryEvaluations}, manualEntryFields:{...review.manualEntryFields}, aliasConflicts:[]}
+  if (!review.machineSeeded) return next
+  const previous = review.lastMachine || {}
+  for (const row of data?.food_standard_evaluation?.rows || []) {
+    const category = foodReviewAliases[row.key], field = `standard_${row.key}Evaluation`
+    if (!category) continue
+    const categoryEdited = Object.hasOwn(next.categoryEvaluations,category) && (next.categoryEvaluations[category] !== previous.categoryEvaluations?.[category] || next.manualEntryFields[`category:${category}`])
+    const standardEdited = Object.hasOwn(next,field) && (next[field] !== previous[field] || next.manualEntryFields[`nutrition:${field}`])
+    if (categoryEdited && !standardEdited) {
+      next[field] = next.categoryEvaluations[category]
+      next.manualEntryFields[`nutrition:${field}`] = true
+    } else if (categoryEdited && standardEdited && next[field] !== next.categoryEvaluations[category]) next.aliasConflicts.push(category)
+  }
+  return next
 }

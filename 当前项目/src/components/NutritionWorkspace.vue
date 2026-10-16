@@ -132,9 +132,10 @@
             <div class="subsection-title"><div><h4>营养评价人工复核</h4><p>机器评价仅作初稿。请按实际情况逐项选择不足、适中、过多或其他自定义评价，并编辑最终建议和解读。</p></div><div class="review-header-actions"><button class="secondary-button mini-button" type="button" :disabled="!nutritionPreview" @click="resetReportReviewFromMachine">重载机器初稿</button></div></div>
             <p v-if="!nutritionPreview || previewLoading" class="hint">正在计算机器初稿，完成后可复核。</p>
             <template v-else>
+              <p v-if="reportReview.aliasConflicts?.length" class="hint">历史重复评价不一致（{{ reportReview.aliasConflicts.join('、') }}）：保留原导出优先使用的专项评价，请核对下方唯一评价项。</p>
               <div class="mapping-wrap"><table class="mapping-table nutrition-evaluation-table"><thead><tr><th>项目</th><th>当前摄入</th><th>人工最终评价</th></tr></thead><tbody>
                 <tr v-for="row in categoryReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} g/天</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview.categoryEvaluations[row.key], `category:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview.categoryEvaluations[row.key])" @change="setEvaluation('category', row.key, $event.target.value)"><option value="">—（不计算）</option><option value="不足">不足</option><option value="适中">适中</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview.categoryEvaluations[row.key], `category:${row.key}`)" v-model="reportReview.categoryEvaluations[row.key]" :class="evaluationAlertClass(reportReview.categoryEvaluations[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
-                <tr v-for="row in nutrientReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} {{ row.unit }}</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview[row.key], `nutrition:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview[row.key])" @change="setEvaluation('nutrition', row.key, $event.target.value)"><option value="">—（不计算）</option><option :value="row.key === 'energyEvaluation' ? '过少' : '不足'">{{ row.key === 'energyEvaluation' ? '过少' : '不足' }}</option><option :value="row.key === 'energyEvaluation' ? '适宜' : '适中'">{{ row.key === 'energyEvaluation' ? '适宜' : '适中' }}</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview[row.key], `nutrition:${row.key}`)" v-model="reportReview[row.key]" :class="evaluationAlertClass(reportReview[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
+                <tr v-for="row in nutrientReviewRows" :key="row.key"><td>{{ row.label }}</td><td>{{ row.value }} {{ row.unit }}</td><td><div class="evaluation-control"><select :value="evaluationSelection(reportReview[row.key], `nutrition:${row.key}`)" class="evaluation-select" :class="evaluationAlertClass(reportReview[row.key])" @change="setEvaluation('nutrition', row.key, $event.target.value)"><option value="">—（不计算）</option><option v-if="row.key.startsWith('standard_')" value="过少">过少</option><option :value="row.key === 'energyEvaluation' ? '过少' : '不足'">{{ row.key === 'energyEvaluation' ? '过少' : '不足' }}</option><option :value="row.key === 'energyEvaluation' ? '适宜' : '适中'">{{ row.key === 'energyEvaluation' ? '适宜' : '适中' }}</option><option value="过多">过多</option><option value="other">其他（手动填写）</option></select><input v-if="isManualEvaluation(reportReview[row.key], `nutrition:${row.key}`)" v-model="reportReview[row.key]" :class="evaluationAlertClass(reportReview[row.key])" class="cell-input manual-evaluation-input" placeholder="请输入其他评价" /></div></td></tr>
               </tbody></table></div>
               <div class="report-review-textareas"><label>总体建议（可修改机器初稿）<textarea v-model="reportReview.overallSuggestions" rows="8" placeholder="每行一条建议"></textarea></label><label>最终总结 / 报告解读（可修改机器初稿）<textarea v-model="reportReview.interpretation" rows="8" placeholder="请输入最终总结或解读"></textarea></label></div>
               <p class="nutrition-disclaimer-preview">报告将注明：以上营养成分仅根据记录饮食计算，不包含维生素、矿物质、蛋白粉等其他补充剂摄入。</p>
@@ -175,7 +176,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storedOcrApiUrl } from '../runtime-config'
 import { buildBatchPayload } from '../nutrition-batch'
-import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass } from '../nutrition-presentation'
+import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass, reviewCategoryRows, coalesceReviewAliases } from '../nutrition-presentation'
 
 const includeQualityPage = ref(localStorage.getItem('nutrition-include-quality-page') === 'true')
 const reportStyle = ref(localStorage.getItem('nutrition-report-style') === 'legacy' ? 'legacy' : 'modern')
@@ -209,7 +210,7 @@ const nutritionDataSource = computed(() => nutritionPreview.value?.food_data_sou
 const unifiedEvaluationRows = computed(() => evaluationRows(nutritionPreview.value))
 const unifiedEvaluationContext = computed(() => evaluationContext(nutritionPreview.value))
 const unifiedEvaluationWarnings = computed(() => evaluationWarnings(nutritionPreview.value))
-const categoryReviewRows = computed(() => Object.entries(nutritionPreview.value?.category_result || {}).map(([key, info]) => ({ key, label: key, value: key === '奶类' && 'equivalent_value' in info ? `${info.value}（原重），鲜奶等价量（按蛋白质估计）${info.equivalent_value ?? '-'}` : (info?.value ?? 0), machineEvaluation: machineEvaluationText(info?.evaluation) })))
+const categoryReviewRows = computed(() => reviewCategoryRows(nutritionPreview.value))
 const nutrientReviewRows = computed(() => {
   const nutrition = nutritionPreview.value?.nutrition || {}
   return [
@@ -268,6 +269,7 @@ function emptyReportReview() { return { categoryEvaluations: {}, energyEvaluatio
 function copyReportReview(review) { return { ...emptyReportReview(), ...(review || {}), categoryEvaluations: { ...(review?.categoryEvaluations || {}) }, manualEntryFields: { ...(review?.manualEntryFields || {}) } } }
 function machineEvaluationText(value) { return String(value ?? '').trim() }
 function machineInterpretation(preview) {
+  if (preview?.energy_guidance) return preview.energy_guidance
   const nutrition = preview?.nutrition || {}; const lines = []
   if (['不足', '过少'].includes(nutrition.energy?.evaluation)) lines.push('总能量摄入不足，需结合训练量调整全天饮食。')
   else if (nutrition.energy?.evaluation === '过多') lines.push('能量摄入偏多，建议结合训练量调整总能量摄入。')
@@ -280,6 +282,7 @@ function machineInterpretation(preview) {
 }
 function seedReportReviewFromPreview() {
   if (!selected.value || !nutritionPreview.value) return
+  reportReview.value = coalesceReviewAliases(reportReview.value, nutritionPreview.value)
   const preview = nutritionPreview.value; const categoryEvaluations = {}
   Object.entries(preview.category_result || {}).forEach(([category, info]) => { categoryEvaluations[category] = machineEvaluationText(info?.evaluation) })
   const next = { categoryEvaluations, energyEvaluation: machineEvaluationText(preview.nutrition?.energy?.evaluation), calciumEvaluation: machineEvaluationText(preview.nutrition?.calcium?.evaluation), overallSuggestions: (preview.suggestions || []).join('\n') || '请结合实际饮食、训练与健康状况给出建议。', interpretation: machineInterpretation(preview) }
@@ -290,13 +293,13 @@ function seedReportReviewFromPreview() {
   for (const [key, value] of Object.entries(next)) {
     if (key === 'categoryEvaluations') {
       for (const [category, evaluation] of Object.entries(value)) if (!reportReview.value.machineSeeded || merged.categoryEvaluations[category] === previous.categoryEvaluations?.[category]) merged.categoryEvaluations[category] = evaluation
-    } else if (!reportReview.value.machineSeeded || merged[key] === previous[key]) merged[key] = value
+    } else if (!reportReview.value.machineSeeded || (merged[key] === previous[key] && !merged.manualEntryFields?.[`nutrition:${key}`])) merged[key] = value
   }
   reportReview.value = { ...merged, lastMachine: next, machineSeeded: true }
   reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
 }
 function resetReportReviewFromMachine() { reportReview.value = emptyReportReview(); seedReportReviewFromPreview() }
-function evaluationSelection(value, fieldKey) { const text = String(value || '').trim(); const options = fieldKey === 'nutrition:energyEvaluation' ? ['过少', '适宜', '过多'] : ['不足', '适中', '过多']; if (reportReview.value.manualEntryFields?.[fieldKey] || (text && !options.includes(text))) return 'other'; return text }
+function evaluationSelection(value, fieldKey) { const text = String(value || '').trim(); const options = fieldKey === 'nutrition:energyEvaluation' ? ['过少', '适宜', '过多'] : fieldKey?.startsWith('nutrition:standard_') ? ['不足', '过少', '适中', '过多'] : ['不足', '适中', '过多']; if (reportReview.value.manualEntryFields?.[fieldKey] || (text && !options.includes(text))) return 'other'; return text }
 function isManualEvaluation(value, fieldKey) { return evaluationSelection(value, fieldKey) === 'other' }
 function setEvaluation(kind, key, selection) {
   const fieldKey = `${kind === 'category' ? 'category' : 'nutrition'}:${key}`

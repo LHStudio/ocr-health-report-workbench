@@ -61,7 +61,8 @@ class FoodStandardsTest(unittest.TestCase):
             r = NutritionService().build_report_data(payload)
             self.assertIn('food_standard_evaluation', r)
             row = next(x for x in r['food_standard_evaluation']['rows'] if x['key'] == 'nuts')
-            self.assertEqual(want, row['score'])
+            self.assertEqual(want, row['component_score'])
+            self.assertIsNone(row['score'])
             self.assertIsNone(r['food_standard_evaluation']['summary']['attainment_percent'])
 
     def test_zero_denominators_stay_unscored_and_explicit_scale_is_preserved(self):
@@ -89,7 +90,8 @@ class FoodStandardsTest(unittest.TestCase):
         r = NutritionService().build_report_data(payload)
         self.assertIn('food_standard_evaluation', r)
         rows = {x['key']: x for x in r['food_standard_evaluation']['rows']}
-        self.assertEqual(1, rows['eggs']['score'])
+        self.assertEqual(1, rows['eggs']['component_score'])
+        self.assertIsNone(rows['eggs']['score'])
         self.assertIsNone(rows['quality_protein']['score'])
         payload['user'].update(athleteType='team', trainingPhase='training', age=20)
         report = NutritionService().build_report_data(payload)
@@ -103,14 +105,16 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertIn('food_standard_evaluation', report)
         row = next(x for x in report['food_standard_evaluation']['rows'] if x['key'] == 'nuts')
         self.assertEqual('已复核', row['evaluation'])
-        self.assertEqual('适中', row['machine_evaluation'])
-        self.assertEqual(1, row['score'])
+        self.assertEqual('-', row['machine_evaluation'])
+        self.assertEqual('适中',row['component_evaluation'])
+        self.assertEqual(1,row['component_score'])
+        self.assertIsNone(row['score'])
 
     def test_partial_manual_override_does_not_erase_machine_suggestions(self):
-        report = self.service.build_report_data({'user': {'weight': 65},
+        report = self.service.build_report_data({'user': {'weight':65,'gender':'female','age':23,'activityLevel':'2'},
             'meals': [{'name': '坚果', 'amount': 5}], 'autoEvaluation': False,
             'manualEvaluations': {'standardEvaluations': {'nuts': '人工复核'}}})
-        self.assertTrue(any('坚果' in s for s in report['suggestions']))
+        self.assertTrue(any('先增加全天饮食总量' in s for s in report['suggestions']))
 
     def test_negative_and_nonfinite_ocr_quantity_not_silently_positive(self):
         for field, value in [('平均每次食用量', '-10g'), ('次数', '-1'), ('次数', 'NaN'), ('平均每次食用量', 'Infinity')]:
@@ -146,7 +150,8 @@ class FoodStandardsTest(unittest.TestCase):
         # 100 + 30*(22.4/3) + 10*(25.7/3) = 409.6667 g milk equivalent
         row = next(r for r in report['food_standard_evaluation']['rows'] if r['key'] == 'milk')
         self.assertAlmostEqual(409.6667, row['actual'], places=3)
-        self.assertEqual(1, row['score'])
+        self.assertEqual(1, row['component_score'])
+        self.assertIsNone(row['score'])
         self.assertIn('3 g/100g', row['note'])
         self.assertAlmostEqual(12.29, report['nutrition']['protein'], places=2)
         self.assertEqual(140, report['category_result']['奶类']['value'])

@@ -18,17 +18,17 @@ class QuantityFirstTest(unittest.TestCase):
     def test_deficit_precedes_ratios_in_all_presentations(self):
         data=self.service.build_report_data(self.payload); rows=self.rows(data)
         for k in ['beans_energy','tubers_energy','grains_remainder','quality_protein','seafood']:
-            self.assertEqual('不足',rows[k]['evaluation'],k)
+            self.assertEqual('过少',rows[k]['evaluation'],k)
             self.assertIsNone(rows[k]['score'])
         for cat in ['谷类','豆类','薯类','奶类','蛋类','畜禽肉','水产品']:
-            self.assertEqual('不足',data['category_result'][cat]['evaluation'],cat)
+            self.assertEqual('过少',data['category_result'][cat]['evaluation'],cat)
         suggestions='\n'.join(data['suggestions'])
-        self.assertIn('增加主食',suggestions)
+        self.assertIn('先增加全天饮食总量',suggestions)
         self.assertIn('蛋白质不足：',suggestions)
         self.assertNotIn('占比偏高',suggestions)
         self.assertNotIn('适当减少',suggestions)
         self.assertNotIn('占比偏高',self.service.pdf_builder._interpretation(data))
-        self.assertEqual(1,sum(s.startswith('肉类（含水产品）') for s in data['suggestions']))
+        self.assertEqual(0,sum(s.startswith('肉类（含水产品）') for s in data['suggestions']))
 
     def test_meat_target_subtracts_protein_not_food_weight(self):
         data=self.service.build_report_data(self.payload); row=self.rows(data)['meat']
@@ -40,11 +40,12 @@ class QuantityFirstTest(unittest.TestCase):
         self.assertAlmostEqual(want-20,row['shortfall_grams'],places=4)
         self.assertEqual('',row['note'])
         self.assertIn('谷类',next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='meat')['note'])
-        self.assertTrue(any('肉类' in s and '目前' in s and '参考目标' in s and '尚差' in s for s in data['suggestions']))
+        self.assertTrue(any('总能量目前' in s and '参考目标' in s for s in data['suggestions']))
+        self.assertEqual('先补足总量',row['target'])
 
     def test_complete_adequate_intake_then_evaluates_structure(self):
         # Rice provides enough carbohydrate/energy; beef supplies enough protein, no seafood.
-        data=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=2000),dict(name='牛肉',amount=500)]})
+        data=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=1400),dict(name='牛肉',amount=500)]})
         rows=self.rows(data)
         self.assertEqual('能量占比偏高',rows['grains_remainder']['evaluation'])
         self.assertEqual('能量占比偏低',rows['beans_energy']['evaluation'])

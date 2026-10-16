@@ -53,10 +53,10 @@ class NutritionService:
             nutrition_total['energy']['evaluation'] = '-'
         priority_notes, meat_message = apply_quantity_priority(
             nutrition_total, athlete, food_standard, food_details, self.food_db, category_result, self.athlete_config)
-        if priority_notes:
-            # Replace duplicate deficit wording, but never suppress a different
-            # nutrient's excess warning merely because one total is deficient.
-            suggestions = priority_notes + [s for s in suggestions if not s.startswith(('蛋白质较', '碳水化合物较'))]
+        energy_gate = food_standard['energy_gate']
+        # Independent nutrient targets remain visible in the specialist table.
+        # Do not let their advice contradict the active total-energy direction.
+        suggestions = priority_notes + (suggestions if energy_gate == 'adequate' else [])
         suggestions = [s for s in suggestions if not s.startswith('团体项目蛋白质优选参考')]
         attach_gram_display(dict(nutrition=nutrition_total, athlete_evaluation=athlete, food_standard_evaluation=food_standard, foods=food_details), self.food_db, merged_meals)
         category_keys = {'nuts': '坚果', 'beans_energy': '豆类', 'tubers_energy': '薯类',
@@ -82,7 +82,7 @@ class NutritionService:
                 if row['unit'] == '%':
                     message += ' 目标克数按当前摄入及食物密度估算；先满足总量，再调整结构。'
                 suggestions.append(message)
-        if food_standard['nutrient_record_complete']:
+        if food_standard['nutrient_record_complete'] and meat_message:
             suggestions.insert(min(11, len(suggestions)), meat_message)
         if suggestions:
             suggestions.append('请结合训练量和完整饮食记录，在营养专业人员指导下调整上述摄入。')
@@ -135,6 +135,10 @@ class NutritionService:
             "unmatched_foods": unmatched_foods,
             "food_data_source": dict(self.food_data_source),
             "nutrition_disclaimer": DIET_RECORD_ONLY_DISCLAIMER,
+            "energy_guidance": ('总能量适宜，保持全天总量，按食物结构调整搭配。' if energy_gate == 'adequate'
+                                else '能量摄入过多，应先控制全天饮食总量，暂不评价食物结构占比。' if energy_gate == 'excess'
+                                else '总能量摄入不足，应先补足全天饮食总量，暂不评价食物结构占比。' if energy_gate == 'deficit'
+                                else '总能量是否适宜尚无法确认，暂不判断食物总量方向或结构占比。'),
         }
 
         # OCR 适配器写入的可追溯信息原样带到报告构建数据中。
