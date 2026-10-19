@@ -19,19 +19,19 @@ class ScoringAuditFollowupTest(unittest.TestCase):
     def test_complete_57kg_intake_keeps_every_defined_food_evaluation(self):
         report=self.service.build_report_data(self.payload)
         rows={r['key']:r for r in report['food_standard_evaluation']['rows']}
-        expected={'nuts':'不足','beans_energy':'能量占比偏低','tubers_energy':'能量占比偏低',
-                  'grains_remainder':'能量占比偏高','milk':'不足','eggs':'不足',
-                  'seafood':'占比偏低','fruit':'不足','vegetables':'不足'}
+        expected={'nuts':'不足','beans_energy':'不足','tubers_energy':'不足',
+                  'grains_remainder':'过多','milk':'不足','eggs':'不足',
+                  'seafood':'不足','fruit':'不足','vegetables':'不足'}
         for key,value in expected.items():
             self.assertEqual(value,rows[key]['evaluation'],key)
             self.assertIsNotNone(rows[key]['score'],key)
         self.assertNotEqual('-',rows['quality_protein']['evaluation'])
 
     def test_food_ratios_and_fixed_targets_do_not_disappear_at_weight_boundaries(self):
-        db={'谷':dict(category='谷类',energy=100,protein=10),
-            '豆':dict(category='豆类',energy=100,protein=10),
-            '薯':dict(category='薯类',energy=100,protein=10),
-            '坚果':dict(category='坚果',energy=100,protein=10)}
+        db={'谷':dict(category='谷类',energy=100,protein=10,carbohydrate=0,fat=0,calcium=0),
+            '豆':dict(category='豆类',energy=100,protein=10,carbohydrate=0,fat=0,calcium=0),
+            '薯':dict(category='薯类',energy=100,protein=10,carbohydrate=0,fat=0,calcium=0),
+            '坚果':dict(category='坚果',energy=100,protein=10,carbohydrate=0,fat=0,calcium=0)}
         meals=[dict(name=n,amount=q) for n,q in [('谷',800),('豆',50),('薯',150),('坚果',10)]]
         for weight in [None,57.8,59.999,60,70,70.001,80]:
             with self.subTest(weight=weight):
@@ -53,11 +53,12 @@ class ScoringAuditFollowupTest(unittest.TestCase):
     def test_energy_95_percent_does_not_trigger_deficit_when_carbohydrate_is_sufficient(self):
         db={'主食':dict(category='谷类',energy=1900,carbohydrate=500,protein=100,fat=0,calcium=1000),
             '坚果':dict(category='坚果',energy=0,carbohydrate=0,protein=0,fat=0,calcium=0)}
-        report=NutritionService(food_db=db).build_report_data({'user':self.user,'meals':[{'name':'主食','amount':100}]})
+        service=NutritionService();service.food_db.update(db)
+        report=service.build_report_data({'user':self.user,'meals':[{'name':'主食','amount':100}]})
         self.assertEqual('适宜',report['nutrition']['energy']['evaluation'])
         row=next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='grains_remainder')
-        self.assertEqual('ratio',row['evaluation_basis'])
-        self.assertEqual('能量占比偏高',row['evaluation'])
+        self.assertEqual('personal_target',row['evaluation_basis'])
+        self.assertEqual('不足',row['evaluation'])
         self.assertFalse(any('应先增加主食' in s for s in report['suggestions']))
 
     def test_energy_deficit_preserves_independent_milk_and_egg_scores(self):
@@ -70,8 +71,8 @@ class ScoringAuditFollowupTest(unittest.TestCase):
 
     def test_energy_deficit_preserves_independent_protein_reduction_advice(self):
         data=self.service.build_report_data({'user':self.user,'meals':[{'name':'牛肉','amount':1000}]})
-        self.assertTrue(any('蛋白质高于参考上限' in s for s in data['suggestions']))
-        self.assertTrue(any('先增加主食' in s for s in data['suggestions']))
+        self.assertTrue(any(s.startswith('蛋白质过多') and '减少' in s for s in data['suggestions']))
+        self.assertTrue(any(s.startswith('碳水化合物不足') and '增加' in s for s in data['suggestions']))
         self.assertEqual('过多',next(r for r in data['athlete_evaluation']['rows'] if r['key']=='protein')['evaluation'])
 
     def test_low_protein_advice_uses_requested_heading(self):
@@ -127,11 +128,12 @@ class ScoringAuditFollowupTest(unittest.TestCase):
     def test_livestock_remainder_uses_complement_of_existing_seafood_minimum(self):
         data=self.service.build_report_data(self.payload)
         row=next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='livestock_remainder')
-        self.assertEqual('占比偏高',row['evaluation'])
-        self.assertEqual(100,row['actual'])
-        self.assertEqual(70,row['target_max'])
+        meat=next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='meat')
+        self.assertEqual('过多',row['evaluation'])
+        self.assertEqual(500,row['actual'])
+        self.assertAlmostEqual(meat['target_max']*.7,row['target_max'])
         self.assertEqual(500,row['display']['actual'])
-        self.assertEqual('≤ 350.00 g/天',row['display']['target'])
+        self.assertEqual(f"{row['target_min']:.2f}–{row['target_max']:.2f} g/天",row['display']['target'])
         self.assertIsNone(row['score'])  # Complement is not an extra independent scoring item.
 
     def test_low_energy_label_is_red_and_interpreted_in_both_pdf_styles(self):
@@ -140,7 +142,7 @@ class ScoringAuditFollowupTest(unittest.TestCase):
         data['nutrition']['energy']['evaluation']='过少'
         for builder in [self.service.pdf_builder,LegacyPDFBuilder()]:
             with self.subTest(builder=type(builder).__module__):
-                self.assertIn('总能量摄入不足',builder._interpretation(data))
+                self.assertIn('总能量过少',builder._interpretation(data))
                 with tempfile.TemporaryDirectory() as tmp:
                     path=Path(tmp)/'style.pdf'; builder.build(data,path)
                     with fitz.open(path) as pdf:

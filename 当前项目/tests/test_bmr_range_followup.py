@@ -34,7 +34,7 @@ class BmrRangeTest(unittest.TestCase):
                 self.assertNotIn('女性EER',e['standard_source'])
                 for row in data['food_standard_evaluation']['rows']:
                     if row['key'] in {'beans_energy','tubers_energy','grains_remainder'}:
-                        self.assertEqual('ratio' if expected=='适宜' else 'energy_deficit' if expected=='过少' else 'energy_excess',row['evaluation_basis'])
+                        self.assertEqual('personal_target',row['evaluation_basis'])
                 self.assertNotIn('参考目标 -', ''.join(data['suggestions']))
 
     def test_absent_keeps_eer_and_bmr_needs_no_gender_age_or_activity(self):

@@ -7,7 +7,7 @@ from nutrition_report.nutrition import NutritionService
 
 class EvaluationStyleFollowupTest(unittest.TestCase):
     def report(self,carbohydrate=300):
-        service=NutritionService(food_db={'主食':{'category':'谷类','energy':1500,'protein':119,'fat':40,'carbohydrate':carbohydrate,'calcium':1000}})
+        service=NutritionService();service.food_db['主食']={'category':'谷类','energy':1500,'protein':119,'fat':40,'carbohydrate':carbohydrate,'calcium':1000}
         return service.build_report_data({'user':{'age':25,'weight':70,'gender':'female','activityLevel':'2','athleteType':'strength','trainingPhase':'training'},'meals':[{'name':'主食','amount':100}]})
 
     def test_carbohydrate_point_target_classifies_below_equal_above(self):
@@ -22,7 +22,13 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         evaluations=[r['evaluation'] for r in report['athlete_evaluation']['rows']+report['food_standard_evaluation']['rows']]
         evaluations += [v['evaluation'] for v in report['category_result'].values()]
         self.assertTrue(set(evaluations)<={'过多','过少','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中','占比偏低','占比偏高','占比适中'},set(evaluations))
-        self.assertEqual('过少',report['category_result']['谷类']['evaluation'])
+        # Reference DB remains complete even when only one food was recorded.
+        # Compare 100 g with the independent personal target, not low energy.
+        self.assertEqual('不足',report['category_result']['谷类']['evaluation'])
+        grain=next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='grains_remainder')
+        self.assertEqual('personal_target',grain['evaluation_basis'])
+        self.assertGreater(grain['target_min'],100)
+        self.assertTrue(report['food_standard_evaluation']['personal_targets']['plan_warnings'])
         service=NutritionService()
         for actual,status in [(1000,'过少'),(2100,'适宜'),(3000,'过多')]:
             self.assertEqual(status,service._eval_energy_against_standard(actual,2100))

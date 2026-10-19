@@ -46,4 +46,7 @@ def evaluation_warnings(data):
                 note = clean_display_text(note)
                 if note not in ('仅训练期', '60-70kg标准', '基础膳食参考标准') and note not in notes:
                     notes.append(note)
+    for note in (data.get('report_checks') or {}).get('warnings', []):
+        if note not in notes:
+            notes.append('自动核查提醒：' + note)
     return notes

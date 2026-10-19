@@ -8,6 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from .athlete import evaluate_athlete, display_number
 from .food_standards import evaluate_food_standards
+from .report_checks import build_overall_suggestions, check_report_consistency, energy_summary
 
 DIET_RECORD_ONLY_DISCLAIMER = "以上营养成分仅根据记录饮食计算，不包含维生素、矿物质、蛋白粉等其他补充剂摄入。"
 
@@ -44,7 +45,10 @@ class NutritionService:
         merged_meals = self._merge_meals(meals)
         food_details, nutrition_total, unmatched_foods = self._calculate_nutrition(merged_meals, user)
         category_result = self._build_category_result_from_foods(food_details)
-        athlete, suggestions = evaluate_athlete(user, nutrition_total, category_result, self.athlete_config)
+        # Keep the established outward totals while comparing personal targets
+        # against unrounded sums; display rounding must not create a deficit.
+        athlete_nutrition = {**nutrition_total, **nutrition_total['exact_totals']}
+        athlete, suggestions = evaluate_athlete(user, athlete_nutrition, category_result, self.athlete_config)
         food_standard = evaluate_food_standards(front_json, self.food_db, self.athlete_config)
         if not food_standard['nutrient_record_complete']:
             suggestions = []
@@ -53,13 +57,10 @@ class NutritionService:
             nutrition_total['calcium']['evaluation'] = '-'
             nutrition_total['energy']['evaluation'] = '-'
         priority_notes, meat_message = apply_quantity_priority(
-            nutrition_total, athlete, food_standard, food_details, self.food_db, category_result, self.athlete_config)
+            nutrition_total, athlete, food_standard, food_details, self.food_db, category_result, self.athlete_config, merged_meals=merged_meals)
         energy_gate = food_standard['energy_gate']
-        # Only staple/carbohydrate advice follows the total-energy gate.
-        # Preserve independent protein, fat and other non-staple advice.
-        suggestions = priority_notes + [s for s in suggestions
-                                        if energy_gate == 'adequate' or not s.startswith('碳水化合物')]
-        suggestions = [s for s in suggestions if not s.startswith('团体项目蛋白质优选参考')]
+        # Total energy is descriptive only: it never suppresses macro findings.
+        suggestions = priority_notes + suggestions
         attach_gram_display(dict(nutrition=nutrition_total, athlete_evaluation=athlete, food_standard_evaluation=food_standard, foods=food_details), self.food_db, merged_meals)
         category_keys = {'nuts': '坚果', 'beans_energy': '豆类', 'tubers_energy': '薯类',
                          'grains_remainder': '谷类', 'milk': '奶类', 'eggs': '蛋类',
@@ -72,22 +73,6 @@ class NutritionService:
                 category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row.get('evaluation_basis') == 'ratio' and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
                 if row['key'] == 'milk':
                     category_result[category]['equivalent_value'] = row['actual']
-            if row.get('evaluation_basis') == 'quantity_first' and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder', 'seafood'}:
-                grams = sum(f['amount'] for f in food_details if f['category'] == category)
-                suggestions.append(f"{category}：目前 {display_number(grams)} g/天；先补足{'主食' if row['key'] != 'seafood' else '蛋白质'}总量，可增加本类摄入。")
-            if row['score'] == 0:
-                evaluation = row['evaluation']
-                if row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
-                    evaluation = {'不足': '占比偏低', '过多': '占比偏高'}.get(evaluation, evaluation)
-                shown = row.get('display') or row
-                message = f"{shown['label']}{evaluation}：目前 {display_number(shown['actual'])} {shown['unit']}，参考目标 {shown['target']}。"
-                if row['unit'] == '%':
-                    message += ' 目标克数按当前摄入及食物密度估算；先满足总量，再调整结构。'
-                suggestions.append(message)
-        if food_standard['nutrient_record_complete'] and meat_message:
-            suggestions.insert(min(11, len(suggestions)), meat_message)
-        if suggestions:
-            suggestions.append('请结合训练量和完整饮食记录，在营养专业人员指导下调整上述摄入。')
         # New food rules supersede the old vegetable-only rule, including scope/data gates.
         vegetable = next(r for r in food_standard['rows'] if r['key'] == 'vegetables')
         athlete['rows'] = [dict(vegetable) if r['key'] == 'vegetables' else r for r in athlete['rows']]
@@ -133,14 +118,12 @@ class NutritionService:
             "nutrition": nutrition_total,
             "athlete_evaluation": athlete,
             "food_standard_evaluation": food_standard,
+            "personal_targets": food_standard.get("personal_targets", {}),
             "autoEvaluation": auto_evaluation,
             "unmatched_foods": unmatched_foods,
             "food_data_source": dict(self.food_data_source),
             "nutrition_disclaimer": DIET_RECORD_ONLY_DISCLAIMER,
-            "energy_guidance": ('总能量适宜，保持全天总量，按食物结构调整搭配。' if energy_gate == 'adequate'
-                                else '能量摄入过多，应先控制主食总量；谷类、豆类、薯类均为过多，其他食物按各自标准评价。' if energy_gate == 'excess'
-                                else '总能量摄入不足，应先补足主食总量；谷类、豆类、薯类均为过少，其他食物按各自标准评价。' if energy_gate == 'deficit'
-                                else '总能量是否适宜尚无法确认，暂不判断主食总量方向或内部占比；其他食物按已有数据和各自标准评价。'),
+            "energy_guidance": '',
         }
 
         # OCR 适配器写入的可追溯信息原样带到报告构建数据中。
@@ -151,7 +134,41 @@ class NutritionService:
         if interpretation is not None:
             report["interpretation"] = interpretation
 
+        # Do not hide a blocked assessment behind the optional OCR-quality page.
+        # Keep the established non-convertible-unit gate and all manual values.
+        report['assessment_status'] = 'ready' if food_standard['nutrient_record_complete'] else 'needs_review'
+        report['assessment_issues'] = []
+        if report['assessment_status'] == 'needs_review':
+            blocking_codes = {'unresolved_period', 'missing_quantity', 'unsupported_quantity_unit',
+                              'missing_次数', 'invalid_次数', 'negative_value', 'invalid_quantity',
+                              'missing_食用量', 'unmapped_food', 'invalid_food_row', 'missing_food_name'}
+            report['assessment_issues'] = list(dict.fromkeys(
+                w['message'] for w in front_json.get('conversion_warnings', [])
+                if w.get('code') in blocking_codes and w.get('message')))
+            report['assessment_issues'].extend(f"{w.get('name', '未知食物')}未匹配营养库" for w in unmatched_foods)
+            report['assessment_issues'].extend(
+                f"{item['food']}缺少有效营养参数 {item['nutrient']}"
+                for item in food_standard.get('missing_nutrient_parameters', []))
+            if not report['assessment_issues']:
+                report['assessment_issues'] = ['存在缺少营养参数或无法换算的食物条目，请核对原始记录。']
+            review_note = '待核对，暂不作为完整营养结论：' + '；'.join(report['assessment_issues'])
+            report['energy_guidance'] = review_note + '。补齐这些条目的克数或容量后，才能评价全天能量、蛋白质及主食总量。'
+            # Blocking issues are displayed separately, not as a 15th advice item.
+
         attach_gram_display(report, self.food_db, merged_meals)
+        if report['assessment_status'] == 'ready':
+            report['energy_guidance'] = energy_summary(report) + '各类食物按个人营养目标与实际摄入独立比较，不按总能量方向统一增减主食。'
+        # One shared 14-topic structure for all energy states; explicit manual
+        # advice remains verbatim and receives a separate consistency warning.
+        if auto_evaluation or 'overallSuggestions' not in (front_json.get('manualEvaluations') or {}):
+            report['suggestion_items'] = build_overall_suggestions(report)
+            report['suggestions'] = [item['text'] for item in report['suggestion_items']]
+        else:
+            report['suggestion_items'] = []
+        check_report_consistency(report)
+        for issue in report['assessment_issues']:
+            report['report_checks']['warnings'].append('数据核查：' + issue)
+            report['report_checks']['status'] = 'review'
         return report
 
     def build_intake_preview(self, front_json):
@@ -274,6 +291,7 @@ class NutritionService:
             "protein": round(total_protein, 2),
             "fat": round(total_fat, 2),
             "carbohydrate": round(total_carb, 2),
+            "exact_totals": {"protein": total_protein, "fat": total_fat, "carbohydrate": total_carb},
             "calcium": {
                 "value": round(total_calcium, 2),
                 "evaluation": "待专项评价"

@@ -44,10 +44,13 @@ class FoodStandardsTest(unittest.TestCase):
             {'name': k, 'amount': v} for k, v in self.amounts.items()]})
         self.assertIn('food_standard_evaluation', report)
         rows = {r['key']: r for r in report['food_standard_evaluation']['rows']}
-        self.assertAlmostEqual(9.5238, rows['beans_energy']['actual'], places=3)
-        self.assertAlmostEqual(40.7407, rows['quality_protein']['actual'], places=3)
-        self.assertEqual(0, rows['quality_protein']['score'])
-        self.assertEqual('占比偏低', rows['quality_protein']['evaluation'])
+        raw=self.rows()
+        self.assertAlmostEqual(9.5238,raw['beans_energy']['actual'],places=3)
+        self.assertAlmostEqual(40.7407,raw['quality_protein']['actual'],places=3)
+        self.assertEqual(50,rows['beans_energy']['actual'])
+        self.assertEqual(55,rows['quality_protein']['actual'])
+        self.assertIsNone(rows['quality_protein']['score'])
+        self.assertEqual('-',rows['quality_protein']['evaluation'])  # Missing personal profile, not invented ratio advice.
 
     def test_under_over_and_near_boundary_not_rounded_into_pass(self):
         rows = self.rows(amounts={**self.amounts, '坚果': 9.999, '果': 500.001, '菜': 199.999})
@@ -90,7 +93,8 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertIn('food_standard_evaluation', r)
         rows = {x['key']: x for x in r['food_standard_evaluation']['rows']}
         self.assertEqual(1, rows['eggs']['score'])
-        self.assertEqual(1, rows['quality_protein']['score'])
+        self.assertIsNone(rows['quality_protein']['score'])
+        self.assertEqual('-',rows['quality_protein']['evaluation'])
         payload['user'].update(athleteType='team', trainingPhase='training', age=20)
         report = NutritionService().build_report_data(payload)
         self.assertTrue(all('记录不完整' not in row['machine_evaluation'] for row in
@@ -110,7 +114,7 @@ class FoodStandardsTest(unittest.TestCase):
         report = self.service.build_report_data({'user': {'weight':65,'gender':'female','age':23,'activityLevel':'2'},
             'meals': [{'name': '坚果', 'amount': 5}], 'autoEvaluation': False,
             'manualEvaluations': {'standardEvaluations': {'nuts': '人工复核'}}})
-        self.assertTrue(any('先增加主食' in s for s in report['suggestions']))
+        self.assertEqual(14,len(report['suggestions'])); self.assertTrue(any('人工复核' in s for s in report['suggestions']))
 
     def test_negative_and_nonfinite_ocr_quantity_not_silently_positive(self):
         for field, value in [('平均每次食用量', '-10g'), ('次数', '-1'), ('次数', 'NaN'), ('平均每次食用量', 'Infinity')]:
@@ -124,8 +128,8 @@ class FoodStandardsTest(unittest.TestCase):
         report = service.build_report_data({'user': {'weight': 65}, 'meals': [
             {'name': k, 'amount': v} for k, v in self.amounts.items()]})
         row = next(r for r in report['food_standard_evaluation']['rows'] if r['key'] == 'quality_protein')
-        self.assertEqual(50, row['actual'])
-        self.assertEqual(1, row['score'])  # Known protein proportions do not depend on EER.
+        self.assertEqual(55,row['actual'])  # Outward value is grams of quality protein, not percent.
+        self.assertIsNone(row['score'])  # Personal profile is missing; original mathematical ratio retained below.
         self.assertEqual(1,self.rows()['quality_protein']['score'])
         self.assertEqual(0, self.rows(amounts={**self.amounts, '鱼': 29.999})['seafood']['score'])
 
@@ -152,8 +156,8 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertEqual(140, report['category_result']['奶类']['value'])
 
     def test_milk_equivalence_uses_current_reference_and_handles_missing_protein(self):
-        db = {'鲜奶': dict(category='奶类', energy=50, protein=4),
-              '奶粉': dict(category='奶类', energy=400, protein=20)}
+        db = {'鲜奶': dict(category='奶类', energy=50, protein=4, carbohydrate=0, fat=0, calcium=0),
+              '奶粉': dict(category='奶类', energy=400, protein=20, carbohydrate=0, fat=0, calcium=0)}
         payload = {'user': {'weight': 65}, 'meals': [{'name': '奶粉', 'amount': 80}]}
         service = NutritionService(food_db=db)
         row = next(r for r in service.build_report_data(payload)['food_standard_evaluation']['rows'] if r['key'] == 'milk')

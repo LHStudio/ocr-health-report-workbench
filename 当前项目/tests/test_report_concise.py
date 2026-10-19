@@ -19,7 +19,7 @@ class ConciseReportTest(unittest.TestCase):
     def test_outward_wording_is_concise_but_internal_basis_is_retained(self):
         data = self.service.build_report_data(self.payload)
         suggestions = '\n'.join(data['suggestions'])
-        self.assertTrue(data['suggestions'][0].startswith('主食总量目前约 100 g/天；'))
+        self.assertEqual('总能量过少。',data['suggestions'][0]); self.assertEqual(14,len(data['suggestions']))
         for text in ['总量满足后再比较各类占比', '暂不比较结构', '加权蛋白质密度折算', '蛋白质优选参考']:
             self.assertNotIn(text, suggestions)
         rows = {r['key']: r for r in evaluation_rows(data)}
@@ -28,9 +28,9 @@ class ConciseReportTest(unittest.TestCase):
             self.assertEqual('', rows[key]['note'], key)
         self.assertNotIn('加权蛋白质密度折算', rows['meat']['note'])
         raw = {r['key']: r for r in data['food_standard_evaluation']['rows']}
-        self.assertIn('加权蛋白质密度折算', raw['meat']['note'])
+        self.assertIn('计划食物', raw['meat']['note'])
         self.assertEqual('', rows['meat']['note'])
-        self.assertIn('谷类蛋白质', raw['meat']['note'])
+        self.assertIn('不扣除实际', raw['meat']['note'])
 
     def test_pdf_suggestion_numbers_and_units_never_wrap_apart(self):
         data = self.service.build_report_data(self.payload)
@@ -54,15 +54,16 @@ class ConciseReportTest(unittest.TestCase):
         data = self.service.build_report_data(self.payload)
         self.assertTrue(any(s.startswith('肉类（含水产品）') for s in data['suggestions']))
         self.assertTrue(any(s.startswith('蛋白质不足：') for s in data['suggestions']))
-        self.assertEqual('约 448.44 g/天',next(r for r in evaluation_rows(data) if r['key']=='meat')['target'])
+        self.assertEqual('237.26–249.35 g/天',next(r for r in evaluation_rows(data) if r['key']=='meat')['target'])
         self.assertNotIn('达标后再考虑结构占比', '\n'.join(data['suggestions']))
         self.assertEqual('', next(r for r in evaluation_rows(data) if r['key'] == 'meat')['note'])
         raw = next(r for r in data['food_standard_evaluation']['rows'] if r['key'] == 'meat')
-        self.assertAlmostEqual(448.442211, raw['target_grams'], places=5)
-        self.assertAlmostEqual(428.442211, raw['shortfall_grams'], places=5)
+        self.assertAlmostEqual(237.259906, raw['target_grams'], places=5)
+        self.assertAlmostEqual(217.259906, raw['shortfall_grams'], places=5)
 
     def test_chinese_protein_advice_fills_the_line_before_wrapping(self):
         data = self.service.build_report_data(self.payload)
+        data['suggestions'][1] += ' 请根据个人训练负荷和完整记录调整饮食，不以总能量统一替代各类营养目标。' * 2
         with tempfile.TemporaryDirectory() as tmp:
             pdf = Path(tmp) / 'report.pdf'; self.service.pdf_builder.build(data, pdf)
             with fitz.open(pdf) as doc:
@@ -70,7 +71,7 @@ class ConciseReportTest(unittest.TestCase):
                 lines = [l for b in page.get_text('dict')['blocks'] for l in b.get('lines', [])]
                 first = next(l for l in lines if '蛋白质不足：' in ''.join(s['text'] for s in l['spans']))
                 text = ''.join(s['text'] for s in first['spans'])
-                self.assertIn('85.3 g/天', text)
+                self.assertIn('12.2 g/天', text)
                 self.assertGreater(first['bbox'][2], page.rect.width - 116)
                 for line in lines:
                     text = ''.join(s['text'] for s in line['spans']).strip()

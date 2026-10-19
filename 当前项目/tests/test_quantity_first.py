@@ -15,51 +15,54 @@ class QuantityFirstTest(unittest.TestCase):
     def rows(self,data):
         return {r['key']:r for r in evaluation_rows(data)}
 
-    def test_deficit_precedes_ratios_in_all_presentations(self):
+    def test_personal_quantities_replace_energy_gate_in_all_presentations(self):
         data=self.service.build_report_data(self.payload); rows=self.rows(data)
         for k in ['beans_energy','tubers_energy','grains_remainder']:
-            self.assertEqual('过少',rows[k]['evaluation'],k)
-            self.assertIsNone(rows[k]['score'])
+            self.assertEqual('不足',rows[k]['evaluation'],k)
+            self.assertEqual(0, rows[k]['score'])
+            self.assertEqual('personal_target', rows[k]['evaluation_basis'])
         for cat in ['谷类','豆类','薯类']:
-            self.assertEqual('过少',data['category_result'][cat]['evaluation'],cat)
+            self.assertEqual('不足',data['category_result'][cat]['evaluation'],cat)
         suggestions='\n'.join(data['suggestions'])
-        self.assertIn('先增加主食',suggestions)
+        self.assertNotIn('先增加主食',suggestions)
         self.assertIn('蛋白质不足：',suggestions)
-        self.assertEqual('占比偏高', rows['livestock_remainder']['evaluation'])
-        self.assertEqual('占比偏低', rows['seafood']['evaluation'])
+        self.assertEqual('不足', rows['livestock_remainder']['evaluation'])
+        self.assertEqual('不足', rows['seafood']['evaluation'])
         self.assertNotIn('谷类能量占比偏高',suggestions)
-        self.assertIn('其他食物仍按各自标准评价',suggestions)
+        self.assertEqual('总能量过少。',data['suggestions'][0])
         self.assertNotIn('占比偏高',self.service.pdf_builder._interpretation(data))
         self.assertEqual(1,sum(s.startswith('肉类（含水产品）') for s in data['suggestions']))
+        self.assertEqual(14, len(data['suggestions']))
 
-    def test_meat_target_subtracts_protein_not_food_weight(self):
+    def test_meat_target_subtracts_planned_protein_not_recorded_food(self):
         data=self.service.build_report_data(self.payload); row=self.rows(data)['meat']
-        db=self.service.nutrition_service.food_db
-        excluded=sum(db[f['name']]['protein']*f['amount']/100 for f in self.payload['meals'] if db[f['name']]['category'] in {'谷类','奶类','蛋类'})
-        want=(65*1.5-excluded)/(db['牛肉']['protein']/100)
+        plan=data['food_standard_evaluation']['personal_targets']
+        want=plan['food_targets']['meat']['planning']
         self.assertAlmostEqual(want,row['target_grams'],places=4)
         self.assertEqual(20,row['actual'])
-        self.assertAlmostEqual(want-20,row['shortfall_grams'],places=4)
+        self.assertAlmostEqual(row['target_min']-20,row['shortfall_grams'],places=4)
         self.assertEqual('',row['note'])
-        self.assertIn('谷类',next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='meat')['note'])
-        self.assertTrue(any('总能量目前' in s and '参考目标' in s for s in data['suggestions']))
-        self.assertEqual('约 448.44 g/天',row['target'])
+        self.assertIn('不扣除实际',next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='meat')['note'])
+        changed=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=5000),dict(name='鲜奶',amount=3000)]})
+        self.assertEqual(want,self.rows(changed)['meat']['target_grams'])
+        self.assertGreater(want,0)
 
-    def test_complete_adequate_intake_then_evaluates_structure(self):
+    def test_every_energy_state_compares_fixed_personal_food_targets(self):
         # Rice provides enough carbohydrate/energy; beef supplies enough protein, no seafood.
         data=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=1400),dict(name='牛肉',amount=500)]})
         rows=self.rows(data)
-        self.assertEqual('能量占比偏高',rows['grains_remainder']['evaluation'])
-        self.assertEqual('能量占比偏低',rows['beans_energy']['evaluation'])
-        self.assertEqual('占比偏低',rows['seafood']['evaluation'])
+        self.assertEqual('过多',rows['grains_remainder']['evaluation'])
+        self.assertEqual('不足',rows['beans_energy']['evaluation'])
+        self.assertEqual('不足',rows['seafood']['evaluation'])
         self.assertNotEqual('不足',rows['quality_protein']['evaluation'])
 
-    def test_incomplete_records_do_not_invent_deficits_or_meat_targets(self):
+    def test_incomplete_records_keep_requirements_but_do_not_invent_intake(self):
         data=self.service.build_report_data({**self.payload,'source_foods':[], 'conversion_warnings':[{'code':'unresolved_period','food':'米饭'}]})
         rows=self.rows(data)
         self.assertEqual('-',rows['grains_remainder']['evaluation'])
         self.assertEqual('-',rows['meat']['evaluation'])
-        self.assertIsNone(rows['meat']['target_grams'])
+        self.assertIsNone(rows['meat']['actual'])
+        self.assertGreater(rows['meat']['target_grams'],0)
 
     def test_quality_page_default_off_and_explicit_opt_in_and_generation_date(self):
         for enabled in [False,True]:

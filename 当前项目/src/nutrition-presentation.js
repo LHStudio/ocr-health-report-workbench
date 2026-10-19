@@ -33,11 +33,12 @@ export function evaluationRows(data) {
 }
 
 export function evaluationWarnings(data) {
-  return [...new Set(['athlete_evaluation', 'food_standard_evaluation'].flatMap(section => data?.[section]?.warnings || []))]
+  const notes = [...new Set(['athlete_evaluation', 'food_standard_evaluation'].flatMap(section => data?.[section]?.warnings || []))]
     .filter(note => !['原文未明确年龄分界', '每项定量规则达标'].some(text => note.includes(text)))
     .filter(note => !['奶粉、奶酪折算鲜奶等价量', '蔬菜最低400g/天'].some(text => note.startsWith(text)))
     .filter(note => !note.includes('%') && !note.includes('优质蛋白=') && !note.includes('水产品占比'))
     .map(cleanDisplayText).filter(note => !['仅训练期', '60-70kg标准', '基础膳食参考标准'].includes(note))
+  return [...new Set([...notes, ...(data?.report_checks?.warnings || [])])]
 }
 
 export function finalEvaluation(row, review = {}) {

@@ -232,6 +232,19 @@ def _build_user(person: Mapping[str, Any], overrides: Mapping[str, Any] | None) 
         "physiologicalStage": pick("physiologicalStage", "生理阶段"),
         "foodTargetScale": pick("foodTargetScale", "食物摄入倍率"),
     }
+    # Match the existing workspace default for callers that do not send a profile.
+    # An explicit blank/non-training selection must never be replaced by a default.
+    if "trainingPhase" in override:
+        user["trainingPhase"] = override["trainingPhase"]
+    elif "训练阶段" in override:
+        user["trainingPhase"] = override["训练阶段"]
+    elif "训练阶段" in general:
+        user["trainingPhase"] = general["训练阶段"]
+    else:
+        status = str(user.get("currentStatus") or "").strip()
+        user["trainingPhase"] = {"正常训练": "training", "训练期": "training",
+                                 "比赛期": "competition", "赛期": "competition"}.get(
+                                     status, "training" if not status else "")
     return user
 
 

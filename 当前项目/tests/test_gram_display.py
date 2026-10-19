@@ -12,7 +12,7 @@ class GramDisplayTest(unittest.TestCase):
             'meals':[{'name':'米饭','amount':1234.56789},{'name':'豆腐','amount':123.45678},{'name':'土豆','amount':234.56789},
                      {'name':'牛肉','amount':456.78901},{'name':'鲜奶','amount':456.78901},{'name':'蛋类','amount':56.78901}]}
 
-    def test_percent_rules_project_to_grams_without_changing_internal_ratios(self):
+    def test_personal_gram_targets_are_not_projected_from_recorded_denominators(self):
         data=self.service.build_report_data(self.payload)
         rows={r['key']:r for r in evaluation_rows(data)}
         raw={r['key']:r for r in data['food_standard_evaluation']['rows']}
@@ -20,17 +20,19 @@ class GramDisplayTest(unittest.TestCase):
             self.assertEqual('g/天',rows[key]['unit'],key)
             self.assertNotIn('%',rows[key]['target']+rows[key]['note'])
             self.assertNotIn('占比',rows[key]['label'])
-        self.assertEqual('%',raw['beans_energy']['unit'])
+        self.assertEqual('g/天',raw['beans_energy']['unit'])
+        self.assertEqual('%',raw['beans_energy']['original_ratio']['unit'])
         self.assertAlmostEqual(123.46,rows['beans_energy']['actual'])
-        staple_energy=sum(f['nutrition']['energy'] for f in data['foods'] if f['category'] in {'谷类','豆类','薯类'})
-        # Reference grams use the current category's weighted energy density, not weight shares.
-        target=staple_energy*.05/(self.service.nutrition_service.food_db['豆腐']['energy']/100)
-        self.assertEqual(f'≥ {target:.2f} g/天',rows['beans_energy']['target'])
+        low,high=raw['beans_energy']['target_min'],raw['beans_energy']['target_max']
+        self.assertEqual(f'{low:.2f}–{high:.2f} g/天',rows['beans_energy']['target'])
         self.assertNotIn('%','\n'.join(evaluation_warnings(data)))
-        protein=data['nutrition']['protein']
-        self.assertEqual(f'≥ {protein*.5:.2f} g/天',rows['quality_protein']['target'])
-        macro=protein*4+data['nutrition']['carbohydrate']*4+data['nutrition']['fat']*9
-        self.assertEqual(f'{macro*.2/9:.2f}–{macro*.3/9:.2f} g/天',rows['fat']['target'])
+        self.assertEqual('48.75–130.00 g/天',rows['quality_protein']['target'])
+        energy=data['nutrition']['energy']['standard']
+        self.assertEqual(f'{energy*.2/9:.2f}–{energy*.3/9:.2f} g/天',rows['fat']['target'])
+        less=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=10)]})
+        small={r['key']:r for r in evaluation_rows(less)}
+        for key in ('beans_energy','tubers_energy','grains_remainder','meat','seafood','quality_protein','fat'):
+            self.assertEqual(rows[key]['target'],small[key]['target'])
 
     def test_pdf_excel_expose_only_grams_and_at_most_two_decimals(self):
         data=self.service.build_report_data(self.payload)

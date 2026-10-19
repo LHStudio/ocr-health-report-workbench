@@ -1,92 +1,95 @@
-"""先评价总量，再评价结构；不将蛋白质克数直接当作肉类食物克数。"""
+"""Compare intake with personal plans; energy is a summary, never a gate."""
 from .athlete import display_number
-from .energy_reference import energy_reference_text
+from .personal_targets import build_personal_targets
 
 STAPLE_RATIOS = {'beans_energy', 'tubers_energy', 'grains_remainder'}
 PROTEIN_RATIOS = {'seafood', 'quality_protein', 'livestock_remainder'}
 
 
-def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, categories, config):
-    rows = {r['key']: r for r in athlete['rows']}
-    complete = standard['nutrient_record_complete']
-    energy = nutrition['energy']
-    protein, carb = rows['protein'], rows['carbohydrate']
-    # The EER tolerance gates ONLY grains, beans and tubers. Non-staple
-    # quantities/proportions keep their own rules regardless of total energy.
-    state = ({'适宜':'adequate','适中':'adequate','过多':'excess','过少':'deficit','不足':'deficit'}
-             .get(energy.get('evaluation'), 'unknown') if complete else 'unknown')
-    standard['energy_gate'] = state
-    notes = []
-    if state == 'deficit':
-        current = sum(f['amount'] for f in foods if f['category'] in {'谷类', '豆类', '薯类'})
-        message = f'主食总量目前约 {display_number(current)} g/天；'
-        message += f"总能量目前 {display_number(energy['value'])} kcal/天，参考目标 {energy_reference_text(energy)} kcal/天；"
-        if carb['evaluation'] == '不足':
-            message += f"碳水化合物目前 {display_number(carb['actual'])} g/天，参考目标 {carb['target']}，尚差 {display_number(-carb['gap'])} g/天；"
-        notes.append(message + '应先增加主食，谷类、豆类、薯类均按过少评价，暂不按主食内部占比判断增减；其他食物仍按各自标准评价。')
-        if protein['evaluation'] == '不足':
-            notes.append(f"蛋白质不足：目前 {display_number(protein['actual'])} g/天，参考目标 {protein['target']}，尚差 {display_number(-protein['gap'])} g/天；蛋白质来源按各自参考目标调整。")
-    elif state == 'excess':
-        notes.append(f"总能量过多：目前 {display_number(energy['value'])} kcal/天，参考目标 {energy_reference_text(energy)} kcal/天；应先控制主食总量，谷类、豆类、薯类均按过多评价，暂不按主食内部占比提出加量建议；其他食物仍按各自标准评价。")
-    elif state == 'adequate':
-        notes.append('总能量适宜：保持全天饮食总量，按各类食物占比和既有参考目标调整搭配，以替换为主，不整体加量。')
+def target_text(low, high, planning=None):
+    if low is None:
+        return '暂无法折算'
+    if high is None:
+        return f'≥ {low:.2f} g/天'
+    if abs(high - low) < 1e-8:
+        return f'约 {low:.2f} g/天'
+    return f'{low:.2f}–{high:.2f} g/天'
 
+
+def comparison(actual, low, high):
+    if actual is None or low is None:
+        return '-', None, None
+    # Avoid numerical cancellation only; this is not a nutrition tolerance band.
+    if actual < low - 1e-8:
+        return '不足', 0, actual - low
+    if high is not None and actual > high + 1e-8:
+        return '过多', 0, actual - high
+    return '适中', 1, 0
+
+
+def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, categories, config, merged_meals=None):
+    complete = standard['nutrient_record_complete']
+    standard['energy_gate'] = ({'适宜': 'adequate', '适中': 'adequate', '过多': 'excess',
+                               '过少': 'deficit', '不足': 'deficit'}.get(nutrition['energy'].get('evaluation'), 'unknown')
+                              if complete else 'unknown')
+    plan = build_personal_targets(athlete, standard, food_db)
+    standard['personal_targets'] = plan
+    standard['warnings'].extend(plan['plan_warnings'])
+    groups = {'beans_energy': {'豆类'}, 'tubers_energy': {'薯类'}, 'grains_remainder': {'谷类'},
+              'seafood': {'水产品'}, 'livestock_remainder': {'畜禽肉'},
+              'quality_protein': {'畜禽肉', '水产品', '奶类', '蛋类'}}
+    labels = {'beans_energy': '豆类', 'tubers_energy': '薯类', 'grains_remainder': '谷类',
+              'seafood': '水产品', 'livestock_remainder': '畜禽肉', 'quality_protein': '肉蛋奶优质蛋白'}
+    precise_foods = ([dict(amount=amount, category=food_db[name].get('category', ''),
+                          protein=amount * float(food_db[name].get('protein') or 0) / 100)
+                      for name, amount in merged_meals.items() if name in food_db]
+                     if merged_meals is not None else
+                     [dict(amount=f['amount'], category=f['category'], protein=f['nutrition']['protein']) for f in foods])
     for row in standard['rows']:
         key = row['key']
-        if key not in STAPLE_RATIOS | PROTEIN_RATIOS:
+        if key not in groups:
             continue
-        if key in STAPLE_RATIOS and state != 'adequate':
-            status = {'excess':'过多','deficit':'过少','unknown':'-'}[state]
-            row['component_evaluation'] = row['evaluation']
-            row['component_score'] = row['score']
-            row['component_gap'] = row['gap']
-            row.update(evaluation=status, machine_evaluation=status, score=None, gap=None,
-                       evaluation_basis='energy_' + state)
-            row['note'] += '；仅谷类、豆类、薯类评价依据总能量方向；能量适宜后再评价主食内部占比。'
-        elif key in STAPLE_RATIOS | PROTEIN_RATIOS:
-            mapping = {'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'} if key in STAPLE_RATIOS else {'不足': '占比偏低', '过多': '占比偏高', '适中': '占比适中'}
-            row.update(evaluation=mapping.get(row['evaluation'], row['evaluation']),
-                       machine_evaluation=mapping.get(row['machine_evaluation'], row['machine_evaluation']), evaluation_basis='ratio')
-    meat_row, meat_message = meat_reference(protein, foods, food_db, complete)
-    if state == 'adequate':
-        meat_message = meat_message.replace('总蛋白质不足，可优先补充。','在保持总能量的前提下调整蛋白质来源搭配。')
+        row['original_ratio'] = {field: row.get(field) for field in
+                                 ('actual', 'unit', 'target', 'target_min', 'target_max', 'evaluation', 'score', 'gap')}
+        target = plan['food_targets'].get(key, {})
+        low, high = target.get('min'), target.get('max')
+        known = complete or row.get('actual') is not None
+        actual = (sum(food['protein'] if key == 'quality_protein' else food['amount']
+                      for food in precise_foods if food['category'] in groups[key]) if known else None)
+        status, score, gap = comparison(actual, low, high)
+        row.update(label=labels[key], actual=actual, unit='g/天', target=target_text(low, high),
+                   target_min=low, target_max=high, target_planning=target.get('planning'),
+                   gap=gap, evaluation=status, machine_evaluation=status,
+                   score=None if key == 'livestock_remainder' else score,
+                   note=target.get('note', '缺少适用个人需求或有效代表食物参数，不能以实际摄入反推目标。'),
+                   evaluation_basis='personal_target', representative=target.get('representative'))
+    meat_row, meat_message = meat_reference(plan, precise_foods, complete)
     standard['rows'].insert(next(i for i, r in enumerate(standard['rows']) if r['key'] == 'seafood'), meat_row)
     judged = [r for r in standard['rows'] if r['score'] is not None]
     total = standard['summary']['total']
     passed = sum(r['score'] for r in judged)
-    standard['summary'].update(passed=passed, evaluated=len(judged), attainment_percent=round(passed/total*100,1) if len(judged)==total else None)
+    standard['summary'].update(passed=passed, evaluated=len(judged),
+                               attainment_percent=round(passed / total * 100, 1) if len(judged) == total else None)
     standard['summary']['text'] = f'定量规则达标 {passed}/{len(judged)} 项；可评价 {len(judged)}/{total} 项。' + (
-        f'完整达标率 {passed/total*100:g}%（非医学综合评分）。' if len(judged)==total else '总能量未进入适宜区间或存在未评价项，不给出完整达标率。')
-    return notes, meat_message
+        f'完整达标率 {passed / total * 100:g}%（非医学综合评分）。' if len(judged) == total else
+        '存在未评价项，不给出完整达标率。')
+    return [], meat_message
 
 
-def meat_reference(protein_row, foods, food_db, complete):
-    meat = [f for f in foods if f['category'] in {'畜禽肉', '水产品'}]
-    actual = sum(f['amount'] for f in meat) if complete else None
-    actual_protein = sum(f['nutrition']['protein'] for f in meat)
-    excluded = sum(f['nutrition']['protein'] for f in foods if f['category'] in {'谷类', '奶类', '蛋类'})
-    lower = protein_row.get('target_min') if complete and protein_row['evaluation'] != '-' else None
-    residual = max(0, lower-excluded) if lower is not None else None
-    density = actual_protein/actual if actual and actual_protein > 0 else None
-    basis = '按当前肉类（含水产品）加权蛋白质密度折算'
-    if density is None:
-        fallback = food_db.get('牛肉', {}).get('protein')
-        density = float(fallback)/100 if fallback and float(fallback)>0 else None
-        basis = '当前肉类无有效密度，暂以牛肉蛋白质含量估算，选择具体肉类后需复核'
-    target = residual/density if residual is not None and density else None
-    shortfall = max(0, target-actual) if target is not None and actual is not None else None
-    note = '肉类蛋白质参考量=max(总蛋白质参考下限−谷类蛋白质−奶类蛋白质−蛋类蛋白质,0)；其他食物蛋白质另计。' + basis + '。'
-    status = ('不足' if protein_row['evaluation']=='不足' else '适中') if target is not None else '-'
-    row = dict(key='meat',label='肉类（含水产品）', actual=round(actual,4) if actual is not None else None,
-               unit='g/天',target=f'约 {display_number(target)} g/天' if target is not None else '暂无法折算',
-               target_grams=target,shortfall_grams=shortfall,protein_target=residual,
-               gap=round(actual-target,4) if target is not None else None,score=None,
-               machine_evaluation=status,evaluation=status,note=note,evaluation_basis='quantity_first')
-    if target is None:
-        message='肉类（含水产品）参考目标暂无法折算：请先核对总蛋白质目标、完整饮食记录及肉类蛋白质含量。'
-    else:
-        message=f'肉类（含水产品）：目前 {display_number(actual)} g/天，参考目标约 {display_number(target)} g/天，'
-        message+= '总蛋白质不足，可优先补充。' if protein_row['evaluation']=='不足' else '总蛋白质已满足，结合结构调整。'
-        if '加权蛋白质密度折算' not in basis:
-            message += basis + '。'
-    return row,message
+def meat_reference(plan, foods, complete):
+    target = plan['food_targets'].get('meat', {})
+    low, high, planning = target.get('min'), target.get('max'), target.get('planning')
+    actual = sum(f['amount'] for f in foods if f['category'] in {'畜禽肉', '水产品'}) if complete else None
+    status, _, gap = comparison(actual, low, high)
+    shortfall = max(0, low - actual) if low is not None and actual is not None else None
+    note = target.get('note', '个人需求或代表食谱约束不足，不能将肉类需求写为0克。')
+    row = dict(key='meat', label='肉类（含水产品）', actual=actual, unit='g/天',
+               target=target_text(low, high), target_min=low, target_max=high,
+               target_grams=planning, target_planning=planning, shortfall_grams=shortfall,
+               protein_target=plan.get('planned_meat_protein'), gap=gap, score=None,
+               machine_evaluation=status, evaluation=status, note=note,
+               evaluation_basis='personal_target', representative=target.get('representative'))
+    message = (f'肉类（含水产品）：目前 {display_number(actual)} g/天，个人参考目标 {row["target"]}，{status}。'
+               if actual is not None and low is not None else
+               '肉类（含水产品）参考目标或实际摄入暂无法完整比较，请核对个人需求及有效饮食记录，不将未知需求写为0克。')
+    return row, message

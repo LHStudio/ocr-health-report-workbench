@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from xml.sax.saxutils import escape
 from ..energy_reference import energy_reference_text
+from ..report_checks import energy_summary
 from .presentation import evaluation_rows, evaluation_warnings, evaluation_context
 from .pdf_legacy import NutritionPDFBuilder as LegacyNutritionPDFBuilder
 from ..report_style import normalize_report_style
@@ -233,6 +234,8 @@ class NutritionPDFBuilder:
             ('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),
             ('GRID',(0,0),(-1,-1),.5,grid)]))
         story.extend([profile, Spacer(1, 12)])
+        if data.get('assessment_status') == 'needs_review':
+            story.extend([Paragraph('待核对：存在未换算食物，本报告不是完整营养结论；具体条目见最后的整体评估及建议。', quality), Spacer(1, 6)])
         categories = ['谷类','薯类','蔬菜','水果','畜禽肉','水产品','蛋类','豆类','坚果','奶类','零食','运动营养食品','饮料','酒类']
         story.append(self._build_food_report(data, categories, normal=normal, header=header,
             category_style=category_style, suggestions=None))
@@ -315,6 +318,12 @@ class NutritionPDFBuilder:
         story.extend([PageBreak(), heading('整体评估及建议', '食物摄入量评估报告 · 整体评估及建议')])
         advice = ParagraphStyle('NutritionSuggestionFlow', parent=left, leading=16,
             leftIndent=19, firstLineIndent=-19, spaceAfter=9)
+        alerts = (data.get('report_checks') or {}).get('warnings') or []
+        if alerts:
+            story.append(Paragraph('自动核查提醒', advice))
+            for message in alerts:
+                story.append(Paragraph(escape(_as_text(message)), advice))
+            story.append(Spacer(1, 6))
         for index, item in enumerate(data.get('suggestions') or ['暂无自动建议'], 1):
             plain = f'{index}. {_as_text(item)}'
             story.append(NaturalSuggestionParagraph(_suggestion_markup(plain), advice, plain_text=plain))
@@ -491,9 +500,10 @@ class NutritionPDFBuilder:
     def _interpretation(data: dict) -> str:
         if data.get("interpretation"):
             return "<br/>".join(escape(line.strip()) for line in _as_text(data["interpretation"]).splitlines() if line.strip())
-        gate = {'适宜':'adequate','适中':'adequate','过多':'excess','过少':'deficit','不足':'deficit'}.get((data.get('nutrition') or {}).get('energy', {}).get('evaluation'), 'unknown')
-        if data.get('energy_guidance') and gate == (data.get('food_standard_evaluation') or {}).get('energy_gate'):
-            return escape(data['energy_guidance'])
+        if data.get('energy_guidance'):
+            if data.get('assessment_status') == 'needs_review':
+                return escape(data['energy_guidance'])
+            return escape(energy_summary(data) + '各类食物按个人营养目标与实际摄入独立比较，不按总能量方向统一增减主食。')
         nutrition = data.get("nutrition") or {}
         lines = []
         energy_evaluation = (nutrition.get("energy") or {}).get("evaluation")

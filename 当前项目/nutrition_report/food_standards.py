@@ -39,6 +39,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
     ]
     totals = defaultdict(lambda: defaultdict(float))
     missing = set()
+    missing_nutrient_parameters = []
     unknown_all = False
     source = payload.get('source_foods')
     blanks_are_zero = payload.get('blank_food_policy') == 'not_eaten'
@@ -81,10 +82,17 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
                     milk_trace.append(f'{name} {grams:g}g×{protein:g}/{milk_protein:g}={equivalent:.2f}g鲜奶等价量（按蛋白质估计）')
             else:
                 milk_equivalent += grams
-        for nutrient in ('energy', 'protein'):
+        # Every nutrient used by the report must be known for consumed foods.
+        # Explicit finite zeros are valid; missing/invalid values are unknown,
+        # not zero intake. Unmatched and unconvertible rows were skipped above.
+        for nutrient in ('energy', 'protein', 'carbohydrate', 'fat', 'calcium'):
             value = number(info.get(nutrient))
             if value is None:
                 missing.add(category)
+                record = dict(food=name, nutrient=nutrient)
+                if record not in missing_nutrient_parameters:
+                    missing_nutrient_parameters.append(record)
+                    notes.append(f'{name}缺少有效营养参数 {nutrient}；不能将未知参数当作0生成完整营养结论。')
             else:
                 totals[category][nutrient] += value * grams / 100
 
@@ -175,4 +183,5 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
         if proxies:
             notes.append('代表食物估算（需复核）：' + '、'.join(proxies))
     return dict(source='用户新增膳食标准 2026-10-12', rows=rows, summary=summary, warnings=notes,
-                nutrient_record_complete=not unknown_all and not missing)
+                nutrient_record_complete=not unknown_all and not missing,
+                missing_nutrient_parameters=missing_nutrient_parameters)

@@ -62,12 +62,20 @@ class AthleteInterventionTest(unittest.TestCase):
         vegetable = next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='vegetables')
         self.assertEqual(-300, vegetable['gap'])
 
-    def test_fat_percentage_and_zero_energy(self):
+    def test_fat_grams_need_personal_energy_reference(self):
         row = self.rows()["fat"]
-        self.assertAlmostEqual(40 * 9 / (119 * 4 + 350 * 4 + 40 * 9) * 100, row["actual"], places=2)
+        self.assertEqual(40, row['actual'])
+        self.assertEqual('g/天', row['unit'])
+        self.assertIsNone(row['target_min'])
+        self.assertEqual('-', row['evaluation'])
+        row = self.rows(gender='female', activityLevel='2')['fat']
+        self.assertAlmostEqual(2100*.2/9, row['target_min'])
+        self.assertAlmostEqual(2100*.3/9, row['target_max'])
         report = self.service.build_report_data({"user": {"athleteType": "strength", "trainingPhase": "training"}})
         row = next(r for r in report["athlete_evaluation"]["rows"] if r["key"] == "fat")
-        self.assertIsNone(row["actual"])
+        self.assertEqual(0, row['actual'])
+        self.assertIsNone(row['target_min'])
+        self.assertEqual('-', row['evaluation'])
 
     def test_weight_changes_targets_and_preview_matches(self):
         self.assertEqual("136–160 g/天", self.rows(weight=80)["protein"]["target"])

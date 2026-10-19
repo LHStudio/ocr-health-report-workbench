@@ -24,7 +24,7 @@ class RC6Test(unittest.TestCase):
     page=next(p for p in doc if '能量及钙摄入量评估报告' in p.get_text())
     lines=[l for b in page.get_text('dict')['blocks'] for l in b.get('lines',[])]
     labels={ ''.join(s['text'] for s in l['spans']).strip():l['bbox'] for l in lines}
-    body=[l['bbox'] for l in lines if any('总能量摄入不足' in s['text'] for s in l['spans'])]
+    body=[l['bbox'] for l in lines if any('总能量过少' in s['text'] for s in l['spans'])]
     note=next(s['bbox'] for l in lines for s in l['spans'] if s['text'].strip()=='说明')
     self.assertLess(labels['能量及钙摄入量评估报告'][1],80);self.assertLess(labels['项目'][1],120)
     # Content-sized explanation/note replaces the former full-page filler.

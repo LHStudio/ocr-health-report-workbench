@@ -1,5 +1,6 @@
 """按用户提供的V2.0文档生成机器初稿；不推导文档未给出的评分阈值。"""
 import math
+from .personal_targets import energy_bounds
 
 
 def display_number(value):
@@ -51,36 +52,42 @@ def evaluate_athlete(user, nutrition, categories, config):
             if actual is None:
                 status = "无法计算（供能合计为0）"
             elif mode == "approx":
-                status = "不足" if actual < low else "过多" if actual > low else "适中"
-                gap = round(actual - low, 2)
-            elif actual < low:
+                status = "不足" if actual < low - 1e-8 else "过多" if actual > low + 1e-8 else "适中"
+                gap = actual - low if status != '适中' else 0
+            elif actual < low - 1e-8:
                 status = "不足"
-                gap = round(actual - low, 2)
-            elif mode == "range" and actual > high:
+                gap = actual - low
+            elif mode == "range" and actual > high + 1e-8:
                 status = "过多"
-                gap = round(actual - high, 2)
+                gap = actual - high
             else:
                 status = "适中"
                 gap = 0
         status = status if status in {"不足", "过多", "适中"} else "-"
         rows.append(dict(key=key, label=label, actual=actual, unit=unit, target=target,
                          gap=gap, machine_evaluation=status, evaluation=status,
-                         target_min=bounds[0] if bounds else None, target_max=bounds[-1] if bounds else None))
+                         target_min=bounds[0] if bounds else None,
+                         target_max=bounds[-1] if bounds and mode != 'minimum' else None))
 
     for key, label in (("protein", "蛋白质"), ("carbohydrate", "碳水化合物")):
         bounds = [round(n * weight, 4) for n in rule[key]] if rule and weight else None
         mode = "range" if bounds and len(bounds) == 2 else "minimum" if key == "protein" else "approx"
         add(key, label, nutrition[key], "g/天", bounds, mode, "待补充有效体重" if not weight else "")
-    # 与现有报告三大营养素供能图一致：蛋白质4、碳水4、脂肪9 kcal/g。
-    macro_energy = nutrition["protein"] * 4 + nutrition["carbohydrate"] * 4 + nutrition["fat"] * 9
-    fat_percent = nutrition["fat"] * 9 / macro_energy * 100 if macro_energy > 0 else None
-    add("fat", "脂肪供能比", fat_percent, "%", config["fat_energy_percent"])
+    # Fat requirements use personal energy need, never recorded macro energy.
+    energy_low, energy_high = energy_bounds(nutrition['energy'])
+    fat_bounds = [energy_low * config['fat_energy_percent'][0] / 100 / 9,
+                  energy_high * config['fat_energy_percent'][1] / 100 / 9] if energy_low and energy_high else None
+    add("fat", "脂肪", nutrition['fat'], "g/天", fat_bounds,
+        blocked='缺少有效个人能量需求，脂肪目标无法计算' if fat_bounds is None else '')
+    if fat_bounds is None:
+        warnings.append('缺少有效个人能量需求，脂肪目标无法计算；不以实际摄入反推。')
     calcium_target = config["calcium_mg"]["adult" if age and age >= config["adult_age"] else "minor"] if age else None
     add("calcium", "钙", nutrition["calcium"]["value"], "mg/天", [calcium_target] if age else None, "minimum", "待补充有效年龄" if not age else "")
     add("vegetables", "蔬菜", categories.get("蔬菜", {}).get("value", 0), "g/天", [config["vegetables_g_min"]], "minimum")
     for row in rows:
-        if row["actual"] is not None:
-            row["actual"] = round(row["actual"], 2)
+        row['target_planning'] = (rule['protein_preferred'] * weight
+                                  if row['key'] == 'protein' and rule and rule.get('protein_preferred') and weight
+                                  else row.get('target_min'))
     for category, info in categories.items():
         info["evaluation"] = "-"
     if "蔬菜" in categories:
@@ -100,5 +107,5 @@ def evaluate_athlete(user, nutrition, categories, config):
         suggestions.append(f"团体项目蛋白质优选参考约 {display_number(rule['protein_preferred'] * weight)} g/天（1.7 g/kg）。")
     return dict(source=config["source"], scope=config["scope"], athlete_type=selected,
                 athlete_label=rule["label"] if rule else "未确认", training_phase=phase,
-                warnings=warnings, rows=rows,
-                gap_note="差值=实际摄入−参考目标/边界；负值为不足，区间内为0。脂肪差值单位为百分点。钙和蔬菜仅比较下限，不判断过量。"), suggestions
+                warnings=warnings, rows=rows, targets_applicable=not reason and bool(rule and weight),
+                gap_note="差值=实际摄入−个人参考目标/边界；负值为不足，区间内为0。脂肪按个人能量需求折算克数。钙和蔬菜仅比较下限，不判断过量。"), suggestions
