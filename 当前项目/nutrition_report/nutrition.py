@@ -1,5 +1,6 @@
 import json
 import math
+from .energy_reference import bmr_bounds, energy_reference_text
 from datetime import datetime, timezone, timedelta
 from .quantity_first import apply_quantity_priority
 from .gram_display import attach_gram_display
@@ -243,19 +244,30 @@ class NutritionService:
             })
 
         user = user or {}
-        energy_standard = self._lookup_energy_eer(user)
+        bounds = bmr_bounds(user)
+        energy_standard = self._lookup_energy_eer(user) if bounds is None else None
         energy_eval = self._eval_energy_against_standard(total_energy, energy_standard)
         activity = str(user.get('activityLevel', '')).strip()
         activity_label = self.female_eer.get('activity_levels', {}).get(activity, {}).get('label', '')
         standard_note = ('kcal/天 · 女性EER（按活动量）' if energy_standard is not None else
                          '请选择活动量' if not activity else '请核对年龄、性别与活动量')
 
+        if bounds is not None:
+            low, high = bounds
+            energy_standard = f'{low:g}-{high:g}'
+            energy_eval = '过少' if total_energy < low else '过多' if total_energy > high else '适宜'
+            standard_note = 'kcal/天 · BMR建议能量区间（按填写上下限）'
+            activity_label = ''
+
         nutrition_total = {
             "energy": {
                 "value": round(total_energy, 2),
                 "standard": energy_standard,
                 "evaluation": energy_eval,
-                "standard_source": self.female_eer['title'],
+                "standard_source": 'BMR建议能量区间' if bounds is not None else self.female_eer['title'],
+                "reference_type": 'bmr' if bounds is not None else 'eer',
+                "standard_min": bounds[0] if bounds is not None else None,
+                "standard_max": bounds[1] if bounds is not None else None,
                 "standard_note": standard_note,
                 "activity_label": activity_label,
             },

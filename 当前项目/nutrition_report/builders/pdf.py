@@ -5,6 +5,7 @@ import os
 import re
 from pathlib import Path
 from xml.sax.saxutils import escape
+from ..energy_reference import energy_reference_text
 from .presentation import evaluation_rows, evaluation_warnings, evaluation_context
 from .pdf_legacy import NutritionPDFBuilder as LegacyNutritionPDFBuilder
 from ..report_style import normalize_report_style
@@ -236,13 +237,6 @@ class NutritionPDFBuilder:
         story.append(self._build_food_report(data, categories, normal=normal, header=header,
             category_style=category_style, suggestions=None))
 
-        story.extend([PageBreak(), heading('整体评估及建议', '食物摄入量评估报告 · 整体评估及建议')])
-        advice = ParagraphStyle('NutritionSuggestionFlow', parent=left, leading=16,
-            leftIndent=19, firstLineIndent=-19, spaceAfter=9)
-        for index, item in enumerate(data.get('suggestions') or ['暂无自动建议'], 1):
-            plain = f'{index}. {_as_text(item)}'
-            story.append(NaturalSuggestionParagraph(_suggestion_markup(plain), advice, plain_text=plain))
-
         story.extend([PageBreak(), heading('能量及钙摄入量评估报告')])
         nutrition = data.get('nutrition') or {}
         energy, calcium = nutrition.get('energy') or {}, nutrition.get('calcium') or {}
@@ -300,7 +294,7 @@ class NutritionPDFBuilder:
                 ('INNERGRID',(0,0),(-1,0),.6,colors.white),
                 ('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),
                 ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
-            story.extend([table,GenerationDateFooter('报告生成日期：'+str(data.get('generated_at') or data.get('generated_date') or ''),self.font_name)])
+            story.append(table)
 
         if data.get('include_quality_page') is True:
             story.extend([PageBreak(),heading('OCR 换算与数据质量说明')])
@@ -318,6 +312,14 @@ class NutritionPDFBuilder:
                 f"云端状态：{_as_text(source.get('message') or '未记录')}",f"人员文件夹：{_as_text(data.get('source_person_id') or '-')}" ]
             if source.get('error'): source_lines.append(f"回退原因：{_as_text(source['error'])}")
             for item in source_lines: story.extend([Paragraph(escape(item),quality),Spacer(1,4)])
+        story.extend([PageBreak(), heading('整体评估及建议', '食物摄入量评估报告 · 整体评估及建议')])
+        advice = ParagraphStyle('NutritionSuggestionFlow', parent=left, leading=16,
+            leftIndent=19, firstLineIndent=-19, spaceAfter=9)
+        for index, item in enumerate(data.get('suggestions') or ['暂无自动建议'], 1):
+            plain = f'{index}. {_as_text(item)}'
+            story.append(NaturalSuggestionParagraph(_suggestion_markup(plain), advice, plain_text=plain))
+
+        story.append(GenerationDateFooter('报告生成日期：'+str(data.get('generated_at') or data.get('generated_date') or ''),self.font_name))
         doc.build(story)
 
     def _build_food_report(
@@ -408,6 +410,8 @@ class NutritionPDFBuilder:
     def _format_energy_intake(energy: dict) -> str:
         value = escape(_as_text(energy.get("value", "-")))
         standard = energy.get("standard")
+        if energy.get('reference_type') == 'bmr':
+            return f"{value} kcal/day<br/>建议能量区间 {escape(energy_reference_text(energy))} kcal/天<br/>BMR（填写区间）"
         if standard not in (None, ""):
             return f"{value} kcal/day<br/>推荐能量 {escape(_as_text(standard))} kcal/天<br/>{escape(_as_text(energy.get('activity_label')))}（女性EER）"
         return f"{value} kcal/day"

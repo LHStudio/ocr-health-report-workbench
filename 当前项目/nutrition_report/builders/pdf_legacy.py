@@ -5,6 +5,7 @@ import os
 import re
 from pathlib import Path
 from xml.sax.saxutils import escape
+from ..energy_reference import energy_reference_text
 from .presentation import evaluation_rows, evaluation_warnings, evaluation_context
 
 from reportlab.lib import colors
@@ -244,7 +245,6 @@ class NutritionPDFBuilder:
 
         page_groups = [
             ["谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类", "豆类", "坚果", "奶类", "零食", "运动营养食品", "饮料", "酒类"],
-            [],
         ]
         for page_index, categories in enumerate(page_groups):
             if page_index:
@@ -255,7 +255,7 @@ class NutritionPDFBuilder:
                 normal=normal,
                 header=header,
                 category_style=category_style,
-                suggestions=(data.get("suggestions") or []) if page_index == len(page_groups) - 1 else None,
+                suggestions=None,
             ))
         story.append(PageBreak())
 
@@ -357,8 +357,7 @@ class NutritionPDFBuilder:
                              Paragraph(_evaluation_text(row['evaluation']), final_body)])
             table = Table(rows, colWidths=[34*mm, 30*mm, 70*mm, 20*mm, 22*mm], repeatRows=1)
             table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4F75B5")), ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3)]))
-            athlete_story.extend([Spacer(1, 3*mm), table, GenerationDateFooter(
-                '报告生成日期：' + str(data.get('generated_at') or data.get('generated_date') or ''), self.font_name)])
+            athlete_story.extend([Spacer(1, 3*mm), table])
 
 
             story.extend([PageBreak(), KeepInFrame(doc.width, doc.height-12, athlete_story, mode='shrink')])
@@ -395,6 +394,13 @@ class NutritionPDFBuilder:
                 story.append(Paragraph(escape(line), quality))
                 story.append(Spacer(1, 0.3 * mm))
 
+        story.extend([PageBreak(), Paragraph('整体评估及建议', title)])
+        advice = ParagraphStyle('FinalSuggestions', parent=left, leading=16,
+                                leftIndent=19, firstLineIndent=-19, spaceAfter=9)
+        for index, item in enumerate(data.get('suggestions') or ['暂无自动建议'], 1):
+            plain = f'{index}. {_as_text(item)}'
+            story.append(NaturalSuggestionParagraph(_suggestion_markup(plain), advice, plain_text=plain))
+        story.append(GenerationDateFooter('报告生成日期：'+str(data.get('generated_at') or data.get('generated_date') or ''),self.font_name))
         doc.build(story)
 
     def _build_food_report(
@@ -479,6 +485,8 @@ class NutritionPDFBuilder:
     def _format_energy_intake(energy: dict) -> str:
         value = escape(_as_text(energy.get("value", "-")))
         standard = energy.get("standard")
+        if energy.get('reference_type') == 'bmr':
+            return f"{value} kcal/day<br/>建议能量区间 {escape(energy_reference_text(energy))} kcal/天<br/>BMR（填写区间）"
         if standard not in (None, ""):
             return f"{value} kcal/day<br/>推荐能量 {escape(_as_text(standard))} kcal/天<br/>{escape(_as_text(energy.get('activity_label')))}（女性EER）"
         return f"{value} kcal/day"

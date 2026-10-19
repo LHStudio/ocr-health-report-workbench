@@ -224,6 +224,8 @@ def _build_user(person: Mapping[str, Any], overrides: Mapping[str, Any] | None) 
         "height": pick("height", "身高"),
         "weight": pick("weight", "体重"),
         "fatFreeMass": pick("fatFreeMass", "去脂体重"),
+        "bmrMin": pick("bmrMin", "BMR最低值"),
+        "bmrMax": pick("bmrMax", "BMR最高值"),
         "gender": _normalise_gender(pick("gender", "性别")),
         "bmi": pick("bmi", "BMI"),
         "activityLevel": override["activityLevel"] if "activityLevel" in override else pick("activityLevel", "运动量"),
@@ -316,7 +318,9 @@ def build_payload_from_ocr_person(
     user = _build_user(person, user_overrides)
     general = person.get("general") if isinstance(person.get("general"), Mapping) else {}
     effective_date = report_date or _text(general.get("调查日期")) or date_type.today().isoformat()
-    if not user.get("age") or not user.get("gender") or not user.get("activityLevel"):
+    from .energy_reference import bmr_bounds
+    bounds = bmr_bounds(user)
+    if bounds is None and (not user.get("age") or not user.get("gender") or not user.get("activityLevel")):
         warnings.append(_warning(
             "missing_energy_profile",
             "选择活动量并填写年龄、性别后，可显示对应的女性EER推荐能量",

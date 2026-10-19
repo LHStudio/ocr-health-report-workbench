@@ -44,7 +44,7 @@ class ConciseReportTest(unittest.TestCase):
             with fitz.open(path) as doc:
                 # Section boundaries, not removed running headers, identify advice pages.
                 start = next(i for i, p in enumerate(doc) if '整体评估及建议' in p.get_text())
-                end = next(i for i, p in enumerate(doc) if '能量及钙摄入量评估报告' in p.get_text())
+                end = len(doc)
                 text = '\n'.join(doc[i].get_text() for i in range(start, end))
                 self.assertFalse(re.search(r'\d\s*\n\s*(?:kcal|mg|g)/天', text), text)
                 for value in units:
@@ -94,7 +94,7 @@ class ConciseReportTest(unittest.TestCase):
             pdf = Path(tmp) / 'report.pdf'; xlsx = Path(tmp) / 'report.xlsx'
             self.service.pdf_builder.build(data, pdf); self.service.excel_builder.build(data, xlsx)
             with fitz.open(pdf) as doc:
-                page = next(p for p in doc if '运动员专项膳食评价' in p.get_text())
+                page = doc[-1]
                 self.assertIn('报告生成日期：' + data['generated_at'], page.get_text())
                 self.assertNotIn('奶粉、奶酪折算鲜奶等价量', page.get_text())
                 self.assertNotIn('蔬菜最低400g/天', page.get_text())
@@ -102,7 +102,7 @@ class ConciseReportTest(unittest.TestCase):
                 self.assertGreater(footer.x0, page.rect.width / 2)
                 self.assertGreater(footer.y0, page.rect.height * .8)
             wb = openpyxl.load_workbook(xlsx, data_only=True)
-            self.assertEqual(data['generated_at'], wb['运动员专项评价'].cell(wb['运动员专项评价'].max_row, 2).value)
+            self.assertEqual(data['generated_at'], wb['建议'].cell(wb['建议'].max_row, 2).value)
             wb.close()
 
 

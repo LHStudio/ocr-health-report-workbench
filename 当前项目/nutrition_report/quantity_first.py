@@ -1,5 +1,6 @@
 """先评价总量，再评价结构；不将蛋白质克数直接当作肉类食物克数。"""
 from .athlete import display_number
+from .energy_reference import energy_reference_text
 
 STAPLE_RATIOS = {'beans_energy', 'tubers_energy', 'grains_remainder'}
 PROTEIN_RATIOS = {'seafood', 'quality_protein', 'livestock_remainder'}
@@ -19,14 +20,14 @@ def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, catego
     if state == 'deficit':
         current = sum(f['amount'] for f in foods if f['category'] in {'谷类', '豆类', '薯类'})
         message = f'主食总量目前约 {display_number(current)} g/天；'
-        message += f"总能量目前 {display_number(energy['value'])} kcal/天，参考目标 {display_number(energy['standard'])} kcal/天；"
+        message += f"总能量目前 {display_number(energy['value'])} kcal/天，参考目标 {energy_reference_text(energy)} kcal/天；"
         if carb['evaluation'] == '不足':
             message += f"碳水化合物目前 {display_number(carb['actual'])} g/天，参考目标 {carb['target']}，尚差 {display_number(-carb['gap'])} g/天；"
         notes.append(message + '应先增加主食，谷类、豆类、薯类均按过少评价，暂不按主食内部占比判断增减；其他食物仍按各自标准评价。')
         if protein['evaluation'] == '不足':
             notes.append(f"蛋白质不足：目前 {display_number(protein['actual'])} g/天，参考目标 {protein['target']}，尚差 {display_number(-protein['gap'])} g/天；蛋白质来源按各自参考目标调整。")
     elif state == 'excess':
-        notes.append(f"总能量过多：目前 {display_number(energy['value'])} kcal/天，参考目标 {display_number(energy['standard'])} kcal/天；应先控制主食总量，谷类、豆类、薯类均按过多评价，暂不按主食内部占比提出加量建议；其他食物仍按各自标准评价。")
+        notes.append(f"总能量过多：目前 {display_number(energy['value'])} kcal/天，参考目标 {energy_reference_text(energy)} kcal/天；应先控制主食总量，谷类、豆类、薯类均按过多评价，暂不按主食内部占比提出加量建议；其他食物仍按各自标准评价。")
     elif state == 'adequate':
         notes.append('总能量适宜：保持全天饮食总量，按各类食物占比和既有参考目标调整搭配，以替换为主，不整体加量。')
 

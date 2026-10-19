@@ -17,6 +17,6 @@ class CleanupTest(unittest.TestCase):
      self.assertNotIn(phrase,text)
     first=doc[0].get_text()
     for name in ('谷类','薯类','蔬菜','水果','畜禽肉','水产品','蛋类','豆类','坚果','奶类','零食','运动营养食品','饮料','酒类'):self.assertIn(name,first)
-    self.assertIn('整体评估及建议',doc[1].get_text())
-    self.assertNotIn('每日摄入量',doc[1].get_text())
+    self.assertIn('整体评估及建议',doc[-1].get_text())
+    self.assertNotIn('每日摄入量',doc[-1].get_text())
     self.assertIn('每日摄入量',doc[0].get_text())

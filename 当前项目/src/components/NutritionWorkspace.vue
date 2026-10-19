@@ -147,7 +147,12 @@
           </section>
         </section>
         <h4>人员与问卷信息</h4>
-        <div class="general-grid"><label v-for="(value, key) in selected.general" :key="key">{{ key }}<input v-model="selected.general[key]" class="value-input" :placeholder="key.includes('地点') || key.includes('时段') || key.includes('部位') ? '请根据勾选补充' : ''" /></label></div>
+        <div class="general-grid"><label v-for="(value, key) in questionnaireGeneral" :key="key">{{ key }}<input v-model="selected.general[key]" class="value-input" :placeholder="key.includes('地点') || key.includes('时段') || key.includes('部位') ? '请根据勾选补充' : ''" /></label></div>
+        <div class="general-grid bmr-range-fields">
+          <label>BMR最低值（kcal/天）<input v-model="selected.general['BMR最低值']" type="number" min="0" step="any" class="value-input" aria-label="BMR最低值" placeholder="建议能量下限" /></label>
+          <label>BMR最高值（kcal/天）<input v-model="selected.general['BMR最高值']" type="number" min="0" step="any" class="value-input" aria-label="BMR最高值" placeholder="建议能量上限" /></label>
+        </div>
+        <p class="hint">BMR上下限须同时填写且为正数，最低值不得大于最高值。填写后直接采用该建议能量区间，不使用女性EER；均留空则沿用原规则。</p>
         <section v-if="checkboxReview.length" class="checkbox-review-panel" aria-label="纸质勾选识别核对">
           <div class="checkbox-review-head"><div><h4>纸质勾选识别核对</h4><p>点击“已选 / 未选 / 不确定”即可人工修改；设为已选后会同步更新上方对应餐次，保存时写入 Excel。</p></div><span>{{ checkboxReview.length }} 项</span></div>
           <div class="checkbox-review-grid">
@@ -319,6 +324,7 @@ function manualEvaluationsPayload() {
 function openNutritionReview() { reportErrorMessage.value = ''; reportSuccessMessage.value = ''; nutritionReviewOpen.value = true; scheduleNutritionPreview() }
 function closeNutritionReview() { nutritionReviewOpen.value = false }
 function formatSourceTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString('zh-CN', { hour12: false }) }
+const questionnaireGeneral = computed(() => Object.fromEntries(Object.entries(selected.value?.general || {}).filter(([key]) => !['BMR最低值', 'BMR最高值'].includes(key))))
 function genderForReport(value) { const text = String(value || '').trim().toLowerCase(); return ['女', '女性', 'female', 'f'].includes(text) ? 'female' : ['男', '男性', 'male', 'm'].includes(text) ? 'male' : '' }
 function selectPerson(person) {
   if (selectedId.value) { reportProfiles.value[selectedId.value] = { ...reportProfile.value }; reportReviews.value[selectedId.value] = copyReportReview(reportReview.value) }

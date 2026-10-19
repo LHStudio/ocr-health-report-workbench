@@ -69,7 +69,7 @@ class QuantityFirstTest(unittest.TestCase):
                 with fitz.open(p) as doc:
                     text='\n'.join(page.get_text() for page in doc)
                     self.assertEqual(enabled,'OCR 换算与数据质量说明' in text)
-                    pages=[page for page in doc if '运动员专项膳食评价' in page.get_text()]
+                    pages=[page for page in doc if '整体评估及建议' in page.get_text()]
                     self.assertTrue(pages)
                     last=pages[-1]
                     matches=last.search_for('报告生成日期')

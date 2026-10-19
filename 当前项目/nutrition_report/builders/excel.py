@@ -3,6 +3,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from pathlib import Path
 import math
 from copy import copy
+from ..energy_reference import energy_reference_text
 from .presentation import evaluation_rows, evaluation_warnings, evaluation_context
 
 
@@ -45,9 +46,9 @@ class NutritionExcelBuilder:
                         font = copy(cell.font)
                         font.color = "DC2626"
                         cell.font = font
-        if '运动员专项评价' in wb.sheetnames:
-            ws = wb['运动员专项评价']
-            ws.append(['报告生成日期', data.get('generated_at') or data.get('generated_date', '')])
+        ws = wb['建议']
+        wb.move_sheet(ws, offset=len(wb.sheetnames)-1-wb.sheetnames.index('建议'))
+        ws.append(['报告生成日期', data.get('generated_at') or data.get('generated_date', '')])
         if '运动员专项评价' in wb.sheetnames:
             for row in wb['运动员专项评价']:
                 cell = row[3] if len(row) > 3 else None
@@ -240,7 +241,7 @@ class NutritionExcelBuilder:
             ("脂肪", nutrition.get("fat", ""), "g", athlete_rows.get("fat", {}).get("evaluation", "-")),
             ("碳水化合物", nutrition.get("carbohydrate", ""), "g", athlete_rows.get("carbohydrate", {}).get("evaluation", "-")),
             ("钙", nutrition.get("calcium", {}).get("value", ""), "mg/day", nutrition.get("calcium", {}).get("evaluation", "")),
-            ("推荐能量", nutrition.get("energy", {}).get("standard"), "kcal/天", "女性EER（按活动量）"),
+            ("推荐能量", energy_reference_text(nutrition.get("energy", {})) if nutrition.get("energy", {}).get("reference_type") == 'bmr' else nutrition.get("energy", {}).get("standard"), "kcal/天", nutrition.get("energy", {}).get("standard_note", "")),
             ("活动量", nutrition.get("energy", {}).get("activity_label") or "未选择", "", ""),
         ]
 

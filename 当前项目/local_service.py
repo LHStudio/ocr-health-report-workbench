@@ -50,7 +50,7 @@ app = FastAPI(title="本地 OCR 批量回写服务")
 app.add_middleware(CORSMiddleware, allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"], allow_methods=["*"], allow_headers=["*"])
 app.mount("/files", StaticFiles(directory=JOB_ROOT), name="files")
 
-NUTRITION_GENERAL_COLUMNS = ["人员文件夹", "受试者编号", "姓名", "调查日期", "访视号", "每日餐次", "每周在家吃饭天数", "早餐地点", "午餐地点", "晚餐地点", "每周户外日照天数", "每日户外日照时长(小时)", "晒太阳时段", "皮肤暴露部位", "性别", "年龄", "身高", "体重", "去脂体重", "人工备注"]
+NUTRITION_GENERAL_COLUMNS = ["人员文件夹", "受试者编号", "姓名", "调查日期", "访视号", "每日餐次", "每周在家吃饭天数", "早餐地点", "午餐地点", "晚餐地点", "每周户外日照天数", "每日户外日照时长(小时)", "晒太阳时段", "皮肤暴露部位", "性别", "年龄", "身高", "体重", "去脂体重", "BMR最低值", "BMR最高值", "人工备注"]
 NUTRITION_FOOD_COLUMNS = ["人员文件夹", "姓名", "食物编号", "食物名称", "平均每次食用量", "次数", "频率周期(请核对)", "是否不吃", "人工核对备注"]
 NUTRITION_SUPPLEMENT_COLUMNS = ["人员文件夹", "姓名", "保健品种类", "保健品名称", "平均每次服用量", "次数", "频率周期(请核对)", "是否不吃", "备注"]
 IMAGING_COLUMNS = ["病人ID", "文件名", "姓名", "性别", "年龄", "超声所见", "超声诊断", "检查时间", "需核对字段"]
@@ -2799,6 +2799,14 @@ def write_nutrition_workbook(state: dict[str, Any], people: list[dict[str, Any]]
     template_path = state.get("template_path") or NUTRITION_TEMPLATE
     workbook = load_workbook(template_path)
     general_sheet = nutrition_sheet(workbook, "人员汇总", "人员", NUTRITION_GENERAL_COLUMNS)
+    # Older and custom summary templates must retain newly entered BMR fields.
+    header_row = detect_header_row(general_sheet)
+    headers = [clean(general_sheet.cell(header_row, c).value) for c in range(1, general_sheet.max_column + 1)]
+    for field in ("BMR最低值", "BMR最高值"):
+        if field not in headers:
+            cell = general_sheet.cell(header_row, general_sheet.max_column + 1, field)
+            cell._style = copy(general_sheet.cell(header_row, 1)._style)
+            headers.append(field)
     food_sheet = nutrition_sheet(workbook, "食物频率明细", "食物", NUTRITION_FOOD_COLUMNS)
     supplement_sheet = nutrition_sheet(workbook, "营养保健品", "保健", NUTRITION_SUPPLEMENT_COLUMNS)
     prepare_nutrition_detail_export_sheet(food_sheet)

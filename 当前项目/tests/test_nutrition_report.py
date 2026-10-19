@@ -163,8 +163,8 @@ class NutritionReportServiceTest(unittest.TestCase):
                 image_counts = [len(page.get_images(full=True)) for page in pdf_document]
             self.assertEqual(len(page_texts), 4)
             self.assertNotIn('新增膳食标准逐项评价', pdf_text)
-            self.assertIn('坚果', page_texts[3])
-            self.assertIn("运动员专项膳食评价", page_texts[3])
+            self.assertIn('坚果', page_texts[2])
+            self.assertIn("运动员专项膳食评价", page_texts[2])
             self.assertIn("姓名", page_texts[0])
             self.assertIn("测试甲", page_texts[0])
             self.assertIn("年龄", page_texts[0])
@@ -178,13 +178,13 @@ class NutritionReportServiceTest(unittest.TestCase):
             self.assertIn("去脂体重", page_texts[0])
             self.assertIn("46.6 kg", page_texts[0])
             self.assertTrue(all(category in page_texts[0] for category in ("谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类", "豆类", "坚果", "奶类", "零食", "运动营养", "饮料", "酒类")))
-            self.assertIn("整体评估及建议",page_texts[1])
-            self.assertIn("能量及钙摄入量评估报告", page_texts[2])
-            self.assertIn("三大营养素供能占比", page_texts[2])
+            self.assertIn("整体评估及建议",page_texts[-1])
+            self.assertIn("能量及钙摄入量评估报告", page_texts[1])
+            self.assertIn("三大营养素供能占比", page_texts[1])
             expected_percentages = NutritionReportServiceTest.service.pdf_builder._build_macro_energy_chart(
                 pdf_result["report_data"]["nutrition"]
             ).contents[0].labels
-            self.assertTrue(all(percentage in page_texts[2] for percentage in expected_percentages))
+            self.assertTrue(all(percentage in page_texts[1] for percentage in expected_percentages))
             self.assertNotIn("食物图片", pdf_text)
             # 饼图直接写成 PDF 矢量绘图，不应重新产生位图或临时 PNG。
             self.assertFalse(any(image_counts))
@@ -199,7 +199,7 @@ class NutritionReportServiceTest(unittest.TestCase):
             workbook = load_workbook(excel_path, read_only=True, data_only=True)
             try:
                 self.assertEqual(
-                    ["个人信息", "食物明细", "分类评估", "营养总计", "建议", "OCR换算说明", "运动员专项评价"],
+                    ["个人信息", "食物明细", "分类评估", "营养总计", "OCR换算说明", "运动员专项评价", "建议"],
                     workbook.sheetnames,
                 )
                 note_codes = {
