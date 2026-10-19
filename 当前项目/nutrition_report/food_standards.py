@@ -49,17 +49,15 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
                     'invalid_次数', 'negative_value', 'invalid_quantity', 'missing_食用量'}}
         known -= invalid
         for name, (reference, _) in FOOD_REFERENCE_MAP.items():
+            if name in invalid:
+                continue  # 无法换算的条目已由适配器排除，不阻断其他有效摄入的评价。
             if blanks_are_zero and name not in known and name not in invalid:
                 continue  # 完成问卷未列出的食物也按未食用，不当作漏填。
             category = food_db.get(reference, {}).get('category')
             if not category:
-                # Only explicit non-consumption needs no nutrient lookup.
-                if not any(r.get('food') == name and r.get('status') in {'not_eaten', 'zero'} for r in source):
-                    unknown_all = True
+                continue  # 无营养库映射的条目不参与计算，原因仍保留在换算记录中。
             elif name not in known:
                 missing.add(category)
-        unknown_all |= any(w.get('code') in {'unmapped_food', 'invalid_food_row', 'missing_food_name'}
-                           for w in payload.get('conversion_warnings', []))
     milk_equivalent = 0
     milk_trace = []
     milk_protein = number(food_db.get('鲜奶', {}).get('protein'))
@@ -68,8 +66,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
         info = food_db.get(name)
         grams = number(meal.get('amount'))
         if not info or grams is None:
-            unknown_all = True
-            continue
+            continue  # 与营养合计一致：忽略未匹配或无法换算的条目。
         category = info.get('category') or ''
         totals[category]['grams'] += grams
         if category == '奶类':

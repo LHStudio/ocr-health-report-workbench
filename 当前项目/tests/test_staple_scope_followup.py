@@ -93,7 +93,7 @@ class StapleScopeTest(unittest.TestCase):
         service = NutritionReportService(prefer_cloud=False)
         payload = service.adapt_ocr_person(sample_person()).payload
         r = service.build_report_data(payload)
-        self.assertFalse(r['food_standard_evaluation']['nutrient_record_complete'])
+        self.assertTrue(r['food_standard_evaluation']['nutrient_record_complete'])
         row = next(x for x in r['food_standard_evaluation']['rows'] if x['key'] == 'seafood')
         self.assertEqual('占比偏低', row['evaluation'])
         self.assertEqual(0, row['display']['actual'])

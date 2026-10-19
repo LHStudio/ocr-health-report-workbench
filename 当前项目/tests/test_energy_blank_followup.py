@@ -56,12 +56,12 @@ class EnergyBlankFollowupTest(unittest.TestCase):
         self.assertEqual(0,report['category_result']['谷类']['value'])
         self.assertTrue(report['food_standard_evaluation']['nutrient_record_complete'])
 
-    def test_nonblank_invalid_units_are_not_silently_replaced_with_zero(self):
+    def test_nonblank_invalid_units_are_skipped_without_blocking_other_foods(self):
         self.person['food_rows'][0]['平均每次食用量']='2碗'
         report=self.report()
-        self.assertFalse(report['food_standard_evaluation']['nutrient_record_complete'])
+        self.assertTrue(report['food_standard_evaluation']['nutrient_record_complete'])
         self.assertTrue(any(w['code']=='unsupported_quantity_unit' for w in report['conversion_warnings']))
-        self.assertEqual('-',report['nutrition']['energy']['evaluation'])
+        self.assertEqual('过少',report['nutrition']['energy']['evaluation'])
         self.assertEqual(2100,report['nutrition']['energy']['standard'])
         self.assertNotIn('当前仅为已记录摄入小计',json.dumps(report,ensure_ascii=False))
 

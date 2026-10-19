@@ -58,9 +58,10 @@ class EnergyGateFollowupTest(unittest.TestCase):
         for row in r['food_standard_evaluation']['rows']:
             if row['key'] in {'beans_energy','tubers_energy','grains_remainder'}: self.assertEqual('-',row['evaluation'])
 
-    def test_incomplete_records_and_manual_blanks_remain_authoritative(self):
+    def test_skipped_records_do_not_block_valid_intake_and_manual_blanks_survive(self):
         r=self.report(conversion_warnings=[dict(code='unresolved_period',food='主食')],source_foods=[])
-        self.assertEqual('-',r['category_result']['谷类']['evaluation'])
+        self.assertTrue(r['food_standard_evaluation']['nutrient_record_complete'])
+        self.assertEqual(self.report()['category_result'],r['category_result'])
         r=self.report(2500,autoEvaluation=False,manualEvaluations=dict(standardEvaluations=dict(grains_remainder=''),overallSuggestions='人工建议',interpretation='人工解读'))
         self.assertEqual('',r['category_result']['谷类']['evaluation'])
         self.assertEqual(['人工建议'],r['suggestions'])
