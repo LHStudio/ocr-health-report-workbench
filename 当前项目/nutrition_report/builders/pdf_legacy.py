@@ -494,6 +494,13 @@ class NutritionPDFBuilder:
     def _format_energy_intake(energy: dict) -> str:
         value = escape(_as_text(energy.get("value", "-")))
         standard = energy.get("standard")
+        if energy.get('reference_type') == 'bmr_plus_net':
+            t = energy['training_expenditure']
+            resting = '–'.join(f'{v:g}' for v in energy['resting_bounds'])
+            net = '–'.join(f'{v:.1f}' for v in t['net_daily_kcal'])
+            return (f"{value} kcal/day<br/>参考区间 {escape(energy_reference_text(energy))} kcal/天"
+                    f"<br/>静息代谢 {resting} ＋ 运动净消耗日均 {net} kcal/天"
+                    f"<br/>{escape(t['sport'])}训练计划估算；周净消耗÷7；非完整全天总消耗")
         if energy.get('reference_type') == 'bmr':
             return f"{value} kcal/day<br/>建议能量区间 {escape(energy_reference_text(energy))} kcal/天<br/>BMR（填写区间）"
         if standard not in (None, ""):

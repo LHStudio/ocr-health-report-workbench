@@ -226,12 +226,33 @@ def _build_user(person: Mapping[str, Any], overrides: Mapping[str, Any] | None) 
         "fatFreeMass": pick("fatFreeMass", "去脂体重"),
         "bmrMin": pick("bmrMin", "BMR最低值"),
         "bmrMax": pick("bmrMax", "BMR最高值"),
+        "trainingPlan": pick("trainingPlan", "训练计划", {}),
         "gender": _normalise_gender(pick("gender", "性别")),
         "bmi": pick("bmi", "BMI"),
         "activityLevel": override["activityLevel"] if "activityLevel" in override else pick("activityLevel", "运动量"),
         "physiologicalStage": pick("physiologicalStage", "生理阶段"),
         "foodTargetScale": pick("foodTargetScale", "食物摄入倍率"),
     }
+    # Optional personal attendance overrides, in minutes/week, including strength.
+    training_plan = general.get('训练计划') or {}
+    if not isinstance(training_plan, Mapping):
+        raise ValueError('训练计划须为对象')
+    training_plan = dict(training_plan)
+    for english, chinese in (("weeklyMinutes", "每周训练总分钟"), ("strengthMinutes", "每周力量分钟")):
+        value = general.get(chinese)
+        if value not in (None, ''):
+            training_plan[english] = value
+    for field in ('训练计划', 'trainingPlan'):
+        plan = override.get(field)
+        if plan not in (None, ''):
+            if not isinstance(plan, Mapping):
+                raise ValueError('训练计划须为对象')
+            training_plan.update(plan)
+    for english, chinese in (("weeklyMinutes", "每周训练总分钟"), ("strengthMinutes", "每周力量分钟")):
+        value = override.get(english, override.get(chinese))
+        if value not in (None, ''):
+            training_plan[english] = value
+    user['trainingPlan'] = training_plan
     # Match the existing workspace default for callers that do not send a profile.
     # An explicit blank/non-training selection must never be replaced by a default.
     if "trainingPhase" in override:

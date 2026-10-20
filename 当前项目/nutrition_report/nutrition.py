@@ -1,6 +1,7 @@
 import json
 import math
 from .energy_reference import bmr_bounds, energy_reference_text
+from .training_energy import training_expenditure
 from datetime import datetime, timezone, timedelta
 from .quantity_first import apply_quantity_priority
 from .gram_display import attach_gram_display
@@ -262,6 +263,10 @@ class NutritionService:
 
         user = user or {}
         bounds = bmr_bounds(user)
+        resting = bounds
+        training = training_expenditure(user, resting)
+        if training['applied']:
+            bounds = tuple(resting[i] + training['net_daily_kcal'][i] for i in (0, 1))
         energy_standard = self._lookup_energy_eer(user) if bounds is None else None
         energy_eval = self._eval_energy_against_standard(total_energy, energy_standard)
         activity = str(user.get('activityLevel', '')).strip()
@@ -274,6 +279,8 @@ class NutritionService:
             energy_standard = f'{low:g}-{high:g}'
             energy_eval = '过少' if total_energy < low else '过多' if total_energy > high else '适宜'
             standard_note = 'kcal/天 · BMR建议能量区间（按填写上下限）'
+            if training['applied']:
+                standard_note = 'kcal/天 · 静息代谢＋日均运动净消耗（计划估算，非完整全天总消耗）'
             activity_label = ''
 
         nutrition_total = {
@@ -281,8 +288,10 @@ class NutritionService:
                 "value": round(total_energy, 2),
                 "standard": energy_standard,
                 "evaluation": energy_eval,
-                "standard_source": 'BMR建议能量区间' if bounds is not None else self.female_eer['title'],
-                "reference_type": 'bmr' if bounds is not None else 'eer',
+                "standard_source": ('静息代谢＋运动净消耗' if training['applied'] else 'BMR建议能量区间') if bounds is not None else self.female_eer['title'],
+                "reference_type": 'bmr_plus_net' if training['applied'] else 'bmr' if bounds is not None else 'eer',
+                "resting_bounds": list(resting) if resting is not None else None,
+                "training_expenditure": training,
                 "standard_min": bounds[0] if bounds is not None else None,
                 "standard_max": bounds[1] if bounds is not None else None,
                 "standard_note": standard_note,

@@ -152,7 +152,12 @@
           <label>BMR最低值（kcal/天）<input v-model="selected.general['BMR最低值']" type="number" min="0" step="any" class="value-input" aria-label="BMR最低值" placeholder="建议能量下限" /></label>
           <label>BMR最高值（kcal/天）<input v-model="selected.general['BMR最高值']" type="number" min="0" step="any" class="value-input" aria-label="BMR最高值" placeholder="建议能量上限" /></label>
         </div>
-        <p class="hint">BMR上下限须同时填写且为正数，最低值不得大于最高值。填写后直接采用该建议能量区间，不使用女性EER；均留空则沿用原规则。</p>
+        <p class="hint">BMR上下限须同时填写且为正数，最低值不得大于最高值。足球、篮球正常训练期自动叠加日均运动净消耗，不使用女性EER；BMR均留空则沿用EER且不重复加运动消耗。体操方案尚未提供，暂不叠加。</p>
+        <div class="general-grid">
+          <label>个人每周训练总分钟（含力量）<input v-model="selected.general['每周训练总分钟']" type="number" min="0" max="10080" step="any" class="value-input" placeholder="留空采用项目课表；0表示不训练" /></label>
+          <label>其中每周力量分钟<input v-model="selected.general['每周力量分钟']" type="number" min="0" max="10080" step="any" class="value-input" placeholder="留空采用项目课表" /></label>
+        </div>
+        <p class="hint">足球默认6次×120分钟，整堂5–8 MET（含每周专项体能）；篮球每周21–24小时，其中力量48–180分钟，专项5–8 MET、力量3.5–6 MET。个人出勤有变化请填写实际分钟；周净消耗除以7。此参考不含日常非训练活动和食物热效应。</p>
         <section v-if="checkboxReview.length" class="checkbox-review-panel" aria-label="纸质勾选识别核对">
           <div class="checkbox-review-head"><div><h4>纸质勾选识别核对</h4><p>点击“已选 / 未选 / 不确定”即可人工修改；设为已选后会同步更新上方对应餐次，保存时写入 Excel。</p></div><span>{{ checkboxReview.length }} 项</span></div>
           <div class="checkbox-review-grid">
@@ -324,12 +329,17 @@ function manualEvaluationsPayload() {
 function openNutritionReview() { reportErrorMessage.value = ''; reportSuccessMessage.value = ''; nutritionReviewOpen.value = true; scheduleNutritionPreview() }
 function closeNutritionReview() { nutritionReviewOpen.value = false }
 function formatSourceTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString('zh-CN', { hour12: false }) }
-const questionnaireGeneral = computed(() => Object.fromEntries(Object.entries(selected.value?.general || {}).filter(([key]) => !['BMR最低值', 'BMR最高值'].includes(key))))
+const questionnaireGeneral = computed(() => Object.fromEntries(Object.entries(selected.value?.general || {}).filter(([key]) => !['BMR最低值', 'BMR最高值', '训练计划', '每周训练总分钟', '每周力量分钟'].includes(key))))
 function genderForReport(value) { const text = String(value || '').trim().toLowerCase(); return ['女', '女性', 'female', 'f'].includes(text) ? 'female' : ['男', '男性', 'male', 'm'].includes(text) ? 'male' : '' }
+function trainingPhaseForReport(general) {
+  if (Object.hasOwn(general || {}, '训练阶段')) return general['训练阶段']
+  const status = String(general?.当前状态 || '').trim()
+  return ({ '正常训练': 'training', '训练期': 'training', '比赛期': 'competition', '赛期': 'competition' })[status] ?? (status ? '' : 'training')
+}
 function selectPerson(person) {
   if (selectedId.value) { reportProfiles.value[selectedId.value] = { ...reportProfile.value }; reportReviews.value[selectedId.value] = copyReportReview(reportReview.value) }
   selectedId.value = person.id
-  reportProfile.value = { ...emptyReportProfile(), ...(reportProfiles.value[person.id] || { name: person.general?.姓名 || '', age: person.general?.年龄 || '', projectType: person.general?.项目种类 || '', trainingYears: person.general?.训练年限 || '', currentStatus: person.general?.当前状态 || '', gender: genderForReport(person.general?.性别), height: person.general?.身高 || '', weight: person.general?.体重 || '', fatFreeMass: person.general?.去脂体重 || '', activityLevel: person.general?.运动量 || '' }) }
+  reportProfile.value = { ...emptyReportProfile(), ...(reportProfiles.value[person.id] || { name: person.general?.姓名 || '', age: person.general?.年龄 || '', projectType: person.general?.项目种类 || '', trainingPhase: trainingPhaseForReport(person.general), trainingYears: person.general?.训练年限 || '', currentStatus: person.general?.当前状态 || '', gender: genderForReport(person.general?.性别), height: person.general?.身高 || '', weight: person.general?.体重 || '', fatFreeMass: person.general?.去脂体重 || '', activityLevel: person.general?.运动量 || '' }) }
   reportReview.value = copyReportReview(reportReviews.value[person.id])
   nutritionPreview.value = null
   scheduleNutritionPreview()

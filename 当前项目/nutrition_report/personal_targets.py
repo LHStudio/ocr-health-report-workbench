@@ -27,8 +27,8 @@ def positive(value):
 
 
 def energy_bounds(energy):
-    """Use filled BMR bounds verbatim, otherwise the existing personal EER."""
-    if energy.get('reference_type') == 'bmr':
+    """Use interval reference (resting + net if applicable), otherwise personal EER."""
+    if energy.get('reference_type') in {'bmr', 'bmr_plus_net'}:
         low, high = positive(energy.get('standard_min')), positive(energy.get('standard_max'))
         return (low, high) if low is not None and high is not None else (None, None)
     value = positive(energy.get('standard'))
@@ -42,7 +42,7 @@ def build_personal_targets(athlete, standard, food_db):
              for key in ('protein', 'carbohydrate', 'fat')}
     result = dict(macro_targets=macro, food_targets={}, planned_nutrients={}, plan_warnings=[],
                   assumptions=[
-                      '个人蛋白质和碳水化合物需求沿用V2运动类型×体重；脂肪需求为个人EER或填写BMR区间的20–30%供能，不以实际摄入反推。',
+                      '个人蛋白质和碳水化合物需求沿用V2运动类型×体重；脂肪需求为个人能量参考的20–30%供能（适用足球/篮球为静息代谢＋运动净消耗，否则沿用BMR/EER），不以实际摄入反推。',
                       '计划示例取原有豆类最低5%、薯类最低15%、谷类余量80%的主食能量分配，水产品取原有最低30%、畜禽肉70%的肉类重量分配；不是新增唯一食谱。',
                       '固定食物采用既有奶、蛋、蔬菜、水果、坚果目标下限；代表食物密度来自当前营养库，改变代表食谱需重新换算，不改变个人营养需求。',
                   ])

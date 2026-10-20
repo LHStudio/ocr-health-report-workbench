@@ -5,6 +5,7 @@ are engineering review triggers, NOT physiological or clinical upper limits.
 """
 import math
 import re
+from .training_energy import training_energy_note
 
 
 REVIEW_THRESHOLDS = {
@@ -167,8 +168,8 @@ def check_report_consistency(report):
     actual = finite_number(energy.get('value'))
     ref = finite_number(energy.get('standard_max')) or finite_number(energy.get('standard'))
     if actual is not None and ref and report.get('assessment_status') != 'needs_review':
-        low = finite_number(energy.get('standard_min')) if energy.get('reference_type') == 'bmr' else ref*.9
-        high = ref if energy.get('reference_type') == 'bmr' else ref*1.1
+        low = finite_number(energy.get('standard_min')) if energy.get('reference_type') in {'bmr', 'bmr_plus_net'} else ref*.9
+        high = ref if energy.get('reference_type') in {'bmr', 'bmr_plus_net'} else ref*1.1
         expected_energy = '过少' if low is not None and actual < low else '过多' if actual > high else '适宜'
         final_energy = {'适中':'适宜', '不足':'过少'}.get(energy.get('evaluation'), energy.get('evaluation'))
         if final_energy != expected_energy:
@@ -185,6 +186,9 @@ def check_report_consistency(report):
     if energy.get('reference_type') == 'bmr':
         add('bmr_reference_scope', 'energy',
             '当前能量比较沿用填写的BMR区间。BMR是静息代谢参考，不等于全天训练能量需要；未擅自乘活动系数或修改已填上下限，请由营养专业人员确认适用口径。')
+    if energy.get('training_expenditure'):
+        add('training_energy_estimate' if energy['training_expenditure'].get('applied') else 'training_energy_pending',
+            'training_energy', training_energy_note(energy))
     minima = [finite_number((rows.get(key) or {}).get('target_min')) for key in ('protein', 'carbohydrate', 'fat')]
     if all(v is not None for v in minima) and ref:
         minimum_energy = minima[0]*4 + minima[1]*4 + minima[2]*9

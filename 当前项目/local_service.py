@@ -2799,10 +2799,10 @@ def write_nutrition_workbook(state: dict[str, Any], people: list[dict[str, Any]]
     template_path = state.get("template_path") or NUTRITION_TEMPLATE
     workbook = load_workbook(template_path)
     general_sheet = nutrition_sheet(workbook, "人员汇总", "人员", NUTRITION_GENERAL_COLUMNS)
-    # Older and custom summary templates must retain newly entered BMR fields.
+    # Older/custom templates retain resting reference and personal attendance.
     header_row = detect_header_row(general_sheet)
     headers = [clean(general_sheet.cell(header_row, c).value) for c in range(1, general_sheet.max_column + 1)]
-    for field in ("BMR最低值", "BMR最高值"):
+    for field in ("BMR最低值", "BMR最高值", "每周训练总分钟", "每周力量分钟"):
         if field not in headers:
             cell = general_sheet.cell(header_row, general_sheet.max_column + 1, field)
             cell._style = copy(general_sheet.cell(header_row, 1)._style)

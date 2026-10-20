@@ -1,4 +1,4 @@
-"""Explicit BMR reference interval; never infer a midpoint or expand its bounds."""
+"""Validate pristine resting bounds; render either resting or net-added reference."""
 import math
 
 
@@ -16,7 +16,7 @@ def bmr_bounds(user):
 
 
 def energy_reference_text(energy):
-    if energy.get('reference_type') == 'bmr':
+    if energy.get('reference_type') in {'bmr', 'bmr_plus_net'}:
         return f"{energy['standard_min']:g}-{energy['standard_max']:g}"
     value = energy.get('standard')
     return str(value) if value not in (None, '') else '-'
