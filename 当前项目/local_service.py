@@ -1272,8 +1272,34 @@ def imaging_ocr_blocks(json_text: object) -> list[dict[str, Any]]:
     )
 
 
+def normalize_imaging_text(value: object) -> str:
+    """Normalize OCR line-break artifacts only; do not decode other escapes or mutate evidence."""
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\\+(?:r\\+n|[rn])", "\n", text)
+    # Some OCR outputs spell line breaks /n. Avoid corrupting /normal or units such as mg/ml.
+    return re.sub(r"/n(?=\s|$|[\u3400-\u9fff]|/n)", "\n", text)
+
+
+def parse_imaging_ocr_response(response: requests.Response, endpoint: str, filename: str) -> dict[str, Any]:
+    """Report HTTP/mapping failures instead of showing HTML as a PDF parsing problem."""
+    context = f"{filename} OCR 请求失败：HTTP {response.status_code}，接口 {endpoint}"
+    try:
+        data = response.json()
+    except ValueError as error:
+        if response.status_code == 404:
+            detail = "云端 OCR 接口不存在；请核对服务地址、端口和公网映射，确认指向 OCR 服务而非 Jupyter/网页。"
+        else:
+            detail = "云端未返回 JSON；请检查 OCR 服务及反向代理。"
+        raise RuntimeError(f"{context}。{detail}") from error
+    if not isinstance(data, dict):
+        raise RuntimeError(f"{context}。云端响应必须为 JSON 对象。")
+    if not response.ok or not data.get("success"):
+        raise RuntimeError(f"{context}。{data.get('detail') or '云端未成功识别'}")
+    return data
+
+
 def imaging_table_rows(block_content: object) -> list[list[str]]:
-    content = str(block_content or "").strip()
+    content = normalize_imaging_text(block_content).strip()
     if "<table" not in content.lower():
         return []
     soup = BeautifulSoup(content, "html.parser")
@@ -1289,14 +1315,14 @@ def imaging_text_sources(markdown_text: object, json_text: object) -> tuple[str,
     lines: list[str] = []
     table_rows: list[list[str]] = []
     for block in imaging_ocr_blocks(json_text):
-        content = str(block.get("block_content") or "").strip()
+        content = normalize_imaging_text(block.get("block_content")).strip()
         rows = imaging_table_rows(content)
         if rows:
             table_rows.extend(rows)
             lines.extend(" ".join(value for value in row if value) for row in rows)
         elif content:
             lines.append(content)
-    fallback = str(markdown_text or "").strip()
+    fallback = normalize_imaging_text(markdown_text).strip()
     fallback_rows = imaging_table_rows(fallback)
     if fallback_rows:
         for row in fallback_rows:
@@ -1337,7 +1363,7 @@ def imaging_labeled_cell_value(rows: list[list[str]], labels: tuple[str, ...]) -
 
 
 def imaging_section(text: object, start_labels: tuple[str, ...], stop_labels: tuple[str, ...]) -> str:
-    raw = str(text or "")
+    raw = normalize_imaging_text(text)
     starts = "|".join(re.escape(label) for label in start_labels)
     stops = "|".join(re.escape(label) for label in stop_labels)
     match = re.search(rf"(?:^|\n)\s*(?:{starts})\s*[：:]\s*(.*?)(?=\s*(?:{stops})\s*[：:]?|$)", raw, re.S | re.I)
@@ -1465,12 +1491,7 @@ def request_imaging_body_ocr(ocr_url: str, source_path: Path) -> str:
         files={"file": (f"{source_path.stem}_body.png", image_bytes, "image/png")},
         timeout=CLOUD_OCR_TIMEOUT,
     )
-    try:
-        data = response.json()
-    except ValueError as error:
-        raise RuntimeError(f"正文裁剪 OCR 响应不是 JSON：{response.text[:160]}") from error
-    if not response.ok or not data.get("success"):
-        raise RuntimeError(f"正文裁剪 OCR 失败：{data.get('detail') or response.status_code}")
+    data = parse_imaging_ocr_response(response, endpoint, f"{source_path.name} 正文裁剪")
     return str(data.get("text") or "").strip()
 
 
@@ -1487,12 +1508,7 @@ def request_imaging_patient_id_ocr(ocr_url: str, source_path: Path) -> str:
         files={"file": (f"{source_path.stem}_patient_id.png", image_bytes, "image/png")},
         timeout=CLOUD_OCR_TIMEOUT,
     )
-    try:
-        data = response.json()
-    except ValueError as error:
-        raise RuntimeError(f"病人ID裁剪 OCR 响应不是 JSON：{response.text[:160]}") from error
-    if not response.ok or not data.get("success"):
-        raise RuntimeError(f"病人ID裁剪 OCR 失败：{data.get('detail') or response.status_code}")
+    data = parse_imaging_ocr_response(response, endpoint, f"{source_path.name} 病人ID裁剪")
     return str(data.get("text") or "").strip()
 
 
@@ -1546,90 +1562,97 @@ def process_imaging_job(
 ) -> None:
     state = JOBS[job_id]
     records: list[dict[str, Any]] = []
+    file_errors: list[dict[str, str]] = []
+    state.update(records=records, file_errors=file_errors, failed_files=0)
     try:
         state.update(status="processing", message="正在识别影像报告…")
         for index, (source_path, original_name) in enumerate(source_files, start=1):
             state.update(current_file=original_name, message=f"正在识别 {index}/{len(source_files)}：{original_name}")
-            response = request_cloud_ocr(
-                state,
-                ocr_url,
-                source_path,
-                document_kind="medical",
-                page_index=1,
-            )
             try:
-                data = response.json()
-            except ValueError as error:
-                raise RuntimeError(f"{original_name} 的云端响应不是 JSON：{response.text[:160]}") from error
-            if not response.ok or not data.get("success"):
-                raise RuntimeError(f"{original_name} OCR 失败：{data.get('detail') or response.status_code}")
+                response = request_cloud_ocr(
+                    state,
+                    ocr_url,
+                    source_path,
+                    document_kind="medical",
+                    page_index=1,
+                )
+                data = parse_imaging_ocr_response(response, cloud_api_url(ocr_url), original_name)
 
-            stem = f"{index:03d}_{Path(original_name).stem}_ocr"
-            raw_root = state["job_dir"] / "imaging_ocr"
-            raw_root.mkdir(parents=True, exist_ok=True)
-            raw_urls: dict[str, str] = {}
-            excel_value = data.get("excel")
-            if excel_value:
-                excel_relative = Path("imaging_ocr") / f"{stem}.xlsx"
-                (state["job_dir"] / excel_relative).write_bytes(base64.b64decode(excel_value))
-                raw_urls["excel"] = file_url(job_id, excel_relative)
-            markdown_text = str(data.get("markdown") or "")
-            json_text = str(data.get("json_text") or "")
-            markdown_relative = Path("imaging_ocr") / f"{stem}.md"
-            json_relative = Path("imaging_ocr") / f"{stem}.json"
-            (state["job_dir"] / markdown_relative).write_text(markdown_text, encoding="utf-8")
-            (state["job_dir"] / json_relative).write_text(json_text or "{}", encoding="utf-8")
-            raw_urls.update(markdown=file_url(job_id, markdown_relative), json=file_url(job_id, json_relative))
+                stem = f"{index:03d}_{Path(original_name).stem}_ocr"
+                raw_root = state["job_dir"] / "imaging_ocr"
+                raw_root.mkdir(parents=True, exist_ok=True)
+                raw_urls: dict[str, str] = {}
+                excel_value = data.get("excel")
+                if excel_value:
+                    excel_relative = Path("imaging_ocr") / f"{stem}.xlsx"
+                    (state["job_dir"] / excel_relative).write_bytes(base64.b64decode(excel_value))
+                    raw_urls["excel"] = file_url(job_id, excel_relative)
+                markdown_text = str(data.get("markdown") or "")
+                json_text = str(data.get("json_text") or "")
+                markdown_relative = Path("imaging_ocr") / f"{stem}.md"
+                json_relative = Path("imaging_ocr") / f"{stem}.json"
+                (state["job_dir"] / markdown_relative).write_text(markdown_text, encoding="utf-8")
+                (state["job_dir"] / json_relative).write_text(json_text or "{}", encoding="utf-8")
+                raw_urls.update(markdown=file_url(job_id, markdown_relative), json=file_url(job_id, json_relative))
 
-            fields, _ = parse_imaging_fields(markdown_text, json_text, original_name)
-            ocr_warnings: list[str] = []
-            if processing_mode != "fast" and not fields["病人ID"]:
-                try:
-                    patient_id_text = request_imaging_patient_id_ocr(ocr_url, source_path)
-                    patient_id_relative = Path("imaging_ocr") / f"{stem}_patient_id.txt"
-                    (state["job_dir"] / patient_id_relative).write_text(patient_id_text, encoding="utf-8")
-                    raw_urls["patient_id_text"] = file_url(job_id, patient_id_relative)
-                    fields["病人ID"] = extract_imaging_patient_id(patient_id_text)
-                except Exception as patient_id_error:
-                    ocr_warnings.append(f"病人ID右上角补充识别失败：{patient_id_error}")
-            if processing_mode != "fast" and (not fields["超声所见"] or not fields["超声诊断"]):
-                try:
-                    body_text = request_imaging_body_ocr(ocr_url, source_path)
-                    body_relative = Path("imaging_ocr") / f"{stem}_body.txt"
-                    (state["job_dir"] / body_relative).write_text(body_text, encoding="utf-8")
-                    raw_urls["body_text"] = file_url(job_id, body_relative)
-                    if not fields["超声所见"]:
-                        fields["超声所见"] = imaging_section(
-                            body_text,
-                            ("超声所见", "超声检查所见"),
-                            ("超声诊断", "诊断意见", "备注"),
-                        )
-                    if not fields["超声诊断"]:
-                        fields["超声诊断"] = imaging_section(
-                            body_text,
-                            ("超声诊断", "诊断意见"),
-                            ("备注", "录入员", "诊断医生", "审核医生", "时间", "此报告仅供临床参考"),
-                        )
-                except Exception as body_error:
-                    ocr_warnings.append(f"正文补充识别失败：{body_error}")
-            needs_review = imaging_record_needs_review({"fields": fields})
-            records.append({
-                "id": f"imaging-{index:03d}",
-                "filename": original_name,
-                "fields": fields,
-                "needs_review": needs_review,
-                "raw_files": raw_urls,
-                "warnings": ocr_warnings,
-            })
-            state["completed_files"] = index
+                fields, _ = parse_imaging_fields(markdown_text, json_text, original_name)
+                ocr_warnings: list[str] = []
+                if processing_mode != "fast" and not fields["病人ID"]:
+                    try:
+                        patient_id_text = request_imaging_patient_id_ocr(ocr_url, source_path)
+                        patient_id_relative = Path("imaging_ocr") / f"{stem}_patient_id.txt"
+                        (state["job_dir"] / patient_id_relative).write_text(patient_id_text, encoding="utf-8")
+                        raw_urls["patient_id_text"] = file_url(job_id, patient_id_relative)
+                        fields["病人ID"] = extract_imaging_patient_id(patient_id_text)
+                    except Exception as patient_id_error:
+                        ocr_warnings.append(f"病人ID右上角补充识别失败：{patient_id_error}")
+                if processing_mode != "fast" and (not fields["超声所见"] or not fields["超声诊断"]):
+                    try:
+                        body_text = request_imaging_body_ocr(ocr_url, source_path)
+                        body_relative = Path("imaging_ocr") / f"{stem}_body.txt"
+                        (state["job_dir"] / body_relative).write_text(body_text, encoding="utf-8")
+                        raw_urls["body_text"] = file_url(job_id, body_relative)
+                        if not fields["超声所见"]:
+                            fields["超声所见"] = imaging_section(
+                                body_text,
+                                ("超声所见", "超声检查所见"),
+                                ("超声诊断", "诊断意见", "备注"),
+                            )
+                        if not fields["超声诊断"]:
+                            fields["超声诊断"] = imaging_section(
+                                body_text,
+                                ("超声诊断", "诊断意见"),
+                                ("备注", "录入员", "诊断医生", "审核医生", "时间", "此报告仅供临床参考"),
+                            )
+                    except Exception as body_error:
+                        ocr_warnings.append(f"正文补充识别失败：{body_error}")
+                needs_review = imaging_record_needs_review({"fields": fields})
+                records.append({
+                    "id": f"imaging-{index:03d}",
+                    "filename": original_name,
+                    "fields": fields,
+                    "needs_review": needs_review,
+                    "raw_files": raw_urls,
+                    "warnings": ocr_warnings,
+                })
+            except Exception as error:
+                file_errors.append({"filename": original_name, "message": str(error)})
+                state["failed_files"] = len(file_errors)
+            finally:
+                state["completed_files"] = index
 
+        if not records:
+            state.update(status="failed", message=f"影像识别全部失败（{len(file_errors)}/{len(source_files)} 份）。" + (file_errors[0]["message"] if file_errors else "未获取识别结果。"))
+            return
         review_count = sum(bool(record.get("needs_review")) for record in records)
         message = f"已识别 {len(records)} 份影像报告。"
+        if file_errors:
+            message += f" {len(file_errors)} 份失败，成功结果已保留；请查看失败文件列表后重试。"
         if review_count:
             message += f" 其中 {review_count} 份含缺失或不完整字段，请核对黄色提示后再导出。"
         else:
-            message += " 所有目标字段均已提取，请抽样核对后导出。"
-        state.update(status="completed", records=records, output_url=file_url(job_id, state["output_relative"]), message=message)
+            message += " 已成功识别报告的所有目标字段均已提取，请抽样核对后导出。"
+        state.update(status="completed", message=message)
     except Exception as error:
         state.update(status="failed", message=str(error))
 

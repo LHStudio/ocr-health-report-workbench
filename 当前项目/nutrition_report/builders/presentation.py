@@ -38,6 +38,9 @@ def evaluation_warnings(data):
     notes = []
     for section in ('athlete_evaluation', 'food_standard_evaluation'):
         for note in (data.get(section) or {}).get('warnings', []):
+            note = _display_warning(note)
+            if not note:
+                continue
             if note.startswith(('奶粉、奶酪折算鲜奶等价量', '蔬菜最低400g/天')):
                 continue
             if '%' in note or '优质蛋白=' in note or '水产品占比' in note:
@@ -46,7 +49,24 @@ def evaluation_warnings(data):
                 note = clean_display_text(note)
                 if note not in ('仅训练期', '60-70kg标准', '基础膳食参考标准') and note not in notes:
                     notes.append(note)
-    for note in (data.get('report_checks') or {}).get('warnings', []):
+    for note in report_alerts(data):
         if note not in notes:
             notes.append('自动核查提醒：' + note)
     return notes
+
+
+def _display_warning(note):
+    """Hide requested explanatory copy only; retain underlying audit messages."""
+    if note.startswith(('代表食物估算（需复核）：', '足球训练计划估算：', '篮球训练计划估算：')):
+        return ''
+    if note.startswith('既有优质蛋白至少一半约束下，示例食谱蛋白质计划点由'):
+        if '仍在个人蛋白质参考范围内' in note:
+            return ''
+        if '已超个人蛋白质参考上限' in note:
+            return '示例食谱蛋白质超出个人参考上限，现有食谱约束不相容；请核对约束。'
+    return note
+
+
+def report_alerts(data):
+    return list(dict.fromkeys(text for note in (data.get('report_checks') or {}).get('warnings', [])
+                             if (text := _display_warning(note))))

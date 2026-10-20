@@ -38,7 +38,22 @@ export function evaluationWarnings(data) {
     .filter(note => !['奶粉、奶酪折算鲜奶等价量', '蔬菜最低400g/天'].some(text => note.startsWith(text)))
     .filter(note => !note.includes('%') && !note.includes('优质蛋白=') && !note.includes('水产品占比'))
     .map(cleanDisplayText).filter(note => !['仅训练期', '60-70kg标准', '基础膳食参考标准'].includes(note))
-  return [...new Set([...notes, ...(data?.report_checks?.warnings || [])])]
+  return [...new Set([...notes, ...(data?.report_checks?.warnings || [])].map(displayWarning).filter(Boolean))]
+}
+
+function displayWarning(note) {
+  if (['代表食物估算（需复核）：', '足球训练计划估算：', '篮球训练计划估算：'].some(prefix => note.startsWith(prefix))) return ''
+  if (note.startsWith('既有优质蛋白至少一半约束下，示例食谱蛋白质计划点由')) {
+    if (note.includes('仍在个人蛋白质参考范围内')) return ''
+    if (note.includes('已超个人蛋白质参考上限')) return '示例食谱蛋白质超出个人参考上限，现有食谱约束不相容；请核对约束。'
+  }
+  return note
+}
+
+export function energyDisplayNote(energy) {
+  return energy?.reference_type === 'bmr_plus_net'
+    ? 'kcal/天 · 静息代谢＋日均运动净消耗'
+    : energy?.standard_note || '请选择活动量'
 }
 
 export function finalEvaluation(row, review = {}) {

@@ -75,13 +75,13 @@ def build_overall_suggestions(report):
     items = [('energy', energy_summary(report))]
     items += [(key, _row_advice(rows.get(key), label)) for key, label in (
         ('protein', '蛋白质'), ('carbohydrate', '碳水化合物'), ('fat', '脂肪'),
-        ('calcium', '钙'), ('nuts', '坚果'))]
+        ('calcium', '钙'))]
     items += [('staples', '主食各类别按个人碳水目标分配：' + staples)]
     items += [(key, _row_advice(rows.get(key), label)) for key, label in (
         ('milk', '奶类鲜奶等价量（按蛋白质估计）'), ('eggs', '蛋类'))]
     items += [('meat', meat)]
     items += [(key, _row_advice(rows.get(key), label)) for key, label in (
-        ('fruit', '水果'), ('vegetables', '蔬菜'))]
+        ('fruit', '水果'), ('vegetables', '蔬菜'), ('nuts', '坚果'))]
     items += [('snacks', '零食：建议尽量不吃；不以零食替代正餐。'),
               ('quality_protein', _row_advice(rows.get('quality_protein'), '肉蛋奶优质蛋白') +
                ' 请结合训练量及完整记录，在营养专业人员指导下调整。')]

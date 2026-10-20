@@ -41,6 +41,10 @@
       <div class="action-row"><button class="primary-button" type="button" :disabled="!canProcess" @click="processReports">开始影像识别</button><button class="secondary-button" type="button" :disabled="processing" @click="clearAll">清空</button></div>
       <div v-if="processing" class="progress-panel"><div class="progress-label"><strong>正在识别影像报告</strong><span>{{ progress.completed }}/{{ progress.total }}</span></div><div class="progress-track"><div class="progress-bar" :style="{ width: progressPercent + '%' }"></div></div><p>{{ progress.currentFile || '正在准备任务…' }}</p></div>
       <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+      <div v-if="fileErrors.length" class="imaging-failed-files" role="alert">
+        <strong>{{ fileErrors.length }} 份报告识别失败；请先导出并保存本批成功结果，再重新选择失败文件创建新任务。</strong>
+        <ul><li v-for="(failure, index) in fileErrors" :key="`${failure.filename}-${index}`"><b>{{ failure.filename }}</b>：{{ failure.message }}</li></ul>
+      </div>
       <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
     </section>
 
@@ -95,6 +99,7 @@ const processing = ref(false)
 const saving = ref(false)
 const progress = ref({ completed: 0, total: 0, currentFile: '' })
 const records = ref([])
+const fileErrors = ref([])
 const selectedRecordId = ref('')
 const lastJobId = ref('')
 const errorMessage = ref('')
@@ -121,11 +126,11 @@ function fileKey(file) { return file.webkitRelativePath || file.name }
 function validDate(value) { const match = String(value || '').trim().match(/^(20\d{2})-(\d{2})-(\d{2})$/); if (!match) return false; const date = new Date(`${match[1]}-${match[2]}-${match[3]}T00:00:00`); return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(match[1]) && date.getMonth() + 1 === Number(match[2]) && date.getDate() === Number(match[3]) }
 function needsDateReview(value) { return !validDate(value) }
 function recordNeedsReview(record) { const fields = record?.fields || {}; const missing = ['病人ID', '姓名', '性别', '年龄', '超声所见', '超声诊断'].filter((key) => !String(fields[key] || '').trim()); if (needsDateReview(fields.检查时间)) missing.push('检查时间'); return missing }
-function setFiles(fileList, mode) { files.value = Array.from(fileList || []).filter((file) => /\.pdf$/i.test(file.name)); inputMode.value = mode; records.value = []; selectedRecordId.value = ''; recordSearch.value = ''; recordPage.value = 1; errorMessage.value = ''; successMessage.value = '' }
+function setFiles(fileList, mode) { files.value = Array.from(fileList || []).filter((file) => /\.pdf$/i.test(file.name)); inputMode.value = mode; records.value = []; fileErrors.value = []; selectedRecordId.value = ''; recordSearch.value = ''; recordPage.value = 1; errorMessage.value = ''; successMessage.value = '' }
 function selectFiles(event) { setFiles(event.target.files, 'files') }
 function selectFolder(event) { setFiles(event.target.files, 'folder') }
 function saveSettings() { localStorage.setItem(storageKey, serverUrl.value.trim()); localStorage.setItem('imaging-processing-mode', processingMode.value); settingsOpen.value = false; serverOk.value = true }
-function clearAll() { files.value = []; records.value = []; selectedRecordId.value = ''; recordSearch.value = ''; recordPage.value = 1; lastJobId.value = ''; errorMessage.value = ''; successMessage.value = ''; progress.value = { completed: 0, total: 0, currentFile: '' } }
+function clearAll() { files.value = []; records.value = []; fileErrors.value = []; selectedRecordId.value = ''; recordSearch.value = ''; recordPage.value = 1; lastJobId.value = ''; errorMessage.value = ''; successMessage.value = ''; progress.value = { completed: 0, total: 0, currentFile: '' } }
 async function ensureLocalFeature() {
   try { const response = await fetch('/local-api/'); const data = await response.json(); if (!response.ok || !Array.isArray(data.features) || !data.features.includes('imaging')) throw new Error('本地后端仍是旧版本，请停止旧进程后重新运行 npm run backend') }
   catch (error) { if (String(error.message || '').includes('旧版本')) throw error; throw new Error('无法连接本地后端，请确认已重新运行 npm run backend') }
@@ -139,7 +144,7 @@ async function testOcr() {
 }
 
 async function processReports() {
-  processing.value = true; errorMessage.value = ''; successMessage.value = ''; records.value = []; progress.value = { completed: 0, total: files.value.length, currentFile: '' }
+  processing.value = true; errorMessage.value = ''; successMessage.value = ''; records.value = []; fileErrors.value = []; progress.value = { completed: 0, total: files.value.length, currentFile: '' }
   try {
     await ensureLocalFeature()
     saveSettings()
@@ -152,8 +157,11 @@ async function processReports() {
 async function pollJob(jobId) {
   const response = await fetch(`/local-api/jobs/${jobId}`); const data = await response.json(); if (!response.ok) throw new Error(data.detail || '无法读取任务进度')
   progress.value = { completed: data.completed_files || 0, total: data.total_files || 0, currentFile: data.current_file || '' }
-  if (data.status === 'completed') { records.value = data.records || []; selectedRecordId.value = records.value[0]?.id || ''; successMessage.value = data.message; processing.value = false; return }
-  if (data.status === 'failed') throw new Error(data.message || '影像 OCR 任务失败')
+  if (data.status === 'completed' || data.status === 'failed') {
+    records.value = data.records || []; fileErrors.value = data.file_errors || []; selectedRecordId.value = records.value[0]?.id || ''; processing.value = false
+    if (data.status === 'failed') throw new Error(data.message || '影像 OCR 任务失败')
+    successMessage.value = data.message; return
+  }
   window.setTimeout(() => pollJob(jobId).catch((error) => { errorMessage.value = error.message; processing.value = false }), 700)
 }
 

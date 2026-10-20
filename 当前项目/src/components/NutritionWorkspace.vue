@@ -186,7 +186,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storedOcrApiUrl } from '../runtime-config'
 import { buildBatchPayload } from '../nutrition-batch'
-import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass, reviewCategoryRows, coalesceReviewAliases } from '../nutrition-presentation'
+import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass, reviewCategoryRows, coalesceReviewAliases, energyDisplayNote } from '../nutrition-presentation'
 
 const includeQualityPage = ref(localStorage.getItem('nutrition-include-quality-page') === 'true')
 const reportStyle = ref(localStorage.getItem('nutrition-report-style') === 'legacy' ? 'legacy' : 'modern')
@@ -215,7 +215,7 @@ const pagedNutritionPeople = computed(() => { const start = (nutritionPage.value
 const nutritionPageRange = computed(() => { if (!filteredNutritionPeople.value.length) return '0 人'; const start = (nutritionPage.value - 1) * nutritionPageSize.value + 1; const end = Math.min(start + nutritionPageSize.value - 1, filteredNutritionPeople.value.length); return `显示 ${start}–${end}，共 ${filteredNutritionPeople.value.length} 人` })
 const bmiValue = computed(() => { const height = Number(reportProfile.value.height); const weight = Number(reportProfile.value.weight); if (!(height > 0 && weight > 0)) return ''; return (weight / ((height / 100) ** 2)).toFixed(1) })
 const bmiStatus = computed(() => { const bmi = Number(bmiValue.value); if (!bmi) return ''; if (bmi < 18.5) return '偏瘦'; if (bmi < 24) return '正常'; if (bmi < 28) return '超重'; return '肥胖' })
-const energyStandardNote = computed(() => nutritionPreview.value?.nutrition?.energy?.standard_note || '请选择活动量')
+const energyStandardNote = computed(() => energyDisplayNote(nutritionPreview.value?.nutrition?.energy))
 const nutritionDataSource = computed(() => nutritionPreview.value?.food_data_source || {})
 const unifiedEvaluationRows = computed(() => evaluationRows(nutritionPreview.value))
 const unifiedEvaluationContext = computed(() => evaluationContext(nutritionPreview.value))

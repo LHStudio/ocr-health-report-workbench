@@ -1,12 +1,41 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass } from '../src/nutrition-presentation.js'
+import * as presentation from '../src/nutrition-presentation.js'
 
 test('hide the requested milk conversion and vegetable explanations without changing raw warnings', () => {
   const warnings = ['奶粉、奶酪折算鲜奶等价量（按蛋白质估计）=记录克数', '蔬菜最低400g/天，原有运动分类要求更高时取更高下限。', '缺少体重']
   const data = { food_standard_evaluation: { warnings } }
   assert.deepEqual(evaluationWarnings(data), ['缺少体重'])
   assert.equal(data.food_standard_evaluation.warnings.length, 3)
+})
+
+test('hide requested report explanatory copy in preview without hiding real alerts or editing evidence', () => {
+  const data = {food_standard_evaluation:{warnings:['代表食物估算（需复核）：虾、鱼']},report_checks:{warnings:[
+    '足球训练计划估算：静息代谢与运动消耗；周净消耗÷7；非完整全天总消耗。',
+    '篮球训练计划估算：静息代谢与运动消耗。',
+    '既有优质蛋白至少一半约束下，示例食谱蛋白质计划点由128.52g/天调整为148.52g/天，仍在个人蛋白质参考范围内；个人需求上下限不变。',
+    '实际摄入异常，请核对份量。',
+    '体操训练方案尚未提供，未套用足球或篮球MET。',
+    '既有优质蛋白至少一半约束下，示例食谱蛋白质计划点由100.00g/天调整为200.00g/天，已超个人蛋白质参考上限，现有食谱约束不相容；请核对约束，不自动倒扣肉类为0。',
+  ]}}
+  const before = JSON.stringify(data)
+  const visible = evaluationWarnings(data).join('\n')
+  for (const phrase of ['代表食物估算（需复核）','训练计划估算','周净消耗÷7','非完整全天总消耗','蛋白质计划点由']) assert.equal(visible.includes(phrase), false)
+  assert.match(visible, /实际摄入异常/)
+  assert.match(visible, /体操训练方案尚未提供/)
+  assert.match(visible, /超出个人参考上限/)
+  assert.equal(JSON.stringify(data), before)
+})
+
+test('energy preview uses short display note without changing the numeric reference or source note', () => {
+  assert.equal(typeof presentation.energyDisplayNote, 'function')
+  const energy = {reference_type:'bmr_plus_net',standard:'1732-2256',standard_note:'kcal/天 · 静息代谢＋日均运动净消耗（计划估算，非完整全天总消耗）'}
+  const before = JSON.stringify(energy)
+  assert.equal(presentation.energyDisplayNote(energy), 'kcal/天 · 静息代谢＋日均运动净消耗')
+  assert.equal(JSON.stringify(energy), before)
+  assert.equal(presentation.energyDisplayNote({standard_note:'BMR填写区间'}), 'BMR填写区间')
+  assert.equal(presentation.energyDisplayNote(null), '请选择活动量')
 })
 
 test('merge by key, standard wins, no mutation or duplicate vegetables', () => {

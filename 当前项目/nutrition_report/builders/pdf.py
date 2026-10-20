@@ -7,7 +7,7 @@ from pathlib import Path
 from xml.sax.saxutils import escape
 from ..energy_reference import energy_reference_text
 from ..report_checks import energy_summary
-from .presentation import evaluation_rows, evaluation_warnings, evaluation_context
+from .presentation import evaluation_rows, evaluation_warnings, evaluation_context, report_alerts
 from .pdf_legacy import NutritionPDFBuilder as LegacyNutritionPDFBuilder
 from ..report_style import normalize_report_style
 
@@ -323,7 +323,7 @@ class NutritionPDFBuilder:
         story.extend([PageBreak(), heading('整体评估及建议', '食物摄入量评估报告 · 整体评估及建议')])
         advice = ParagraphStyle('NutritionSuggestionFlow', parent=left, leading=16,
             leftIndent=19, firstLineIndent=-19, spaceAfter=9)
-        alerts = (data.get('report_checks') or {}).get('warnings') or []
+        alerts = report_alerts(data)
         if alerts:
             story.append(Paragraph('自动核查提醒', advice))
             for message in alerts:
@@ -429,8 +429,7 @@ class NutritionPDFBuilder:
             resting = '–'.join(f'{v:g}' for v in energy['resting_bounds'])
             net = '–'.join(f'{v:.1f}' for v in t['net_daily_kcal'])
             return (f"{value} kcal/day<br/>参考区间 {escape(energy_reference_text(energy))} kcal/天"
-                    f"<br/>静息代谢 {resting} ＋ 运动净消耗日均 {net} kcal/天"
-                    f"<br/>{escape(t['sport'])}训练计划估算；周净消耗÷7；非完整全天总消耗")
+                    f"<br/>静息代谢 {resting} ＋ 运动净消耗日均 {net} kcal/天")
         if energy.get('reference_type') == 'bmr':
             return f"{value} kcal/day<br/>建议能量区间 {escape(energy_reference_text(energy))} kcal/天<br/>BMR（填写区间）"
         if standard not in (None, ""):

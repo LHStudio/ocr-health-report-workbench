@@ -241,7 +241,7 @@ class NutritionExcelBuilder:
             ("脂肪", nutrition.get("fat", ""), "g", athlete_rows.get("fat", {}).get("evaluation", "-")),
             ("碳水化合物", nutrition.get("carbohydrate", ""), "g", athlete_rows.get("carbohydrate", {}).get("evaluation", "-")),
             ("钙", nutrition.get("calcium", {}).get("value", ""), "mg/day", nutrition.get("calcium", {}).get("evaluation", "")),
-            ("推荐能量", energy_reference_text(nutrition.get("energy", {})) if nutrition.get("energy", {}).get("reference_type") in {'bmr', 'bmr_plus_net'} else nutrition.get("energy", {}).get("standard"), "kcal/天", nutrition.get("energy", {}).get("standard_note", "")),
+            ("推荐能量", energy_reference_text(nutrition.get("energy", {})) if nutrition.get("energy", {}).get("reference_type") in {'bmr', 'bmr_plus_net'} else nutrition.get("energy", {}).get("standard"), "kcal/天", '静息代谢＋日均运动净消耗' if nutrition.get("energy", {}).get("reference_type") == 'bmr_plus_net' else nutrition.get("energy", {}).get("standard_note", "")),
             ("活动量", nutrition.get("energy", {}).get("activity_label") or "未选择", "", ""),
         ]
 
