@@ -114,6 +114,11 @@ class GenerationDateFooter(Flowable):
         self.text, self.font_name = text, font_name
         self.width, self.height = 1, 1
 
+    def frameAction(self, frame):
+        # This is page furniture, not content. Even a completely full frame
+        # must not push the date onto a new otherwise-empty page.
+        self.draw()
+
     def draw(self):
         canvas = self.canv
         canvas.saveState()

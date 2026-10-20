@@ -139,5 +139,22 @@ class TrainingEnergyTest(unittest.TestCase):
             self.assertEqual(value,a.payload['user']['trainingPlan']['weeklyMinutes'])
             self.assertEqual(0,a.payload['user']['trainingPlan']['strengthMinutes'])
 
+    def test_generation_date_does_not_create_a_date_only_page(self):
+        import tempfile
+        from pathlib import Path
+        import fitz
+        from reportlab.lib.pagesizes import A4
+        from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Spacer
+        from nutrition_report.builders.pdf import GenerationDateFooter, NutritionPDFBuilder
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/'filled.pdf';doc=BaseDocTemplate(str(p),pagesize=A4)
+            doc.addPageTemplates([PageTemplate(id='full',frames=[Frame(0,0,*A4,
+                leftPadding=0,rightPadding=0,topPadding=0,bottomPadding=0)])])
+            font=NutritionPDFBuilder().font_name
+            doc.build([Spacer(1,A4[1]),GenerationDateFooter('报告生成日期：2026-10-20',font)])
+            with fitz.open(p) as pdf:
+                self.assertEqual(1,len(pdf))
+                self.assertIn('报告生成日期',pdf[0].get_text())
+
 
 if __name__=='__main__':unittest.main()
