@@ -58,7 +58,7 @@ class ScoringAuditFollowupTest(unittest.TestCase):
         self.assertEqual('适宜',report['nutrition']['energy']['evaluation'])
         row=next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='grains_remainder')
         self.assertEqual('personal_target',row['evaluation_basis'])
-        self.assertEqual('不足',row['evaluation'])
+        self.assertEqual('过多',row['evaluation'])
         self.assertFalse(any('应先增加主食' in s for s in report['suggestions']))
 
     def test_energy_deficit_preserves_independent_milk_and_egg_scores(self):
@@ -128,10 +128,10 @@ class ScoringAuditFollowupTest(unittest.TestCase):
     def test_livestock_remainder_uses_complement_of_existing_seafood_minimum(self):
         data=self.service.build_report_data(self.payload)
         row=next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='livestock_remainder')
-        meat=next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='meat')
+        meat=data['personal_targets']['food_targets']['meat']
         self.assertEqual('过多',row['evaluation'])
-        self.assertEqual(500,row['actual'])
-        self.assertAlmostEqual(meat['target_max']*.7,row['target_max'])
+        self.assertAlmostEqual(500,row['actual'])
+        self.assertAlmostEqual(meat['max']*.7,row['target_max'])
         self.assertEqual(500,row['display']['actual'])
         self.assertEqual(f"{row['target_min']:.2f}–{row['target_max']:.2f} g/天",row['display']['target'])
         self.assertIsNone(row['score'])  # Complement is not an extra independent scoring item.

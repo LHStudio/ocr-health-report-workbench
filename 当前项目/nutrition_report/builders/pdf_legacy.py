@@ -397,9 +397,11 @@ class NutritionPDFBuilder:
                 story.append(Paragraph(escape(line), quality))
                 story.append(Spacer(1, 0.3 * mm))
 
-        story.extend([PageBreak(), Paragraph('整体评估及建议', title)])
+        advice_heading = Paragraph('整体评估及建议', title)
+        advice_heading.is_advice_start = True
+        story.extend([PageBreak(), advice_heading])
         advice = ParagraphStyle('FinalSuggestions', parent=left, leading=16,
-                                leftIndent=19, firstLineIndent=-19, spaceAfter=9)
+                                leftIndent=19, firstLineIndent=-19, spaceAfter=5)
         alerts = report_alerts(data)
         if alerts:
             story.append(Paragraph('自动核查提醒', advice))
@@ -410,7 +412,17 @@ class NutritionPDFBuilder:
             plain = f'{index}. {_as_text(item)}'
             story.append(NaturalSuggestionParagraph(_suggestion_markup(plain), advice, plain_text=plain))
         story.append(GenerationDateFooter('报告生成日期：'+str(data.get('generated_at') or data.get('generated_date') or ''),self.font_name))
-        doc.build(story)
+        def after_flowable(flowable):
+            if getattr(flowable, 'is_advice_start', False):
+                doc._advice_start_page = doc.page
+        def continued_heading(canvas, document):
+            if document.page > getattr(document, '_advice_start_page', float('inf')):
+                canvas.saveState()
+                canvas.setFont(self.font_name, 10.5)
+                canvas.drawString(18*mm, A4[1]-10*mm, '整体评估及建议（续）')
+                canvas.restoreState()
+        doc.afterFlowable = after_flowable
+        doc.build(story, onLaterPages=continued_heading)
 
     def _build_food_report(
         self,
@@ -435,9 +447,14 @@ class NutritionPDFBuilder:
             info = results.get(category) or default_info
             value = info.get("value", 0)
             amount_text = "-" if value in (None, "", "-") else f"{escape(_as_text(value))} g"
+            if info.get('reference_equivalent'):
+                equivalent = info['reference_equivalent']
+                v = equivalent['value']
+                amount_text = '记录原重：' + amount_text
+                amount_text += '<br/>' + escape(equivalent['representative']) + '等价量：' + ('-' if v is None else f'{v:.2f} g')
             if category == '奶类' and 'equivalent_value' in info:
                 equivalent = info['equivalent_value']
-                amount_text += '<br/>鲜奶等价量（按蛋白质估计）：' + ('-' if equivalent is None else f'{equivalent:g} g')
+                amount_text += '<br/>鲜奶等价量：' + ('-' if equivalent is None else f'{equivalent:g} g')
             table_data.append([
                 Paragraph(escape(category), category_style),
                 Paragraph(amount_text, normal),

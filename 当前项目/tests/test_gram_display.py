@@ -31,7 +31,7 @@ class GramDisplayTest(unittest.TestCase):
         self.assertEqual(f'{energy*.2/9:.2f}–{energy*.3/9:.2f} g/天',rows['fat']['target'])
         less=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=10)]})
         small={r['key']:r for r in evaluation_rows(less)}
-        for key in ('beans_energy','tubers_energy','grains_remainder','meat','seafood','quality_protein','fat'):
+        for key in ('beans_energy','tubers_energy','grains_remainder','seafood','quality_protein','fat'):
             self.assertEqual(rows[key]['target'],small[key]['target'])
 
     def test_pdf_excel_expose_only_grams_and_at_most_two_decimals(self):

@@ -204,8 +204,16 @@ class NutritionPDFBuilder:
 
         doc = BaseDocTemplate(str(output), pagesize=A4, rightMargin=18*mm, leftMargin=18*mm,
             topMargin=16*mm, bottomMargin=20*mm, title='营养健康评估报告', author='OCR 营养报告系统')
+        def after_flowable(flowable):
+            if getattr(flowable, 'report_section', '') == '食物摄入量评估报告 · 整体评估及建议':
+                doc._advice_start_page = doc.page
+        doc.afterFlowable = after_flowable
         def furniture(canvas, document):
             canvas.saveState()
+            if document.page > getattr(document, '_advice_start_page', float('inf')):
+                canvas.setFont(self.font_name, 10.5)
+                canvas.setFillColor(navy)
+                canvas.drawString(18*mm, A4[1]-10*mm, '整体评估及建议（续）')
             canvas.setFont(self.font_name, 8)
             canvas.setFillColor(muted)
             canvas.setStrokeColor(line)
@@ -322,7 +330,7 @@ class NutritionPDFBuilder:
             for item in source_lines: story.extend([Paragraph(escape(item),quality),Spacer(1,4)])
         story.extend([PageBreak(), heading('整体评估及建议', '食物摄入量评估报告 · 整体评估及建议')])
         advice = ParagraphStyle('NutritionSuggestionFlow', parent=left, leading=16,
-            leftIndent=19, firstLineIndent=-19, spaceAfter=9)
+            leftIndent=19, firstLineIndent=-19, spaceAfter=5)
         alerts = report_alerts(data)
         if alerts:
             story.append(Paragraph('自动核查提醒', advice))
@@ -359,10 +367,15 @@ class NutritionPDFBuilder:
             info = results.get(category) or default_info
             value = info.get("value", 0)
             amount_text = "-" if value in (None, "", "-") else f"{escape(_as_text(value))} g"
+            if info.get('reference_equivalent'):
+                equivalent = info['reference_equivalent']
+                v = equivalent['value']
+                amount_text = '记录原重：' + amount_text
+                amount_text += '<br/>' + escape(equivalent['representative']) + '等价量：' + ('-' if v is None else f'{v:.2f} g')
             if category == '奶类' and 'equivalent_value' in info:
                 equivalent = info['equivalent_value']
                 equivalent_text = '-' if equivalent is None else f'{equivalent:.2f}'.rstrip('0').rstrip('.') + ' g'
-                amount_text += '<br/>鲜奶等价量（按蛋白质估计）：<nobr>' + equivalent_text + '</nobr>'
+                amount_text += '<br/>鲜奶等价量：<nobr>' + equivalent_text + '</nobr>'
             table_data.append([
                 Paragraph(escape(category), category_style),
                 Paragraph(amount_text, normal),

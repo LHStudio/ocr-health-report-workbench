@@ -57,6 +57,8 @@ def evaluation_warnings(data):
 
 def _display_warning(note):
     """Hide requested explanatory copy only; retain underlying audit messages."""
+    if note.startswith('示例食谱脂肪'):
+        return ''
     if note.startswith(('代表食物估算（需复核）：', '足球训练计划估算：', '篮球训练计划估算：')):
         return ''
     if note.startswith('既有优质蛋白至少一半约束下，示例食谱蛋白质计划点由'):

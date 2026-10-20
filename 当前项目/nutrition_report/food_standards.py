@@ -32,7 +32,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
         '基础膳食参考标准',
         '主食能量=谷类+豆类（包含豆制品）+薯类；豆类至少5%、薯类至少15%，因此谷类占比上限为80%，不是必须达到80%。',
         '水产品占比按肉类日均重量计算；畜禽肉为肉类总量扣除水产品后的部分，包含畜肉和禽肉。',
-        '奶粉、奶酪折算鲜奶等价量（按蛋白质估计）=记录克数×该食物每100g蛋白质/鲜奶每100g蛋白质；鲜奶、酸奶按原重。折算只用于奶量评价，营养素不重复计算。',
+        '奶粉、奶酪折算鲜奶等价量=记录克数×该食物每100g蛋白质/鲜奶每100g蛋白质；鲜奶、酸奶按原重。折算只用于奶量评价，营养素不重复计算。',
         '蔬菜最低400g/天，原有运动分类要求更高时取更高下限；采用最低量规则，不以先前500g封顶。',
         '优质蛋白=肉（含水产品）+蛋+奶的蛋白质克数/所有记录食物蛋白质克数；不含补充剂。',
         '每项定量规则达标记1、未达标记0、无法判断不计分；仅在全部定量项均可判断时显示达标率。谷类上限由豆类、薯类下限推导，达标率不作为医学综合评分。',
@@ -79,7 +79,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
                 else:
                     equivalent = grams * protein / milk_protein
                     milk_equivalent += equivalent
-                    milk_trace.append(f'{name} {grams:g}g×{protein:g}/{milk_protein:g}={equivalent:.2f}g鲜奶等价量（按蛋白质估计）')
+                    milk_trace.append(f'{name} {grams:g}g×{protein:g}/{milk_protein:g}={equivalent:.2f}g鲜奶等价量')
             else:
                 milk_equivalent += grams
         # Every nutrient used by the report must be known for consumed foods.
@@ -155,7 +155,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
         ratio=(total({'谷类'}, 'energy'), staple_energy), over_label='过多',
         note='能量占比上限=100%-豆类5%-薯类15%')
     milk_note = (f'鲜奶基准蛋白质 {milk_protein:g} g/100g；' if milk_protein else '') + '；'.join(milk_trace)
-    add('milk', '奶类鲜奶等价量（按蛋白质估计）', {'奶类'}, 400, note=milk_note or '鲜奶、酸奶原重；奶粉奶酪按蛋白质折算', actual_override=milk_equivalent)
+    add('milk', '奶类鲜奶等价量', {'奶类'}, 400, note=milk_note or '鲜奶、酸奶原重；奶粉奶酪按蛋白质折算', actual_override=milk_equivalent)
     add('eggs', '蛋类', {'蛋类'}, 50, note='每个鸡蛋按50g；显式克数不二次折算')
     add('seafood', '水产品占肉类重量', meat, 30,
         ratio=(total({'水产品'}), total(meat)))

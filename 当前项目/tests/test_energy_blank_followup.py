@@ -79,11 +79,11 @@ class EnergyBlankFollowupTest(unittest.TestCase):
             self.service.excel_builder.build(report,xlsx)
             with fitz.open(pdf) as doc: text=''.join(p.get_text() for p in doc)
             compact=''.join(text.split())
-            self.assertIn('鲜奶等价量（按蛋白质估计）',compact)
+            self.assertIn('鲜奶等价量',compact)
             self.assertIn('推荐能量2100',compact)
             self.assertNotIn('记录不完整',text)
             wb=openpyxl.load_workbook(xlsx,data_only=True)
-            self.assertIn('按蛋白质估计',wb['分类评估']['D1'].value)
+            self.assertNotIn('按蛋白质估计',wb['分类评估']['D1'].value)
             categories={r[0]:r[2] for r in wb['分类评估'].iter_rows(min_row=2,values_only=True)}
             self.assertEqual('建议尽量不吃',categories['零食'])
             for category in ['饮料','酒类']:self.assertEqual('-',categories[category])

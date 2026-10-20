@@ -31,21 +31,18 @@ class QuantityFirstTest(unittest.TestCase):
         self.assertNotIn('谷类能量占比偏高',suggestions)
         self.assertEqual('总能量过少。',data['suggestions'][0])
         self.assertNotIn('占比偏高',self.service.pdf_builder._interpretation(data))
-        self.assertEqual(1,sum(s.startswith('肉类（含水产品）') for s in data['suggestions']))
-        self.assertEqual(14, len(data['suggestions']))
+        self.assertEqual(0,sum(s.startswith('肉类（含水产品）') for s in data['suggestions']))
+        self.assertEqual(17, len(data['suggestions']))
 
-    def test_meat_target_subtracts_planned_protein_not_recorded_food(self):
-        data=self.service.build_report_data(self.payload); row=self.rows(data)['meat']
-        plan=data['food_standard_evaluation']['personal_targets']
-        want=plan['food_targets']['meat']['planning']
-        self.assertAlmostEqual(want,row['target_grams'],places=4)
-        self.assertEqual(20,row['actual'])
-        self.assertAlmostEqual(row['target_min']-20,row['shortfall_grams'],places=4)
-        self.assertEqual('',row['note'])
-        self.assertIn('不扣除实际',next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='meat')['note'])
+    def test_split_meat_targets_do_not_depend_on_recorded_grain_or_milk(self):
+        data=self.service.build_report_data(self.payload)
         changed=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=5000),dict(name='鲜奶',amount=3000)]})
-        self.assertEqual(want,self.rows(changed)['meat']['target_grams'])
-        self.assertGreater(want,0)
+        self.assertNotIn('meat',self.rows(data))
+        for key in ('livestock_remainder','seafood'):
+            row=self.rows(data)[key]
+            self.assertGreater(row['target_min'],0)
+            self.assertEqual(row['target'],self.rows(changed)[key]['target'])
+            self.assertEqual('protein',row['conversion_basis'])
 
     def test_every_energy_state_compares_fixed_personal_food_targets(self):
         # Rice provides enough carbohydrate/energy; beef supplies enough protein, no seafood.
@@ -60,9 +57,9 @@ class QuantityFirstTest(unittest.TestCase):
         data=self.service.build_report_data({**self.payload,'source_foods':[], 'conversion_warnings':[{'code':'unresolved_period','food':'米饭'}]})
         rows=self.rows(data)
         self.assertEqual('-',rows['grains_remainder']['evaluation'])
-        self.assertEqual('-',rows['meat']['evaluation'])
-        self.assertIsNone(rows['meat']['actual'])
-        self.assertGreater(rows['meat']['target_grams'],0)
+        self.assertEqual('-',rows['livestock_remainder']['evaluation'])
+        self.assertIsNone(rows['livestock_remainder']['actual'])
+        self.assertGreater(rows['livestock_remainder']['target_min'],0)
 
     def test_quality_page_default_off_and_explicit_opt_in_and_generation_date(self):
         for enabled in [False,True]:
@@ -86,10 +83,10 @@ class QuantityFirstTest(unittest.TestCase):
 
     def test_manual_final_values_are_preserved(self):
         data=self.service.build_report_data({**self.payload,'autoEvaluation':False,'manualEvaluations':{
-            'categoryEvaluations':{'谷类':'人工结论'},'standardEvaluations':{'grains_remainder':'人工结构','meat':'人工肉类'},'overallSuggestions':'人工建议'}})
+            'categoryEvaluations':{'谷类':'人工结论'},'standardEvaluations':{'grains_remainder':'人工结构','livestock_remainder':'人工畜禽肉'},'overallSuggestions':'人工建议'}})
         self.assertEqual('人工结构',data['category_result']['谷类']['evaluation'])
         self.assertEqual('人工结构',self.rows(data)['grains_remainder']['evaluation'])
-        self.assertEqual('人工肉类',self.rows(data)['meat']['evaluation'])
+        self.assertEqual('人工畜禽肉',self.rows(data)['livestock_remainder']['evaluation'])
         self.assertEqual(['人工建议'],data['suggestions'])
 
 if __name__=='__main__': unittest.main()

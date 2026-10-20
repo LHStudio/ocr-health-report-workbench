@@ -42,6 +42,7 @@ export function evaluationWarnings(data) {
 }
 
 function displayWarning(note) {
+  if (note.startsWith('示例食谱脂肪')) return ''
   if (['代表食物估算（需复核）：', '足球训练计划估算：', '篮球训练计划估算：'].some(prefix => note.startsWith(prefix))) return ''
   if (note.startsWith('既有优质蛋白至少一半约束下，示例食谱蛋白质计划点由')) {
     if (note.includes('仍在个人蛋白质参考范围内')) return ''

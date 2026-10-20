@@ -12,11 +12,11 @@ class LogicTest(unittest.TestCase):
   payload={'user':{'name':'合成示例','weight':61.9,'age':25,'gender':'female','activityLevel':'2','athleteType':'strength','trainingPhase':'training'},'meals':[{'name':n,'amount':g} for n,g in amounts.items()]}
   return NutritionService(food_db=db).build_report_data(payload)
  def test_logic(self):
-  r=self.report(); self.assertEqual('不足',r['category_result']['谷类']['evaluation'])
+  r=self.report(); self.assertEqual('-',r['category_result']['谷类']['evaluation'])
   self.assertEqual('不足',next(x for x in r['athlete_evaluation']['rows'] if x['key']=='carbohydrate')['evaluation'])
   self.assertTrue(any('蛋白质不足：' in s for s in r['suggestions']))
   grain=next(x for x in evaluation_rows(r) if x['key']=='grains_remainder')
-  self.assertEqual('不足',grain['evaluation'])
+  self.assertEqual('-',grain['evaluation']); self.assertTrue(any('谷类缺少有效代表食物' in w for w in r['personal_targets']['plan_warnings']))
   self.assertEqual('',grain['note'])
   self.assertEqual('personal_target',next(x for x in r['food_standard_evaluation']['rows'] if x['key']=='grains_remainder')['evaluation_basis'])
   text=NutritionPDFBuilder._interpretation(r)

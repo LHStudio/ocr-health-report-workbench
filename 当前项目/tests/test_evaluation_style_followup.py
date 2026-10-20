@@ -24,11 +24,11 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         self.assertTrue(set(evaluations)<={'过多','过少','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中','占比偏低','占比偏高','占比适中'},set(evaluations))
         # Reference DB remains complete even when only one food was recorded.
         # Compare 100 g with the independent personal target, not low energy.
-        self.assertEqual('不足',report['category_result']['谷类']['evaluation'])
+        self.assertEqual('过多',report['category_result']['谷类']['evaluation'])
         grain=next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='grains_remainder')
         self.assertEqual('personal_target',grain['evaluation_basis'])
         self.assertGreater(grain['target_min'],100)
-        self.assertTrue(report['food_standard_evaluation']['personal_targets']['plan_warnings'])
+        self.assertFalse(report['food_standard_evaluation']['personal_targets']['plan_warnings'])
         service=NutritionService()
         for actual,status in [(1000,'过少'),(2100,'适宜'),(3000,'过多')]:
             self.assertEqual(status,service._eval_energy_against_standard(actual,2100))

@@ -178,7 +178,7 @@ class NutritionExcelBuilder:
             bottom=Side(style="thin")
         )
 
-        headers = ["分类", "摄入原重(g)", "评价", "奶类鲜奶等价量（按蛋白质估计）(g)"]
+        headers = ["分类", "摄入原重(g)", "评价", "奶类鲜奶等价量(g)", "评价等价食物", "评价等价量(g)"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.fill = header_fill
@@ -202,12 +202,18 @@ class NutritionExcelBuilder:
             ws.cell(row=row_idx, column=3).border = thin_border
             if cat == '奶类':
                 ws.cell(row=row_idx, column=4, value=info.get('equivalent_value'))
+            equivalent = info.get('reference_equivalent')
+            if equivalent:
+                ws.cell(row=row_idx, column=5, value=equivalent['representative'])
+                ws.cell(row=row_idx, column=6, value=equivalent['value'])
             row_idx += 1
 
         ws.column_dimensions["A"].width = 15
         ws.column_dimensions["B"].width = 15
         ws.column_dimensions["C"].width = 15
         ws.column_dimensions["D"].width = 36
+        ws.column_dimensions['E'].width = 20
+        ws.column_dimensions['F'].width = 20
         ws['D1'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         ws.row_dimensions[1].height = 34
 

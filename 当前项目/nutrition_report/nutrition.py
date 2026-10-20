@@ -74,6 +74,10 @@ class NutritionService:
                 category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row.get('evaluation_basis') == 'ratio' and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
                 if row['key'] == 'milk':
                     category_result[category]['equivalent_value'] = row['actual']
+                elif row.get('representative') and row.get('conversion_basis'):
+                    category_result[category]['reference_equivalent'] = dict(
+                        value=row['actual'], representative=row['representative'],
+                        basis=row['conversion_basis'])
         # New food rules supersede the old vegetable-only rule, including scope/data gates.
         vegetable = next(r for r in food_standard['rows'] if r['key'] == 'vegetables')
         athlete['rows'] = [dict(vegetable) if r['key'] == 'vegetables' else r for r in athlete['rows']]
@@ -159,7 +163,7 @@ class NutritionService:
         attach_gram_display(report, self.food_db, merged_meals)
         if report['assessment_status'] == 'ready':
             report['energy_guidance'] = energy_summary(report) + '各类食物按个人营养目标与实际摄入独立比较，不按总能量方向统一增减主食。'
-        # One shared 14-topic structure for all energy states; explicit manual
+        # One shared 17-item structure for all energy states; explicit manual
         # advice remains verbatim and receives a separate consistency warning.
         if auto_evaluation or 'overallSuggestions' not in (front_json.get('manualEvaluations') or {}):
             report['suggestion_items'] = build_overall_suggestions(report)

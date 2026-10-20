@@ -36,7 +36,7 @@ class ReportDisplayCleanupTests(unittest.TestCase):
         for energy_user in ({}, {'bmrMin': 400, 'bmrMax': 500}, {'bmrMin': 3000, 'bmrMax': 3500}):
             d = self.report(**energy_user)
             keys = [i['key'] for i in d['suggestion_items']]
-            self.assertEqual(14, len(keys))
+            self.assertEqual(17, len(keys))
             self.assertEqual(keys.index('vegetables')+1, keys.index('nuts'))
             self.assertIn('坚果', d['suggestions'][keys.index('nuts')])
 

@@ -114,7 +114,7 @@ class FoodStandardsTest(unittest.TestCase):
         report = self.service.build_report_data({'user': {'weight':65,'gender':'female','age':23,'activityLevel':'2'},
             'meals': [{'name': '坚果', 'amount': 5}], 'autoEvaluation': False,
             'manualEvaluations': {'standardEvaluations': {'nuts': '人工复核'}}})
-        self.assertEqual(14,len(report['suggestions'])); self.assertTrue(any('人工复核' in s for s in report['suggestions']))
+        self.assertEqual(17,len(report['suggestions'])); self.assertTrue(any('人工复核' in s for s in report['suggestions']))
 
     def test_negative_and_nonfinite_ocr_quantity_not_silently_positive(self):
         for field, value in [('平均每次食用量', '-10g'), ('次数', '-1'), ('次数', 'NaN'), ('平均每次食用量', 'Infinity')]:

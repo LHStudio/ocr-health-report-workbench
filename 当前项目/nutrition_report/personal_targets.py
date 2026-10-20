@@ -1,8 +1,8 @@
-"""Intake-independent food planning from the existing personal V2 requirements.
+"""Food-equivalent conversion from the existing personal V2 requirements.
 
 The 80/5/15 staple-energy and 70/30 meat-weight split is an explicit planning
-example using existing constraints, not a new clinical optimum. Representative
-foods are selected from the active nutrient database, never the recorded meals.
+conversion convention, not a second menu or a second nutritional requirement.
+Densities come from the active nutrient database, never from recorded amounts.
 """
 import math
 
@@ -43,8 +43,8 @@ def build_personal_targets(athlete, standard, food_db):
     result = dict(macro_targets=macro, food_targets={}, planned_nutrients={}, plan_warnings=[],
                   assumptions=[
                       '个人蛋白质和碳水化合物需求沿用V2运动类型×体重；脂肪需求为个人能量参考的20–30%供能（适用足球/篮球为静息代谢＋运动净消耗，否则沿用BMR/EER），不以实际摄入反推。',
-                      '计划示例取原有豆类最低5%、薯类最低15%、谷类余量80%的主食能量分配，水产品取原有最低30%、畜禽肉70%的肉类重量分配；不是新增唯一食谱。',
-                      '固定食物采用既有奶、蛋、蔬菜、水果、坚果目标下限；代表食物密度来自当前营养库，改变代表食谱需重新换算，不改变个人营养需求。',
+                      '克数换算沿用豆类5%、薯类15%、谷类余量80%的分配端点，水产品30%、畜禽肉70%；这些是换算口径，不是第二套营养需求。',
+                      '固定食物采用既有奶、蛋、蔬菜、水果、坚果目标下限；默认食物每克营养来自当前营养库，各类贡献只计一次，不据此生成另一份食谱评价。',
                   ])
     warnings = result['plan_warnings']
     if not athlete.get('targets_applicable') or any(macro[k]['min'] is None for k in ('protein', 'carbohydrate')):
@@ -53,7 +53,7 @@ def build_personal_targets(athlete, standard, food_db):
 
     representatives = {}
     for key, (category, preferred) in REPRESENTATIVES.items():
-        candidates = [preferred] + sorted(n for n, f in food_db.items() if f.get('category') == category and n != preferred)
+        candidates = [preferred]  # User-confirmed defaults; never silently switch food identity.
         for name in candidates:
             info = food_db.get(name, {})
             if info.get('category') != category:
@@ -64,7 +64,7 @@ def build_personal_targets(athlete, standard, food_db):
                 continue
             if not all(math.isfinite(v) and v >= 0 for v in values.values()):
                 continue
-            if key in STAPLE_SHARES and values['energy'] <= 0:
+            if key in STAPLE_SHARES and (values['energy'] <= 0 or values['carbohydrate'] <= 0):
                 continue
             if key in {'seafood', 'livestock_remainder'} and values['protein'] <= 0:
                 continue
@@ -120,7 +120,28 @@ def build_personal_targets(athlete, standard, food_db):
         return result
     carb_bounds = {macro['carbohydrate']['min'], macro['carbohydrate']['max'] or macro['carbohydrate']['min']}
     protein_bounds = {macro['protein']['min'], macro['protein']['max'] or macro['protein']['planning']}
-    solutions = [point] + [v for c in carb_bounds for p in protein_bounds if (v := solve(c, p)) is not None]
+    def within_requirements(solution):
+        energy, grams = solution
+        for nutrient in ('carbohydrate', 'protein'):
+            value = fixed[nutrient] + energy * staple[nutrient] + grams * meat[nutrient]
+            low, high = macro[nutrient]['min'], macro[nutrient]['max']
+            if value < low - 1e-8 or (high is not None and value > high + 1e-8):
+                return False
+        return True
+
+    candidates = [point]
+    for carb in carb_bounds:
+        for protein in protein_bounds:
+            solution = solve(carb, protein)
+            if solution is not None:
+                candidates.append(solution)
+    solutions = [solution for solution in candidates if within_requirements(solution)]
+    result['conversion_solutions'] = [dict(staple_energy=s, internal_meat_g=m,
+        **{n: fixed[n] + s*staple[n] + m*meat[n] for n in ('carbohydrate','protein')}) for s,m in solutions]
+    if not solutions:
+        warnings.append('默认食物密度与个人营养需求不相容，暂不输出不相容的食物目标。')
+        return result
+
     for key, share in STAPLE_SHARES.items():
         name, category, values = representatives[key]
         amounts = [s * share / values['energy'] for s, _ in solutions]
@@ -140,31 +161,18 @@ def build_personal_targets(athlete, standard, food_db):
                                           note='个人总蛋白质需求至少一半来自肉蛋奶；单位为蛋白质克数，不是食物重量。')
     result['planned_nutrients'] = {n: fixed[n] + point[0] * staple[n] + point[1] * meat[n] for n in NUTRIENTS}
     result['planned_meat_protein'] = point[1] * meat['protein']
-    actual_plan_protein = result['planned_nutrients']['protein']
-    if abs(actual_plan_protein - macro['protein']['planning']) > 1e-6:
-        requested = macro['protein']['planning']
-        macro['protein']['requested_planning'] = requested
-        macro['protein']['planning'] = actual_plan_protein
-        inside = macro['protein']['max'] is None or actual_plan_protein <= macro['protein']['max'] + 1e-8
-        result['constraints_satisfied'] = inside
-        warnings.append(f'既有优质蛋白至少一半约束下，示例食谱蛋白质计划点由{requested:.2f}g/天调整为{actual_plan_protein:.2f}g/天，' +
-                        ('仍在个人蛋白质参考范围内；个人需求上下限不变。' if inside else
-                         '已超个人蛋白质参考上限，现有食谱约束不相容；请核对约束，不自动倒扣肉类为0。'))
-    else:
-        result['constraints_satisfied'] = True
-    # The exemplar has no invented cooking-oil entry. A fat shortfall is an
-    # explicit unallocated requirement, not a claim that the food plan meets it.
-    fat_low, fat_high = macro['fat']['min'], macro['fat']['max']
-    planned_fat = result['planned_nutrients']['fat']
-    result['unallocated_fat_g'] = max(0, fat_low - planned_fat) if fat_low is not None else None
-    if fat_low is None:
-        result['constraints_satisfied'] = False
-        warnings.append('缺少个人能量参考，脂肪需求未确认，示例食谱不能标记为已满足全部宏量目标。')
-    elif planned_fat < fat_low - 1e-8:
-        result['constraints_satisfied'] = False
-        warnings.append(f'示例食谱脂肪{planned_fat:.2f}g/天，低于个人参考下限{fat_low:.2f}g/天，尚有{fat_low-planned_fat:.2f}g/天脂肪缺口；未虚构烹调用油或额外食物，请核对完整脂肪来源并重新配餐。')
-    elif fat_high is not None and planned_fat > fat_high + 1e-8:
-        result['constraints_satisfied'] = False
-        warnings.append(f'示例食谱脂肪{planned_fat:.2f}g/天，超过个人参考上限{fat_high:.2f}g/天；现有代表食谱未满足全部宏量约束，请调整食物选择后重新配餐。')
+    # These are conversion contributions, not a second intake/meal evaluation.
+    # In particular, do not compare conversion fat with the person's fat need:
+    # fat evaluation uses recorded intake against athlete.rows['fat'] only.
+    actual_conversion_protein = result['planned_nutrients']['protein']
+    requested = macro['protein']['planning']
+    result['protein_conversion'] = dict(requested=requested, value=actual_conversion_protein,
+        within_personal_range=(macro['protein']['min'] - 1e-8 <= actual_conversion_protein and
+            (macro['protein']['max'] is None or actual_conversion_protein <= macro['protein']['max'] + 1e-8)))
+    result['conversion_scope'] = '碳水化合物、蛋白质需求到默认食物等价克数的换算；不是另一份实际饮食或完整食谱。'
+    if not result['protein_conversion']['within_personal_range']:
+        warnings.append('默认食物密度与现有分配约束无法在个人蛋白质参考范围内同时满足碳水目标；请核对换算规则，暂不输出不相容的食物目标。')
+        for key in ('grains_remainder','beans_energy','tubers_energy','seafood','livestock_remainder','meat'):
+            food_targets.pop(key, None)
     result['representatives'] = {key: name for key, (name, _, _) in representatives.items()}
     return result

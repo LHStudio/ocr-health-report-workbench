@@ -21,8 +21,8 @@ class PersonalReportChecksTest(unittest.TestCase):
         keys = None
         for amount in [100, 1400, 10000]:
             data = self.service.build_report_data({**self.payload, 'meals':[dict(name='米饭',amount=amount)]})
-            self.assertEqual(14, len(data['suggestions']))
-            self.assertEqual(14, len(data['suggestion_items']))
+            self.assertEqual(17, len(data['suggestions']))
+            self.assertEqual(17, len(data['suggestion_items']))
             energy = data['nutrition']['energy']['evaluation']
             expected = {'适宜':'总能量适宜。','适中':'总能量适宜。','过多':'总能量过多。','过少':'总能量过少。','不足':'总能量过少。'}[energy]
             self.assertEqual(expected, data['suggestions'][0])
@@ -42,7 +42,7 @@ class PersonalReportChecksTest(unittest.TestCase):
         warning = '\n'.join(data['report_checks']['warnings'])
         self.assertIn('核查', warning)
         self.assertNotIn('肯定是录入错误', warning)
-        self.assertEqual(14, len(data['suggestions']))
+        self.assertEqual(17, len(data['suggestions']))
 
     def test_manual_conflict_is_visible_and_manual_values_untouched(self):
         payload = {**self.payload, 'autoEvaluation':False, 'manualEvaluations':{
@@ -86,12 +86,11 @@ class PersonalReportChecksTest(unittest.TestCase):
     def test_zero_meat_target_and_nonfinite_values_have_explicit_review(self):
         from nutrition_report.report_checks import check_report_consistency
         data=self.service.build_report_data(self.payload)
-        meat=next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='meat')
-        meat['target_grams']=0
+        self.assertNotIn('meat',{r['key'] for r in data['food_standard_evaluation']['rows']})
         data['nutrition']['protein']=float('nan')
         check_report_consistency(data)
         codes={x['code'] for x in data['report_checks']['checks']}
-        self.assertIn('zero_meat_target',codes)
+        self.assertNotIn('zero_meat_target',codes)
         self.assertIn('invalid_numeric',codes)
 
     def test_bmr_is_preserved_and_incompatible_macro_energy_is_visible(self):
@@ -119,7 +118,7 @@ class PersonalReportChecksTest(unittest.TestCase):
             dict(name='米饭',amount=1400),dict(name='牛肉',amount=500)]})
         grain=next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='grains_remainder')
         self.assertEqual('过多',grain['evaluation'])
-        advice=next(i['text'] for i in data['suggestion_items'] if i['key']=='staples')
+        advice=next(i['text'] for i in data['suggestion_items'] if i['key']=='grains_remainder')
         self.assertNotIn('应减少本类摄入',advice)
         self.assertIn('不直接减少主食总碳水',advice)
         self.assertIn('staple_mix_reallocation',{x['code'] for x in data['report_checks']['checks']})

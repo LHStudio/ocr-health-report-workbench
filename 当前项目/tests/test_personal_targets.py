@@ -21,13 +21,13 @@ class PersonalTargetsTest(unittest.TestCase):
         a = self.report([dict(name='米饭', amount=100), dict(name='牛肉', amount=20)])
         b = self.report([dict(name='小麦面粉', amount=3000), dict(name='鲜奶', amount=4000),
                          dict(name='蛋类', amount=1000), dict(name='牛肉', amount=100)])
-        for key in ('beans_energy', 'tubers_energy', 'grains_remainder', 'meat',
+        for key in ('beans_energy', 'tubers_energy', 'grains_remainder',
                     'seafood', 'livestock_remainder', 'quality_protein'):
             for field in ('target_min', 'target_max'):
                 self.assertEqual(self.rows(a)[key].get(field), self.rows(b)[key].get(field), (key, field))
                 if field == 'target_min':
                     self.assertIsNotNone(self.rows(a)[key].get(field), (key, field))
-        self.assertGreater(self.rows(b)['meat']['target_grams'], 0)
+        self.assertGreater(self.rows(b)['livestock_remainder']['target_min'], 0)
 
     def test_energy_excess_never_forces_staple_reduction_when_carb_is_low(self):
         report = self.report([dict(name='牛肉', amount=2400), dict(name='米饭', amount=100)])
@@ -49,7 +49,8 @@ class PersonalTargetsTest(unittest.TestCase):
         report = self.report([])
         plan = report['food_standard_evaluation']['personal_targets']
         for key in ('protein', 'carbohydrate'):
-            self.assertAlmostEqual(plan['macro_targets'][key]['planning'], plan['planned_nutrients'][key], places=7)
+            value = plan['protein_conversion']['value'] if key == 'protein' else plan['macro_targets'][key]['planning']
+            self.assertAlmostEqual(value, plan['planned_nutrients'][key], places=7)
         self.assertGreater(plan['food_targets']['meat']['planning'], 0)
         self.assertTrue(plan['assumptions'])
 
@@ -59,12 +60,14 @@ class PersonalTargetsTest(unittest.TestCase):
         self.assertAlmostEqual(1800 * .2 / 9, row['target_min'])
         self.assertAlmostEqual(2300 * .3 / 9, row['target_max'])
 
-    def test_unallocated_fat_is_visible_and_never_claims_full_plan_satisfaction(self):
-        plan = self.report([])['food_standard_evaluation']['personal_targets']
-        self.assertLess(plan['planned_nutrients']['fat'], plan['macro_targets']['fat']['min'])
-        self.assertFalse(plan['constraints_satisfied'])
-        self.assertAlmostEqual(plan['macro_targets']['fat']['min']-plan['planned_nutrients']['fat'], plan['unallocated_fat_g'])
-        self.assertTrue(any('脂肪' in warning and '缺口' in warning for warning in plan['plan_warnings']))
+    def test_reference_conversion_is_not_a_second_actual_fat_evaluation(self):
+        report = self.report([])
+        plan = report['food_standard_evaluation']['personal_targets']
+        self.assertNotIn('unallocated_fat_g', plan)
+        self.assertNotIn('constraints_satisfied', plan)
+        self.assertNotIn('脂肪缺口', '\n'.join(plan['plan_warnings']))
+        self.assertTrue(plan['protein_conversion']['within_personal_range'])
+        self.assertAlmostEqual(65*1.7, plan['macro_targets']['protein']['planning'])
 
     def test_exact_planning_amount_is_not_rounded_into_a_failed_boundary(self):
         plan = self.report([])['food_standard_evaluation']['personal_targets']
@@ -73,7 +76,7 @@ class PersonalTargetsTest(unittest.TestCase):
         for key in ('grains_remainder','beans_energy','tubers_energy','milk','eggs','vegetables','fruit','nuts','seafood','livestock_remainder'):
             meals.append(dict(name=foods[key]['representative'], amount=foods[key]['planning']))
         rows = self.rows(self.report(meals))
-        for key in ('grains_remainder','beans_energy','tubers_energy','meat','seafood','livestock_remainder'):
+        for key in ('grains_remainder','beans_energy','tubers_energy','seafood','livestock_remainder'):
             self.assertEqual('适中', rows[key]['evaluation'], key)
 
     def test_athlete_actual_is_not_rounded_before_boundary_comparison(self):

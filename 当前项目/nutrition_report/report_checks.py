@@ -60,28 +60,25 @@ def _row_advice(row, label=None):
 
 
 def build_overall_suggestions(report):
-    """The same 14 topics for every energy state; alerts remain outside this list."""
+    """One category per numbered item; one shared personal requirement source."""
     rows = _rows(report)
-    meat = ' '.join(_row_advice(rows.get(key), label) for key, label in (
-        ('meat', '肉类（含水产品）'), ('seafood', '其中水产品'), ('livestock_remainder', '其中畜禽肉')))
-    low_carb = (rows.get('carbohydrate') or {}).get('evaluation') in {'不足', '过少'}
-    staple_parts = []
-    for key, label in (('grains_remainder', '谷类'), ('beans_energy', '豆类'), ('tubers_energy', '薯类')):
-        text = _row_advice(rows.get(key), label)
-        if low_carb and (rows.get(key) or {}).get('evaluation') in {'过多', '偏高', '能量占比偏高'}:
-            text = text.replace('应减少本类摄入', '本类超过计划分配；当前总碳水不足，优先补足不足的豆类、薯类等来源，不直接减少主食总碳水')
-        staple_parts.append(text)
-    staples = ' '.join(staple_parts)
     items = [('energy', energy_summary(report))]
-    items += [(key, _row_advice(rows.get(key), label)) for key, label in (
-        ('protein', '蛋白质'), ('carbohydrate', '碳水化合物'), ('fat', '脂肪'),
-        ('calcium', '钙'))]
-    items += [('staples', '主食各类别按个人碳水目标分配：' + staples)]
-    items += [(key, _row_advice(rows.get(key), label)) for key, label in (
-        ('milk', '奶类鲜奶等价量（按蛋白质估计）'), ('eggs', '蛋类'))]
-    items += [('meat', meat)]
-    items += [(key, _row_advice(rows.get(key), label)) for key, label in (
-        ('fruit', '水果'), ('vegetables', '蔬菜'), ('nuts', '坚果'))]
+    for key, label in (
+        ('protein', '蛋白质'), ('carbohydrate', '碳水化合物'), ('fat', '脂肪'), ('calcium', '钙'),
+        ('grains_remainder', '谷类'), ('beans_energy', '豆类'), ('tubers_energy', '薯类'),
+        ('milk', '奶类鲜奶等价量'), ('eggs', '蛋类'),
+        ('livestock_remainder', '畜禽肉'), ('seafood', '水产品'),
+        ('fruit', '水果'), ('vegetables', '蔬菜'), ('nuts', '坚果')):
+        row = rows.get(key)
+        representative = (row or {}).get('representative')
+        if key in {'grains_remainder','beans_energy','tubers_energy','livestock_remainder','seafood'} and representative:
+            label += '（' + representative + '等价量）'
+        text = _row_advice(row, label)
+        # A source above its reference conversion is not evidence that total
+        # carbohydrate should be cut when the person's total is still low.
+        if key in {'grains_remainder','beans_energy','tubers_energy'} and (rows.get('carbohydrate') or {}).get('evaluation') in {'不足','过少'}:
+            text = text.replace('应减少本类摄入', '本类超过参考分配；总碳水不足，应调整来源搭配，不直接减少主食总碳水')
+        items.append((key, text))
     items += [('snacks', '零食：建议尽量不吃；不以零食替代正餐。'),
               ('quality_protein', _row_advice(rows.get('quality_protein'), '肉蛋奶优质蛋白') +
                ' 请结合训练量及完整记录，在营养专业人员指导下调整。')]
@@ -221,7 +218,7 @@ def check_report_consistency(report):
     # while increasing beans/tubers is a valid reallocation, not a contradiction.
     candidates = list(report.get('suggestions') or []) + [report.get('interpretation') or '']
     conflicts = [str(s) for s in candidates if conflict_pattern and _unqualified_direction(str(s), conflict_pattern)
-                 and not str(s).startswith('主食各类别按个人碳水目标分配：')]
+                 and not any(str(s).startswith(label) for label in ('谷类','豆类','薯类'))]
     if conflicts:
         if automatic:
             before = list(report.get('suggestions') or [])
