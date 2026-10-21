@@ -22,9 +22,7 @@ test('hide requested report explanatory copy in preview without hiding real aler
   const before = JSON.stringify(data)
   const visible = evaluationWarnings(data).join('\n')
   for (const phrase of ['代表食物估算（需复核）','训练计划估算','周净消耗÷7','非完整全天总消耗','蛋白质计划点由']) assert.equal(visible.includes(phrase), false)
-  assert.match(visible, /实际摄入异常/)
-  assert.match(visible, /体操训练方案尚未提供/)
-  assert.match(visible, /超出个人参考上限/)
+  assert.equal(visible, '') // Diagnostics remain internal; no repeated table notice.
   assert.equal(JSON.stringify(data), before)
 })
 
@@ -86,7 +84,7 @@ test('staple ratings describe energy share, not food grams; manual values stay s
   assert.equal(evaluationRows({food_standard_evaluation:{rows:[row]}})[0].actual,12.35)
  })
 
- test('confirmed snack and blocked gate stay visible in preview', () => {
+ test('confirmed snack stays visible without adding output veto copy', () => {
   assert.equal(finalEvaluation({key:'snacks',evaluation:'不建议吃零食'},{standard_snacksEvaluation:'建议吃'}),'不建议吃零食')
-  assert.ok(evaluationWarnings({report_status:'needs_review',report_checks:{warnings:[]}}).some(x=>x.includes('未通过')))
+  assert.deepEqual(evaluationWarnings({report_status:'needs_review',report_checks:{warnings:[]}}), [])
  })

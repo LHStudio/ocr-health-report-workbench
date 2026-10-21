@@ -1,7 +1,7 @@
-"""Fail closed on unresolved standards, questionable densities or report checks.
+"""Retain diagnostic evidence without vetoing or rewriting report output.
 
-No new medical standard is chosen and no source/intake value is changed.
-Suppressed legacy computations remain in explicit audit fields.
+Report availability is not a claim of nutritional or solver validation.
+No source/intake value, manual text, or mathematical result is changed.
 """
 import math
 
@@ -43,48 +43,16 @@ def apply_release_gate(report, policy, food_db):
     checks = report['report_checks']
     for item in pending:
         checks['checks'].append(dict(code='standard_pending', key=item['key'],
-                                    severity='blocking', message=item['message']))
+                                    severity='info', message=item['message']))
     for i, message in enumerate(data_issues):
-        checks['checks'].append(dict(code='density_review', key=str(i), severity='blocking', message=message))
-    blockers = [c for c in checks['checks'] if c.get('severity', 'blocking') == 'blocking']
+        checks['checks'].append(dict(code='density_review', key=str(i), severity='info', message=message))
+    diagnostics = list(checks['checks'])
     report['recommendation_issues'] = list(dict.fromkeys(
         list(report.get('recommendation_issues', [])) + report.get('assessment_issues', []) +
-        [c['message'] for c in blockers]))
-    plan = report.get('personal_targets') or {}
-    passed = (report.get('assessment_status') == 'ready' and plan.get('status') == 'validated'
-              and plan.get('validation', {}).get('passed') is True and not blockers)
-    report['recommendation_status'] = 'validated' if passed else 'blocked'
-    report['report_status'] = 'ready' if passed else 'needs_review'
-    checks['status'] = 'passed' if passed else 'review'
-    checks['warnings'] = list(dict.fromkeys(checks.get('warnings', []) + report['recommendation_issues']))
-    report['publication_gate'] = dict(status='passed' if passed else 'blocked',
-        requirements='体重项目→能量相容→分项规则→密度→全部食物复验→建议',
-        blocking_codes=list(dict.fromkeys(c['code'] for c in blockers)))
-    if passed:
-        return
-    if not report.get('autoEvaluation', True) and report.get('suggestions'):
-        report['withheld_manual_suggestions'] = list(report['suggestions'])
-    if report.get('interpretation'):
-        report['withheld_interpretation'] = report.pop('interpretation')
-    report['suggestions'] = []
-    report['suggestion_items'] = []
-    report['joint_plan_summary'] = '最终校验未通过。保留现有记录、已确认标准与复算数值；具体未通过项见核查提醒，不输出可执行食谱或增减建议。'
-    report['energy_guidance'] = '能量及脂肪按已选定目标核算；配餐复验未通过，暂不输出食物增减或配餐建议。'
-    pending_keys = {p['key'] for p in pending}
-    if 'energy_scope' in pending_keys:
-        energy = report['nutrition']['energy']
-        energy['unconfirmed_comparison'] = energy.get('evaluation')
-        energy['evaluation'] = '待确认'
-    for row in report['athlete_evaluation']['rows']:
-        if row['key'] == 'fat' and 'fat_basis' in pending_keys:
-            row['unconfirmed_comparison'] = {k: row.get(k) for k in ('target', 'evaluation', 'machine_evaluation', 'gap')}
-            row.update(evaluation='待确认', machine_evaluation='待确认', gap=None)
-            row['display'].update(target='评价口径待确认', gap=None, evaluation='待确认')
-    if plan.get('status') == 'validated':
-        plan['numerical_status'] = 'validated'
-        plan['status'] = 'review'
-        plan['publication_status'] = 'blocked'
-    for row in report['food_standard_evaluation']['rows']:
-        for key in ('joint_plan_amount', 'plan_representative', 'plan_note'):
-            if key in row:
-                row.setdefault('withheld_plan_reference', {})[key] = row.pop(key)
+        [c['message'] for c in diagnostics if c.get('message')]))
+    # Never clear manual/automatic copy or mark an infeasible plan as validated.
+    report['recommendation_status'] = 'available'
+    report['report_status'] = 'ready'
+    checks['status'] = 'review' if any(c.get('severity') == 'blocking' for c in diagnostics) else 'passed'
+    report['publication_gate'] = dict(status='not_enforced', blocking_codes=[],
+        diagnostic_codes=list(dict.fromkeys(c['code'] for c in diagnostics)))

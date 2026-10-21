@@ -79,7 +79,7 @@ class EnergyBlankFollowupTest(unittest.TestCase):
             self.service.excel_builder.build(report,xlsx)
             with fitz.open(pdf) as doc: text=''.join(p.get_text() for p in doc)
             compact=''.join(text.split())
-            self.assertIn('鲜奶等价量',compact)
+            self.assertNotIn('鲜奶等价量',compact)
             self.assertIn('推荐能量2100',compact)
             self.assertNotIn('记录不完整',text)
             wb=openpyxl.load_workbook(xlsx,data_only=True)

@@ -38,7 +38,7 @@ class NutritionCloudSourceTest(unittest.TestCase):
         self.assertEqual("cloud", report["food_data_source"]["kind"])
         self.assertEqual("云端食物营养库", report["foods"][0]["data_source"])
 
-    def test_missing_cloud_parameter_stays_unknown_and_blocks_report(self) -> None:
+    def test_missing_cloud_parameter_stays_unknown_without_suppressing_report(self) -> None:
         from nutrition_report.cloud import fetch_cloud_foods
         from nutrition_report.release_gate import density_review
         original = {"name": "米饭", "energy": 400, "protein": 10,
@@ -56,7 +56,7 @@ class NutritionCloudSourceTest(unittest.TestCase):
         })
         self.assertFalse(report['food_standard_evaluation']['nutrient_record_complete'])
         self.assertEqual('needs_review', report['assessment_status'])
-        self.assertEqual([], report['suggestions'])
+        self.assertTrue(report['suggestions'])
         self.assertNotIn('fat', original)
 
     def test_cloud_failure_falls_back_locally_with_visible_message(self) -> None:

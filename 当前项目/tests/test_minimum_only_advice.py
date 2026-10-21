@@ -9,7 +9,7 @@ class MinimumOnlyAdviceTest(unittest.TestCase):
         report={'food_standard_evaluation':{'rows':[row]},'personal_targets':{'status':'validated'},'recommendation_status':'validated'}
         text=next(x['text'] for x in build_overall_suggestions(report) if x['key']=='nuts')
         self.assertNotIn('保持在个人参考范围内',text)
-        self.assertIn('最低参考量',text)
+        self.assertNotIn('最低参考量',text);self.assertNotIn('本规则',text);self.assertNotIn('数据核查提醒',text)
 
 
 if __name__=='__main__':

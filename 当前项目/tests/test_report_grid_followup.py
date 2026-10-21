@@ -213,8 +213,8 @@ class ReportGridFollowupTest(unittest.TestCase):
         all_text = "".join(page.get_text() for page in doc)
         for text in ("人工分类结论", "人工专项结论"):
             self.assertIn(text, all_text)
-        self.assertNotIn("人工建议原文保留",all_text)
-        self.assertEqual(["人工建议原文保留"],self.report["withheld_manual_suggestions"])
+        self.assertIn("人工建议原文保留",all_text)
+        self.assertEqual(["人工建议原文保留"],self.report["suggestions"])
         self.assert_bounds(doc)
 
     def test_long_profile_and_split_tables_preserve_text_without_overflow(self):

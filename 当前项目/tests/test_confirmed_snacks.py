@@ -29,7 +29,7 @@ class ConfirmedSnackTests(unittest.TestCase):
         p=build_payload_from_ocr_person(self.person()).payload
         s=NutritionService();s.food_db.pop('薯条',None)
         r=s.build_report_data(p)
-        self.assertEqual('needs_review',r['assessment_status']);self.assertEqual([],r['suggestions'])
+        self.assertEqual('needs_review',r['assessment_status']);self.assertTrue(r['suggestions'])
         self.assertTrue(r['unmatched_foods']);self.assertFalse(r['foods'])
     def test_fries_review_does_not_invent_composition_rules_for_other_categories(self):
         # Synthetic API fixture: this task does not certify composition of other foods.

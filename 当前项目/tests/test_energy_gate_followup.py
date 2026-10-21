@@ -21,10 +21,10 @@ class EnergyGateFollowupTest(unittest.TestCase):
         r=self.report()
         self.assertEqual('适宜',r['nutrition']['energy']['evaluation'])
         self.assertEqual('不足',next(x for x in r['athlete_evaluation']['rows'] if x['key']=='carbohydrate')['evaluation'])
-        self.assertEqual([],r['suggestions'])
-        self.assertEqual('blocked',r['recommendation_status'])
+        self.assertTrue(r['suggestions'])
+        self.assertEqual('available',r['recommendation_status'])
         for builder in [NutritionPDFBuilder,LegacyPDFBuilder]:
-            self.assertIn('未通过',builder._interpretation(r))
+            self.assertNotIn('未通过',builder._interpretation(r))
 
     def test_outside_band_staple_targets_do_not_follow_energy_direction(self):
         baseline=self.report()
@@ -58,17 +58,17 @@ class EnergyGateFollowupTest(unittest.TestCase):
         self.assertEqual(self.report()['category_result'],r['category_result'])
         r=self.report(2500,autoEvaluation=False,manualEvaluations=dict(standardEvaluations=dict(grains_remainder=''),overallSuggestions='人工建议',interpretation='人工解读'))
         self.assertEqual('',r['category_result']['谷类']['evaluation'])
-        self.assertEqual(['人工建议'],r['withheld_manual_suggestions'])
-        self.assertEqual('人工解读', r['withheld_interpretation']); self.assertEqual([], r['suggestions'])
+        self.assertEqual(['人工建议'],r['suggestions'])
+        self.assertEqual('人工解读', r['interpretation']); self.assertTrue(r['suggestions'])
 
     def test_food_targets_are_grams_and_not_total_energy_instructions(self):
         for energy in [1800,2500]:
             r=self.report(energy)
             for row in r['food_standard_evaluation']['rows']:
                 if row['key'] not in {'beans_energy','tubers_energy','grains_remainder'}: continue
-                self.assertIn('%',row['display']['target'])
+                self.assertIn('g/天',row['display']['target']);self.assertNotIn('%',row['display']['target'])
                 self.assertNotIn('总量',row['display']['target'])
-                self.assertEqual('%',row['display']['unit'])
+                self.assertEqual('g/天',row['display']['unit'])
 
 
 if __name__=='__main__': unittest.main()

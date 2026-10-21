@@ -380,13 +380,13 @@ class NutritionReportServiceTest(unittest.TestCase):
             report = pdf_result["report_data"]
             self.assertEqual("偏多", report["category_result"]["谷类"]["evaluation"])
             self.assertEqual("偏少", report["nutrition"]["calcium"]["evaluation"])
-            self.assertEqual(["人工建议一", "人工建议二"], report["withheld_manual_suggestions"])
-            self.assertEqual("该结论已由营养师人工复核。", report["withheld_interpretation"])
+            self.assertEqual(["人工建议一", "人工建议二"], report["suggestions"])
+            self.assertEqual("该结论已由营养师人工复核。", report["interpretation"])
             self.assertIn("不包含维生素", report["nutrition_disclaimer"])
 
             with fitz.open(pdf_path) as document:
                 text = "\n".join(page.get_text() for page in document)
-            self.assertNotIn("该结论已由营养师人工复核。", text); self.assertIn("未通过",text)
+            self.assertIn("该结论已由营养师人工复核。", text); self.assertNotIn("未通过",text)
             self.assertIn("不包含维生素", text)
 
             workbook = load_workbook(excel_path, read_only=True, data_only=True)

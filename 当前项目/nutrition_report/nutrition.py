@@ -171,13 +171,11 @@ class NutritionService:
 
         plan = report['personal_targets']
         report['recommendation_issues'] = list(plan.get('plan_warnings') or [])
-        report['recommendation_status'] = 'validated' if report['assessment_status']=='ready' and plan.get('status')=='validated' else 'blocked'
-        report['report_status'] = 'ready' if report['recommendation_status']=='validated' else 'needs_review'
-        if report['recommendation_status'] != 'validated':
-            report['energy_guidance'] = energy_summary(report)+'配餐联合校验未通过，暂停克数及增减建议；实际记录和个人需求保留。'
+        # Report availability is independent from optional mathematical-plan validation.
+        report['recommendation_status'] = 'available'
+        report['report_status'] = 'ready'
         attach_gram_display(report, self.food_db, merged_meals)
-        if report['recommendation_status'] == 'validated':
-            report['energy_guidance'] = energy_summary(report) + '各类食物按个人营养目标与实际摄入独立比较，不按总能量方向统一增减主食。'
+        report['energy_guidance'] = energy_summary(report)
         # One shared 17-item structure for all energy states; explicit manual
         # advice remains verbatim and receives a separate consistency warning.
         if auto_evaluation or 'overallSuggestions' not in (front_json.get('manualEvaluations') or {}):
@@ -186,13 +184,6 @@ class NutritionService:
         else:
             report['suggestion_items'] = []
         check_report_consistency(report)
-        if report['recommendation_status'] != 'validated':
-            if not auto_evaluation and report.get('suggestions'):
-                report['withheld_manual_suggestions'] = list(report['suggestions'])
-            report['suggestion_items'] = []
-            report['suggestions'] = []
-            if report.get('interpretation'):
-                report['withheld_interpretation'] = report.pop('interpretation')
         for issue in report['assessment_issues']:
             report['report_checks']['warnings'].append('数据核查：' + issue)
             report['report_checks']['status'] = 'review'

@@ -16,20 +16,20 @@ class JointPlanGateTests(unittest.TestCase):
   for row in d['food_standard_evaluation']['rows']:
    if row['key'] in p['food_targets'] and row['key']!='quality_protein':
     self.assertEqual(p['food_targets'][row['key']]['planning'],row['joint_plan_amount'])
- def test_macro_energy_conflict_blocks_targets_and_all_advice(self):
+ def test_macro_energy_conflict_retains_failed_targets_but_not_output_veto(self):
   p=copy.deepcopy(self.payload);p['user'].update(projectType='篮球',athleteType='strength',bmrMin=900,bmrMax=1000,trainingPlan={'weeklyMinutes':0})
   d=self.service.build_report_data(p)
   self.assertEqual('blocked',d['personal_targets'].get('status'))
   self.assertEqual({},d['personal_targets']['food_targets'])
-  self.assertEqual([],d['suggestions'])
-  self.assertEqual('needs_review',d['report_status'])
+  self.assertTrue(d['suggestions'])
+  self.assertEqual('ready',d['report_status'])
   self.assertEqual('ready',d['assessment_status'])
   self.assertEqual('requirements_energy_incompatible',d['personal_targets']['failure_code'])
  def test_bad_default_data_blocks_instead_of_fallback(self):
   self.service.food_db['米饭']['fat']=None
   d=self.service.build_report_data(self.payload)
   self.assertEqual('blocked',d['personal_targets'].get('status'))
-  self.assertEqual([],d['suggestions'])
+  self.assertTrue(d['suggestions'])
  def test_targets_independent_of_actual_foods_and_no_oil(self):
   a=self.service.build_report_data(self.payload);p=copy.deepcopy(self.payload);p['meals']=[{'name':'米饭','amount':2000}];b=self.service.build_report_data(p)
   self.assertEqual(a['personal_targets'],b['personal_targets'])
@@ -40,12 +40,12 @@ class JointPlanGateTests(unittest.TestCase):
   self.assertTrue(p['validation']['rounded_passed'])
   for nutrient in ['energy','protein','carbohydrate','fat','calcium']:
    self.assertAlmostEqual(sum(x[nutrient] for x in p['contributions']),p['planned_nutrients'][nutrient],places=7)
- def test_no_cached_or_manual_advice_bypasses_failed_plan(self):
+ def test_failed_plan_does_not_erase_manual_advice(self):
   p=copy.deepcopy(self.payload);p['user'].update(projectType='篮球',athleteType='strength',bmrMin=900,bmrMax=1000,trainingPlan={'weeklyMinutes':0})
   p.update(autoEvaluation=False,manualEvaluations={'overallSuggestions':'增加主食到2000克'})
   d=self.service.build_report_data(p)
-  self.assertEqual([],d['suggestions'])
-  self.assertEqual(['增加主食到2000克'],d['withheld_manual_suggestions'])
+  self.assertTrue(d['suggestions'])
+  self.assertEqual(['增加主食到2000克'],d['suggestions'])
  def test_original_food_minimum_does_not_become_solver_point(self):
   p=copy.deepcopy(self.payload);p['meals']=[{'name':'蛋类','amount':100}]
   d=self.service.build_report_data(p);r=next(x for x in d['food_standard_evaluation']['rows'] if x['key']=='eggs')

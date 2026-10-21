@@ -15,12 +15,12 @@ class LogicTest(unittest.TestCase):
      r=self.report()
      self.assertEqual('过多',r['category_result']['谷类']['evaluation'])
      self.assertEqual('不足',next(x for x in r['athlete_evaluation']['rows'] if x['key']=='carbohydrate')['evaluation'])
-     self.assertEqual([],r['suggestions'])
+     self.assertTrue(r['suggestions'])
      grain=next(x for x in evaluation_rows(r) if x['key']=='grains_remainder')
-     self.assertEqual('ratio',grain['evaluation_basis']);self.assertEqual('%',grain['unit'])
+     self.assertEqual('ratio',grain['evaluation_basis']);self.assertEqual('g/天',grain['unit']);self.assertEqual(300,grain['actual'])
      self.assertEqual(80,grain['target_max']);self.assertTrue(r['personal_targets']['plan_warnings'])
      text=NutritionPDFBuilder._interpretation(r)
-     self.assertIn('未通过',text);self.assertNotIn('先补足主食总量',text)
+     self.assertNotIn('未通过',text);self.assertNotIn('先补足主食总量',text)
  def test_global_interval_concurrent_batches(self):
   starts=[];ends=[]; lock=threading.Lock()
   def getter(url,**kw):

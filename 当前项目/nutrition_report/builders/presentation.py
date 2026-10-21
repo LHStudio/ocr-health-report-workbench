@@ -32,8 +32,6 @@ def evaluation_rows(data):
 
 
 def evaluation_warnings(data):
-    if data.get('report_status') == 'needs_review':
-        return ['最终校验未通过：本页仅为原记录与原规则核查，非已批准的营养建议；完整原因见最后一页。']
     notes = []
     for section in ('athlete_evaluation', 'food_standard_evaluation'):
         for note in (data.get(section) or {}).get('warnings', []):
@@ -48,9 +46,6 @@ def evaluation_warnings(data):
                 note = clean_display_text(note)
                 if note not in ('仅训练期', '60-70kg标准', '基础膳食参考标准') and note not in notes:
                     notes.append(note)
-    for note in report_alerts(data):
-        if note not in notes:
-            notes.append('自动核查提醒：' + note)
     return notes
 
 
@@ -70,11 +65,12 @@ def _display_warning(note):
 
 def report_alerts(data):
     checks = data.get('report_checks') or {}
-    notes = [text for note in checks.get('warnings', []) if (text := _display_warning(note))]
-    # Filtering explanatory copy must NEVER erase an export blocker.
-    notes += [('训练能量只是计划估算，不能确认全天总消耗；完整参数保留在核查证据。'
-               if c.get('code') == 'training_energy_estimate' else c['message']) for c in checks.get('checks', [])
-              if c.get('severity') == 'blocking' and c.get('message')]
-    if data.get('report_status') == 'needs_review' or checks.get('status') == 'review':
-        notes.insert(0, '最终校验未通过／待确认：本报告不输出增减或配餐建议。')
-    return list(dict.fromkeys(notes))
+    # Keep optional solver/policy diagnostics out of the original report copy.
+    internal = {c.get('message') for c in checks.get('checks', [])
+                if c.get('code') in {'target_plan_review', 'macro_energy_conflict', 'standard_pending',
+                                      'machine_evaluation_corrected', 'machine_advice_corrected',
+                                      'staple_mix_reallocation', 'bmr_reference_scope',
+                                      'training_energy_estimate', 'training_energy_pending'}}
+    notes = list(dict.fromkeys(text for note in checks.get('warnings', [])
+                               if note not in internal and (text := _display_warning(note))))
+    return ['；'.join(notes)] if notes else []

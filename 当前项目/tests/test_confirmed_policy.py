@@ -63,15 +63,15 @@ class ConfirmedPolicyTests(unittest.TestCase):
         db = copy.deepcopy(original); db['豆腐']['fat'] = None
         self.assertTrue(density_review(db, ['豆腐']))
 
-    def test_blocked_manual_text_is_retained_only_in_audit_and_snack_is_fixed(self):
+    def test_manual_text_is_output_verbatim_and_snack_is_fixed(self):
         self.payload.update(autoEvaluation=False, manualEvaluations=dict(
             overallSuggestions='增加主食', interpretation='原人工说明',
             standardEvaluations={'snacks':'建议吃零食'}))
         self.payload['user']['weight'] = 1000
         d = self.service.build_report_data(self.payload)
-        self.assertEqual([], d['suggestions'])
-        self.assertEqual(['增加主食'], d['withheld_manual_suggestions'])
-        self.assertEqual('原人工说明', d['withheld_interpretation'])
+        self.assertTrue(d['suggestions'])
+        self.assertEqual(['增加主食'], d['suggestions'])
+        self.assertEqual('原人工说明', d['interpretation'])
         self.assertEqual('不建议吃零食', d['category_result']['零食']['evaluation'])
 
     def test_no_second_fat_percentage_constraint_or_fat_driven_allocation(self):

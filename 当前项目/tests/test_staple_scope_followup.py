@@ -51,11 +51,11 @@ class StapleScopeTest(unittest.TestCase):
             self.assertIn('g/天', rows['fruit']['target'])
             self.assertEqual('适中', rows['milk']['evaluation'])
             self.assertEqual(1, rows['milk']['score'])
-            self.assertEqual([],report['suggestions']);self.assertEqual('blocked',report['recommendation_status'])
+            self.assertTrue(report['suggestions']);self.assertEqual('available',report['recommendation_status'])
             self.assertGreater(report['food_standard_evaluation']['summary']['evaluated'], 0)
             for builder in [NutritionPDFBuilder, LegacyPDFBuilder]:
                 text = builder._interpretation(report)
-                self.assertIn('未通过', text)
+                self.assertNotIn('未通过', text)
                 self.assertNotIn('暂不评价食物结构', text)
 
     def test_unknown_energy_does_not_hide_known_nonstaples(self):
@@ -85,8 +85,8 @@ class StapleScopeTest(unittest.TestCase):
             self.assertEqual('', rows['grains_remainder']['evaluation'])
             self.assertEqual('人工奶量', rows['milk']['evaluation'])
             self.assertEqual('', rows['fruit']['evaluation'])
-            self.assertEqual(['人工建议'], r['withheld_manual_suggestions'])
-            self.assertEqual('人工解读', r['withheld_interpretation']); self.assertEqual([], r['suggestions'])
+            self.assertEqual(['人工建议'], r['suggestions'])
+            self.assertEqual('人工解读', r['interpretation']); self.assertTrue(r['suggestions'])
 
     def test_unresolved_staple_does_not_erase_known_meat_projection(self):
         from nutrition_report import NutritionReportService
@@ -98,9 +98,9 @@ class StapleScopeTest(unittest.TestCase):
         row = next(x for x in r['food_standard_evaluation']['rows'] if x['key'] == 'seafood')
         self.assertEqual('不足', row['evaluation']) # sample has no applicable sport profile
         self.assertEqual(0, row['display']['actual'])
-        self.assertEqual('≥ 30.00 %', row['display']['target'])
-        self.assertEqual('%', row['display']['unit'])
-        self.assertEqual(-30,row['display']['gap'])
+        self.assertEqual('≥ 9.00 g/天', row['display']['target'])
+        self.assertEqual('g/天', row['display']['unit'])
+        self.assertEqual(-9,row['display']['gap'])
 
 
 if __name__ == '__main__':

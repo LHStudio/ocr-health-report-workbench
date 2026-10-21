@@ -61,7 +61,7 @@ class SingleCalculationChainTests(unittest.TestCase):
      self.s.food_db['豆腐']['carbohydrate']=0
      d=self.s.build_report_data(self.p);r=next(x for x in d['food_standard_evaluation']['rows'] if x['key']=='beans_energy')
      self.assertEqual('不足',r['evaluation']);self.assertEqual('%',r['unit']);self.assertEqual(5,r['target_min'])
-     self.assertEqual('density_invalid',d['personal_targets']['failure_code']);self.assertEqual([],d['suggestions'])
+     self.assertEqual('density_invalid',d['personal_targets']['failure_code']);self.assertTrue(d['suggestions'])
      self.assertNotIn('actual_equivalent',r)
  def test_category_summary_names_the_same_equivalent_used_by_detailed_evaluation(self):
      d=self.s.build_report_data(self.p)

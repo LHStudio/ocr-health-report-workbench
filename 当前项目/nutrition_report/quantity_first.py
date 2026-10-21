@@ -20,7 +20,7 @@ def comparison(actual, low, high):
 def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, categories, config, merged_meals=None):
     standard['energy_gate']=({'适宜':'adequate','适中':'adequate','过多':'excess','过少':'deficit','不足':'deficit'}.get(nutrition['energy'].get('evaluation'),'unknown') if standard['nutrient_record_complete'] else 'unknown')
     plan=build_personal_targets(athlete,standard,food_db,nutrition['energy'],config)
-    standard['personal_targets']=plan;standard['warnings'].extend(plan['plan_warnings'])
+    standard['personal_targets']=plan  # Solver diagnostics do not change report copy.
     for row in standard['rows']:
         key=row['key'];target=plan['food_targets'].get(key)
         # Original user rule and score remain authoritative. A solver-chosen

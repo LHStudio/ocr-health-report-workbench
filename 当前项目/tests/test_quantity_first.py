@@ -19,10 +19,10 @@ class QuantityFirstTest(unittest.TestCase):
         data=self.service.build_report_data(self.payload);rows=self.rows(data)
         for k,status in [('beans_energy','不足'),('tubers_energy','不足'),('grains_remainder','过多')]:
             self.assertEqual(status,rows[k]['evaluation']);self.assertEqual('ratio',rows[k]['evaluation_basis'])
-            self.assertEqual('%',rows[k]['unit'])
+            self.assertEqual('g/天',rows[k]['unit'])
         self.assertEqual('过多',rows['livestock_remainder']['evaluation'])
         self.assertEqual('不足',rows['seafood']['evaluation'])
-        self.assertEqual([],data['suggestions']);self.assertEqual('blocked',data['recommendation_status'])
+        self.assertTrue(data['suggestions']);self.assertEqual('available',data['recommendation_status'])
         self.assertNotIn('meat',rows)
 
     def test_split_meat_targets_do_not_depend_on_recorded_grain_or_milk(self):
@@ -32,8 +32,11 @@ class QuantityFirstTest(unittest.TestCase):
         for key in ('livestock_remainder','seafood'):
             row=self.rows(data)[key]
             self.assertEqual((None,70) if key=='livestock_remainder' else (30,None), (row['target_min'],row['target_max']))
-            self.assertEqual(row['target'],self.rows(changed)[key]['target'])
-            self.assertEqual('%',row['unit'])
+            self.assertEqual('—',self.rows(changed)[key]['target'])
+            raw_before=next(r for r in data['food_standard_evaluation']['rows'] if r['key']==key)
+            raw_after=next(r for r in changed['food_standard_evaluation']['rows'] if r['key']==key)
+            self.assertEqual(raw_before['target'],raw_after['target'])
+            self.assertEqual('g/天',row['unit'])
 
     def test_every_energy_state_compares_fixed_personal_food_targets(self):
         # Rice provides enough carbohydrate/energy; beef supplies enough protein, no seafood.
@@ -78,6 +81,6 @@ class QuantityFirstTest(unittest.TestCase):
         self.assertEqual('人工结构',data['category_result']['谷类']['evaluation'])
         self.assertEqual('人工结构',self.rows(data)['grains_remainder']['evaluation'])
         self.assertEqual('人工畜禽肉',self.rows(data)['livestock_remainder']['evaluation'])
-        self.assertEqual(['人工建议'],data['withheld_manual_suggestions'])
+        self.assertEqual(['人工建议'],data['suggestions'])
 
 if __name__=='__main__': unittest.main()

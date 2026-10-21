@@ -73,14 +73,14 @@ class ScoringAuditFollowupTest(unittest.TestCase):
         data=self.service.build_report_data({'user':self.user,'meals':[{'name':'牛肉','amount':1000}]})
         rows={r['key']:r for r in data['athlete_evaluation']['rows']}
         self.assertEqual('过多',rows['protein']['evaluation']);self.assertEqual('不足',rows['carbohydrate']['evaluation'])
-        self.assertEqual([],data['suggestions']);self.assertEqual('blocked',data['recommendation_status'])
+        self.assertTrue(data['suggestions']);self.assertEqual('available',data['recommendation_status'])
 
     def test_low_protein_advice_uses_requested_heading(self):
         from nutrition_report.report_checks import _row_advice
         data=self.service.build_report_data({'user':self.user,'meals':[{'name':'米饭','amount':100}]})
         row=next(r for r in data['athlete_evaluation']['rows'] if r['key']=='protein')
         self.assertTrue(_row_advice(row).startswith('蛋白质不足：'))
-        self.assertEqual([],data['suggestions'])
+        self.assertTrue(data['suggestions'])
 
     def test_manual_values_and_explicit_blanks_remain_authoritative(self):
         data=self.service.build_report_data({**self.payload,'autoEvaluation':False,'manualEvaluations':{
@@ -88,7 +88,7 @@ class ScoringAuditFollowupTest(unittest.TestCase):
             'standardEvaluations':{'nuts':'人工坚果结论'},'overallSuggestions':'人工建议原文'}})
         self.assertEqual('',data['category_result']['谷类']['evaluation'])
         self.assertEqual('人工能量结论',data['nutrition']['energy']['evaluation'])
-        self.assertEqual(['人工建议原文'],data['withheld_manual_suggestions'])
+        self.assertEqual(['人工建议原文'],data['suggestions'])
         self.assertEqual('人工坚果结论',next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='nuts')['evaluation'])
 
     def test_incomplete_nonblank_record_and_zero_denominator_stay_unscored(self):
@@ -132,7 +132,7 @@ class ScoringAuditFollowupTest(unittest.TestCase):
         row=next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='livestock_remainder')
         self.assertEqual('过多',row['evaluation']);self.assertEqual(100,row['actual'])
         self.assertEqual(70,row['target_max']);self.assertIsNone(row['target_min'])
-        self.assertEqual('≤ 70.00 %',row['display']['target']);self.assertIsNone(row['score'])
+        self.assertEqual('≤ 350.00 g/天',row['display']['target']);self.assertIsNone(row['score'])
         self.assertNotIn('meat',data['personal_targets']['food_targets'])
 
     def test_low_energy_label_is_red_and_interpreted_in_both_pdf_styles(self):
@@ -141,7 +141,7 @@ class ScoringAuditFollowupTest(unittest.TestCase):
         data['nutrition']['energy']['evaluation']='过少'
         for builder in [self.service.pdf_builder,LegacyPDFBuilder()]:
             with self.subTest(builder=type(builder).__module__):
-                self.assertIn('未通过',builder._interpretation(data))
+                self.assertNotIn('未通过',builder._interpretation(data))
                 with tempfile.TemporaryDirectory() as tmp:
                     path=Path(tmp)/'style.pdf'; builder.build(data,path)
                     with fitz.open(path) as pdf:

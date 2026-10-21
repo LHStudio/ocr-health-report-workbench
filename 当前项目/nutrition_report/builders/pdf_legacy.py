@@ -212,8 +212,6 @@ class NutritionPDFBuilder:
             textColor=colors.white,
         )
         story = [Paragraph("营养健康评估报告", title), Spacer(1, 3 * mm)]
-        if data.get('report_status',data.get('assessment_status')) == 'needs_review':
-            story.extend([Paragraph('待核对：记录或配餐约束未通过校验，本报告不提供已验证配餐建议；具体条目见整体评估及建议。', quality), Spacer(1, 2 * mm)])
 
         user = data.get("user") or {}
         age = _as_text(user.get("age")).strip()
@@ -354,7 +352,7 @@ class NutritionPDFBuilder:
                 if row.get('note'):
                     note = re.sub(r'([（(])', r'<br/>\1', escape(row['note']))
                     target_cell.append(Paragraph(note, evaluation_body))
-                label = re.sub(r'([（(])', r'<br/>\1', _table_text(row['label']))
+                label = re.sub(r'([（(])', r'<br/>\1', _table_text(row['label'])).replace('\n', '<br/>')
                 rows.append([Paragraph(label, evaluation_body), Paragraph(_table_text(actual), evaluation_body), target_cell,
                              Paragraph("—" if row["gap"] is None else f"{row['gap']:+g}", evaluation_body),
                              Paragraph(_evaluation_text(row['evaluation']), final_body)])
@@ -408,9 +406,7 @@ class NutritionPDFBuilder:
             for message in alerts:
                 story.append(Paragraph(escape(_as_text(message)), advice))
             story.append(Spacer(1, 6))
-        if data.get('joint_plan_summary'):
-            story.extend([Paragraph(escape(str(data['joint_plan_summary'])), quality), Spacer(1, 5)])
-        for index, item in enumerate(data.get('suggestions') or ['暂无自动建议'], 1):
+        for index, item in enumerate(data.get('suggestions') or [], 1):
             plain = f'{index}. {_as_text(item)}'
             story.append(NaturalSuggestionParagraph(_suggestion_markup(plain), advice, plain_text=plain))
         story.append(GenerationDateFooter('报告生成日期：'+str(data.get('generated_at') or data.get('generated_date') or ''),self.font_name))
@@ -454,9 +450,6 @@ class NutritionPDFBuilder:
                 v = equivalent['value']
                 amount_text = '记录原重：' + amount_text
                 amount_text += '<br/>' + escape(equivalent['representative']) + '等价量：' + ('-' if v is None else f'{v:.2f} g')
-            if category == '奶类' and 'equivalent_value' in info:
-                equivalent = info['equivalent_value']
-                amount_text += '<br/>鲜奶等价量：' + ('-' if equivalent is None else f'{equivalent:g} g')
             table_data.append([
                 Paragraph(escape(category), category_style),
                 Paragraph(amount_text, normal),
@@ -468,7 +461,7 @@ class NutritionPDFBuilder:
                 'NutritionSuggestionHeading', parent=category_style, alignment=0)), '', ''])
             suggestion_style = ParagraphStyle('NutritionSuggestion', parent=normal, alignment=0,
                 fontSize=10, leading=15, leftIndent=14, firstLineIndent=-14)
-            for index, item in enumerate(suggestions or ['暂无自动建议'], 1):
+            for index, item in enumerate(suggestions or [], 1):
                 plain = f'{index}. {_as_text(item)}'
                 table_data.append([NaturalSuggestionParagraph(_suggestion_markup(plain), suggestion_style,
                                                                plain_text=plain), '', ''])
@@ -600,9 +593,7 @@ class NutritionPDFBuilder:
         if data.get("interpretation"):
             return "<br/>".join(escape(line.strip()) for line in _as_text(data["interpretation"]).splitlines() if line.strip())
         if data.get('energy_guidance'):
-            if data.get('report_status',data.get('assessment_status')) == 'needs_review':
-                return escape(data['energy_guidance'])
-            return escape(energy_summary(data) + '各类食物按个人营养目标与实际摄入独立比较，不按总能量方向统一增减主食。')
+            return escape(energy_summary(data))
         nutrition = data.get("nutrition") or {}
         lines = []
         energy_evaluation = (nutrition.get("energy") or {}).get("evaluation")

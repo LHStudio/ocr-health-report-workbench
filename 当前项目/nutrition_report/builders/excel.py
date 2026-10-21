@@ -312,11 +312,6 @@ class NutritionExcelBuilder:
             display_width = sum(2 if ord(c) > 127 else 1 for c in str(suggestion))
             ws.row_dimensions[row_idx].height = max(30, 16 * max(len(str(suggestion).splitlines()), math.ceil(display_width / 96)) + 8)
 
-        if data.get('joint_plan_summary'):
-            summary_row = len(suggestions)+3
-            ws.cell(summary_row,2,data['joint_plan_summary']).font=cell_font
-            ws.cell(summary_row,2).alignment=cell_alignment
-            ws.row_dimensions[summary_row].height=72
         for message in report_alerts(data):
             row = ws.max_row + 1
             ws.cell(row, 1, '核查').font = cell_font

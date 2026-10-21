@@ -56,21 +56,18 @@ def _row_advice(row, label=None):
                  else '保持在个人参考范围内' if status in {'适中', '适宜', '占比适中', '能量占比适中'}
                  else '结合完整记录和专业意见调整')
     if status in {'适中', '适宜'} and row.get('target_min') is not None and row.get('target_max') is None:
-        direction = '已达到最低参考量；本规则不判断过量，请同时查看数据核查提醒'
+        return f'{label}{status}：目前 {_number(actual)} {shown.get("unit", "")}，参考目标 {shown.get("target", "未确认")}。'
     return f'{label}{status}：目前 {_number(actual)} {shown.get("unit", "")}，参考目标 {shown.get("target", "未确认")}；{direction}。'
 
 
 def build_overall_suggestions(report):
     """One category per numbered item; one shared personal requirement source."""
-    plan = report.get('personal_targets') or (report.get('food_standard_evaluation') or {}).get('personal_targets') or {}
-    if plan.get('status') != 'validated' or report.get('assessment_status') == 'needs_review' or report.get('recommendation_status') == 'blocked':
-        return []
     rows = _rows(report)
     items = [('energy', energy_summary(report))]
     for key, label in (
         ('protein', '蛋白质'), ('carbohydrate', '碳水化合物'), ('fat', '脂肪'), ('calcium', '钙'),
         ('grains_remainder', '谷类'), ('beans_energy', '豆类'), ('tubers_energy', '薯类'),
-        ('milk', '奶类鲜奶等价量'), ('eggs', '蛋类'),
+        ('milk', '奶类'), ('eggs', '蛋类'),
         ('livestock_remainder', '畜禽肉'), ('seafood', '水产品'),
         ('fruit', '水果'), ('vegetables', '蔬菜'), ('nuts', '坚果')):
         row = rows.get(key)
@@ -78,12 +75,6 @@ def build_overall_suggestions(report):
         if key in {'grains_remainder','beans_energy','tubers_energy','livestock_remainder','seafood'} and representative:
             label += '（' + representative + '等价量）'
         text = _row_advice(row, label)
-        if row and row.get('joint_plan_amount') is not None:
-            rule=row.get('original_rule') or row
-            rule_actual=finite_number(rule.get('actual'))
-            rule_text=(f"原规则 {rule.get('target','')}，当前 {_number(rule_actual)} {rule.get('unit','')}，评价{row.get('evaluation','-')}" if rule_actual is not None else '原规则因记录不完整暂无法评价')
-            text=f"{label}：{rule_text}；本次联合配餐 {row['plan_representative']} {row['joint_plan_amount']:.2f} g/天，须与其余各项整组替换，不能逐项叠加。"
-
         # A source above its reference conversion is not evidence that total
         # carbohydrate should be cut when the person's total is still low.
         if key in {'grains_remainder','beans_energy','tubers_energy'} and (rows.get('carbohydrate') or {}).get('evaluation') in {'不足','过少'}:
@@ -116,7 +107,7 @@ def check_report_consistency(report):
     rows = _rows(report)
 
     def add(code, key, message, **extra):
-        informational = {'machine_evaluation_corrected', 'machine_advice_corrected', 'staple_mix_reallocation', 'training_energy_estimate', 'training_energy_pending'}
+        informational = {'machine_evaluation_corrected', 'machine_advice_corrected', 'staple_mix_reallocation', 'training_energy_estimate', 'training_energy_pending', 'extreme_intake'}
         record = dict(code=code, key=key, message=message,
                       severity='info' if code in informational else 'blocking', **extra)
         if not any(c['code'] == code and c['key'] == key for c in checks):
@@ -154,7 +145,7 @@ def check_report_consistency(report):
                 else:
                     add('manual_conflict', key, f'{row.get("label", key)}最终评价与个人目标边界计算“{expected}”不一致；保留人工结论，请复核。')
         reference = upper if upper is not None and upper > 0 else lower
-        if actual is not None and reference and actual >= reference * REVIEW_THRESHOLDS['reference_multiple']:
+        if row.get('unit') != '%' and actual is not None and reference and actual >= reference * REVIEW_THRESHOLDS['reference_multiple']:
             bound = '上沿' if upper is not None else '下限'
             add('extreme_intake', key,
                 f'{row.get("label", key)}记录摄入 {_number(actual)} {row.get("unit", "")}，达到参考{bound}的 {_number(actual/reference)} 倍；触发数据核查提醒（≥3倍工程筛查阈值，非医学上限）。请核对份量、单位、频率和营养参数，不直接认定录入错误。',
@@ -221,11 +212,6 @@ def check_report_consistency(report):
                 f'{food.get("name", "食物")}日均记录 {_number(amount)} g 超过单项3000 g/天工程筛查阈值；请核查是否混淆生熟重、份量、单位或频率（非医学上限，不直接判定错误）。')
 
     plans = (report.get('food_standard_evaluation') or {}).get('personal_targets') or {}
-    if plans.get('status') == 'validated':
-        t=plans['planned_nutrients']
-        report['joint_plan_summary']=(f"本次联合配餐核验通过：营养库能量{t['energy']:.2f} kcal/天，蛋白质{t['protein']:.2f}g、碳水{t['carbohydrate']:.2f}g、脂肪{t['fat']:.2f}g、钙{t['calcium']:.2f}mg。默认食物和克数须整组使用；不是在原饮食上逐项加量。更换食物或份量必须重新校验。本方案仅是已提供约束下的一组数学可行组合，不是唯一食谱；未提供的份量上限和餐次不能凭空设定，实际配餐仍需专业复核。")
-    else:
-        report['joint_plan_summary']='配餐联合校验未通过；仅保留实际摄入及规则核查，不输出增减或配餐建议。'
     for index, message in enumerate(plans.get('plan_warnings') or []):
         if plans.get('failure_code') == 'requirements_energy_incompatible' and any(c['code']=='macro_energy_conflict' for c in checks):
             continue

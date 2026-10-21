@@ -38,7 +38,7 @@ class ReportDisplayCleanupTests(unittest.TestCase):
         self.assertEqual(17,len(keys));self.assertEqual(keys.index('vegetables')+1,keys.index('nuts'))
         for energy_user in ({'bmrMin':400,'bmrMax':500},{'bmrMin':3000,'bmrMax':3500}):
             r=self.report(**energy_user)
-            self.assertEqual([],r['suggestions']);self.assertEqual('blocked',r['recommendation_status'])
+            self.assertTrue(r['suggestions']);self.assertEqual('available',r['recommendation_status'])
 
     def test_pdf_both_styles_hide_requested_copy_keep_numbers_and_other_alerts(self):
         with tempfile.TemporaryDirectory() as root:
@@ -87,7 +87,7 @@ class ReportDisplayCleanupTests(unittest.TestCase):
         payload = dict(user=dict(projectType='足球', weight=60), meals=[dict(name='米饭', amount=100)],
                        autoEvaluation=False, manualEvaluations={'overallSuggestions': '坚果：人工第一条\n蔬菜：人工第二条'})
         d = NutritionService().build_report_data(payload)
-        self.assertEqual(['坚果：人工第一条', '蔬菜：人工第二条'], d['withheld_manual_suggestions'])
+        self.assertEqual(['坚果：人工第一条', '蔬菜：人工第二条'], d['suggestions'])
 
 
 if __name__ == '__main__':

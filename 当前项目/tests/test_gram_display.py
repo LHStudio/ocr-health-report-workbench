@@ -12,19 +12,24 @@ class GramDisplayTest(unittest.TestCase):
             'meals':[{'name':'米饭','amount':1234.56789},{'name':'豆腐','amount':123.45678},{'name':'土豆','amount':234.56789},
                      {'name':'牛肉','amount':456.78901},{'name':'鲜奶','amount':456.78901},{'name':'蛋类','amount':56.78901}]}
 
-    def test_personal_gram_targets_are_not_projected_from_recorded_denominators(self):
+    def test_gram_display_keeps_internal_ratio_bounds_and_actual_food_weights(self):
         data=self.service.build_report_data(self.payload)
         rows={r['key']:r for r in evaluation_rows(data)}
         raw={r['key']:r for r in data['food_standard_evaluation']['rows']}
-        for key in ['beans_energy','tubers_energy','grains_remainder','seafood','quality_protein']:
-            self.assertEqual('%',rows[key]['unit']);self.assertIn('%',rows[key]['target'])
-            self.assertEqual(raw[key]['original_rule']['target_min'],rows[key]['target_min'])
+        for key in ['beans_energy','tubers_energy','grains_remainder','seafood','livestock_remainder']:
+            self.assertEqual('g/天',rows[key]['unit']);self.assertIn('g/天',rows[key]['target'])
+            self.assertEqual('%',raw[key]['unit'])
+            self.assertEqual(raw[key]['original_rule']['target_min'],raw[key]['target_min'])
+            self.assertEqual(raw[key]['original_rule']['target_max'],raw[key]['target_max'])
+        for key,expected in [('grains_remainder',1234.57),('beans_energy',123.46),('tubers_energy',234.57),('livestock_remainder',456.79),('seafood',0)]:
+            self.assertEqual(expected,rows[key]['actual'])
+        self.assertEqual('%',rows['quality_protein']['unit'])
         self.assertEqual('g/天',rows['fat']['unit'])
         energy=data['nutrition']['energy']['standard']
         self.assertEqual(f'{energy*.2/9:.2f}–{energy*.3/9:.2f} g/天',rows['fat']['target'])
         less=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=10)]})
         small={r['key']:r for r in evaluation_rows(less)}
-        for key in ('beans_energy','tubers_energy','grains_remainder','seafood','quality_protein','fat'):
+        for key in ('quality_protein','fat'):
             self.assertEqual(rows[key]['target'],small[key]['target'])
 
     def test_pdf_excel_expose_only_grams_and_at_most_two_decimals(self):
