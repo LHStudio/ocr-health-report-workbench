@@ -44,13 +44,13 @@ def _as_text(value: object) -> str:
 
 def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过少", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"} else text
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过少", "过多", "不建议吃零食", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"} else text
 
 
 def _table_text(value: object, *, alert=True) -> str:
     """Keep percentage units and parenthesized phrases together when wrapping."""
     raw = _as_text(value)
-    if alert and raw.strip() == '建议尽量不吃':
+    if alert and raw.strip() == '不建议吃零食':
         return _evaluation_text(value)
     tokens = re.compile(r'[（(][^（）()]+[）)]|[≥≤约]?\s*[+\-]?\d+(?:\.\d+)?(?:[–—-]\d+(?:\.\d+)?)?\s*(?:%|kcal/天|mg/天|g/天|g/100g)')
     parts = []; start = 0
@@ -247,8 +247,8 @@ class NutritionPDFBuilder:
             ('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),
             ('GRID',(0,0),(-1,-1),.5,grid)]))
         story.extend([profile, Spacer(1, 12)])
-        if data.get('assessment_status') == 'needs_review':
-            story.extend([Paragraph('待核对：存在未换算食物，本报告不是完整营养结论；具体条目见最后的整体评估及建议。', quality), Spacer(1, 6)])
+        if data.get('report_status',data.get('assessment_status')) == 'needs_review':
+            story.extend([Paragraph('待核对：记录或配餐约束未通过校验，本报告不提供已验证配餐建议；具体条目见最后的整体评估及建议。', quality), Spacer(1, 6)])
         categories = ['谷类','薯类','蔬菜','水果','畜禽肉','水产品','蛋类','豆类','坚果','奶类','零食','运动营养食品','饮料','酒类']
         story.append(self._build_food_report(data, categories, normal=normal, header=header,
             category_style=category_style, suggestions=None))
@@ -337,6 +337,8 @@ class NutritionPDFBuilder:
             for message in alerts:
                 story.append(Paragraph(escape(_as_text(message)), advice))
             story.append(Spacer(1, 6))
+        if data.get('joint_plan_summary'):
+            story.extend([Paragraph(escape(str(data['joint_plan_summary'])), quality), Spacer(1, 5)])
         for index, item in enumerate(data.get('suggestions') or ['暂无自动建议'], 1):
             plain = f'{index}. {_as_text(item)}'
             story.append(NaturalSuggestionParagraph(_suggestion_markup(plain), advice, plain_text=plain))
@@ -525,7 +527,7 @@ class NutritionPDFBuilder:
         if data.get("interpretation"):
             return "<br/>".join(escape(line.strip()) for line in _as_text(data["interpretation"]).splitlines() if line.strip())
         if data.get('energy_guidance'):
-            if data.get('assessment_status') == 'needs_review':
+            if data.get('report_status',data.get('assessment_status')) == 'needs_review':
                 return escape(data['energy_guidance'])
             return escape(energy_summary(data) + '各类食物按个人营养目标与实际摄入独立比较，不按总能量方向统一增减主食。')
         nutrition = data.get("nutrition") or {}

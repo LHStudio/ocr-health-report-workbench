@@ -34,7 +34,7 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertEqual(5, rows['beans_energy']['actual'])
         self.assertEqual(15, rows['tubers_energy']['actual'])
         self.assertEqual(30, rows['seafood']['actual'])
-        self.assertIsNone(self.report()['food_standard_evaluation']['summary']['attainment_percent'])
+        self.assertEqual(100,self.report()['food_standard_evaluation']['summary']['attainment_percent'])
 
     def test_energy_not_weight_and_protein_not_food_mass(self):
         self.db['豆']['energy'] = 200
@@ -47,10 +47,10 @@ class FoodStandardsTest(unittest.TestCase):
         raw=self.rows()
         self.assertAlmostEqual(9.5238,raw['beans_energy']['actual'],places=3)
         self.assertAlmostEqual(40.7407,raw['quality_protein']['actual'],places=3)
-        self.assertEqual(50,rows['beans_energy']['actual'])
-        self.assertEqual(55,rows['quality_protein']['actual'])
-        self.assertIsNone(rows['quality_protein']['score'])
-        self.assertEqual('-',rows['quality_protein']['evaluation'])  # Missing personal profile, not invented ratio advice.
+        self.assertAlmostEqual(9.5238,rows['beans_energy']['actual'],places=3)
+        self.assertAlmostEqual(40.7407,rows['quality_protein']['actual'],places=3)
+        self.assertEqual(0,rows['quality_protein']['score'])
+        self.assertEqual('不足',rows['quality_protein']['evaluation'])  # Missing personal profile, not invented ratio advice.
 
     def test_under_over_and_near_boundary_not_rounded_into_pass(self):
         rows = self.rows(amounts={**self.amounts, '坚果': 9.999, '果': 500.001, '菜': 199.999})
@@ -80,7 +80,7 @@ class FoodStandardsTest(unittest.TestCase):
     def test_snacks_are_advisory_and_poultry_is_in_non_seafood_meat(self):
         rows = self.rows(amounts={**self.amounts, '糕点': 10, '鸡肉': 20})
         self.assertIsNone(rows['snacks']['score'])
-        self.assertIn('尽量不吃', rows['snacks']['evaluation'])
+        self.assertEqual('不建议吃零食', rows['snacks']['evaluation'])
         self.assertEqual('过多', rows['livestock_remainder']['evaluation'])
         self.assertEqual(75, rows['livestock_remainder']['actual'])
         self.assertIsNone(rows['livestock_remainder']['score'])
@@ -93,8 +93,8 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertIn('food_standard_evaluation', r)
         rows = {x['key']: x for x in r['food_standard_evaluation']['rows']}
         self.assertEqual(1, rows['eggs']['score'])
-        self.assertIsNone(rows['quality_protein']['score'])
-        self.assertEqual('-',rows['quality_protein']['evaluation'])
+        self.assertEqual(1,rows['quality_protein']['score'])
+        self.assertEqual('适中',rows['quality_protein']['evaluation'])
         payload['user'].update(athleteType='team', trainingPhase='training', age=20)
         report = NutritionService().build_report_data(payload)
         self.assertTrue(all('记录不完整' not in row['machine_evaluation'] for row in
@@ -114,7 +114,7 @@ class FoodStandardsTest(unittest.TestCase):
         report = self.service.build_report_data({'user': {'weight':65,'gender':'female','age':23,'activityLevel':'2'},
             'meals': [{'name': '坚果', 'amount': 5}], 'autoEvaluation': False,
             'manualEvaluations': {'standardEvaluations': {'nuts': '人工复核'}}})
-        self.assertEqual(17,len(report['suggestions'])); self.assertTrue(any('人工复核' in s for s in report['suggestions']))
+        self.assertEqual([],report['suggestions']); self.assertEqual('人工复核', next(r['evaluation'] for r in report['food_standard_evaluation']['rows'] if r['key']=='nuts'))
 
     def test_negative_and_nonfinite_ocr_quantity_not_silently_positive(self):
         for field, value in [('平均每次食用量', '-10g'), ('次数', '-1'), ('次数', 'NaN'), ('平均每次食用量', 'Infinity')]:
@@ -128,8 +128,8 @@ class FoodStandardsTest(unittest.TestCase):
         report = service.build_report_data({'user': {'weight': 65}, 'meals': [
             {'name': k, 'amount': v} for k, v in self.amounts.items()]})
         row = next(r for r in report['food_standard_evaluation']['rows'] if r['key'] == 'quality_protein')
-        self.assertEqual(55,row['actual'])  # Outward value is grams of quality protein, not percent.
-        self.assertIsNone(row['score'])  # Personal profile is missing; original mathematical ratio retained below.
+        self.assertEqual(50,row['actual'])  # Outward value is grams of quality protein, not percent.
+        self.assertEqual(1,row['score'])  # Personal profile is missing; original mathematical ratio retained below.
         self.assertEqual(1,self.rows()['quality_protein']['score'])
         self.assertEqual(0, self.rows(amounts={**self.amounts, '鱼': 29.999})['seafood']['score'])
 

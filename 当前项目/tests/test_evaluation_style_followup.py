@@ -19,19 +19,13 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
 
     def test_machine_ratings_and_energy_use_three_terms(self):
         report=self.report()
-        evaluations=[r['evaluation'] for r in report['athlete_evaluation']['rows']+report['food_standard_evaluation']['rows']]
-        evaluations += [v['evaluation'] for v in report['category_result'].values()]
-        self.assertTrue(set(evaluations)<={'过多','过少','不足','适中','-','建议尽量不吃','能量占比偏低','能量占比偏高','能量占比适中','占比偏低','占比偏高','占比适中'},set(evaluations))
-        # Reference DB remains complete even when only one food was recorded.
-        # Compare 100 g with the independent personal target, not low energy.
-        self.assertEqual('过多',report['category_result']['谷类']['evaluation'])
+        values=[r['evaluation'] for r in report['athlete_evaluation']['rows']+report['food_standard_evaluation']['rows']]
+        self.assertTrue(set(values)<={'不足','过多','适中','-','不建议吃零食'},set(values))
         grain=next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='grains_remainder')
-        self.assertEqual('personal_target',grain['evaluation_basis'])
-        self.assertGreater(grain['target_min'],100)
-        self.assertFalse(report['food_standard_evaluation']['personal_targets']['plan_warnings'])
-        service=NutritionService()
+        self.assertEqual('ratio',grain['evaluation_basis']);self.assertEqual(80,grain['target_max'])
+        self.assertEqual('过多',report['category_result']['谷类']['evaluation'])
         for actual,status in [(1000,'过少'),(2100,'适宜'),(3000,'过多')]:
-            self.assertEqual(status,service._eval_energy_against_standard(actual,2100))
+            self.assertEqual(status,NutritionService()._eval_energy_against_standard(actual,2100))
 
     def test_base_reference_note_does_not_claim_weight_suppression(self):
         data=self.report()['food_standard_evaluation']
@@ -92,7 +86,7 @@ class EvaluationStyleFollowupTest(unittest.TestCase):
         readme=(root/'README.md').read_text(encoding='utf8')
         self.assertIn('当前版本：`V7.3.2-RC7`',readme)
         self.assertIn('文档更新：2026-10-16',readme)
-        self.assertIn('建议尽量不吃',readme)
+        self.assertIn('不建议吃零食',readme)
 
 
 if __name__=='__main__':unittest.main()

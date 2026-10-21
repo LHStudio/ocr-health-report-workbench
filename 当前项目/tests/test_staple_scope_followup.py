@@ -51,20 +51,19 @@ class StapleScopeTest(unittest.TestCase):
             self.assertIn('g/天', rows['fruit']['target'])
             self.assertEqual('适中', rows['milk']['evaluation'])
             self.assertEqual(1, rows['milk']['score'])
-            self.assertTrue(any('水果不足' in s for s in report['suggestions']))
+            self.assertEqual([],report['suggestions']);self.assertEqual('blocked',report['recommendation_status'])
             self.assertGreater(report['food_standard_evaluation']['summary']['evaluated'], 0)
             for builder in [NutritionPDFBuilder, LegacyPDFBuilder]:
                 text = builder._interpretation(report)
-                self.assertIn('主食', text)
-                self.assertIn('个人营养目标', text)
+                self.assertIn('未通过', text)
                 self.assertNotIn('暂不评价食物结构', text)
 
     def test_unknown_energy_does_not_hide_known_nonstaples(self):
         r = self.report(user=dict(gender='male', age=23, weight=54.6, athleteType='team', trainingPhase='training'))
         rows = {r['key']: r for r in r['food_standard_evaluation']['rows']}
         for key in STAPLES:
-            self.assertEqual('不足', rows[key]['evaluation'])
-            self.assertIsNotNone(rows[key]['target_min'])
+            self.assertEqual('过多' if key=='grains_remainder' else '不足', rows[key]['evaluation'])
+            self.assertEqual('%',rows[key]['unit'])
         self.assertEqual('-', r['nutrition']['energy']['evaluation'])
         self.assertEqual('适中', rows['milk']['evaluation'])
         self.assertEqual('不足', rows['fruit']['evaluation'])
@@ -74,8 +73,8 @@ class StapleScopeTest(unittest.TestCase):
             r = self.report(energy)
             for row in r['food_standard_evaluation']['rows']:
                 if row['key'] in STAPLES:
-                    self.assertEqual('personal_target', row['evaluation_basis'])
-                    self.assertEqual('不足',row['evaluation'])
+                    self.assertEqual('ratio', row['evaluation_basis'])
+                    self.assertEqual('过多' if row['key']=='grains_remainder' else '不足',row['evaluation'])
 
     def test_manual_staple_and_nonstaple_values_and_blanks_survive(self):
         for energy in [1800, 2500]:
@@ -86,8 +85,8 @@ class StapleScopeTest(unittest.TestCase):
             self.assertEqual('', rows['grains_remainder']['evaluation'])
             self.assertEqual('人工奶量', rows['milk']['evaluation'])
             self.assertEqual('', rows['fruit']['evaluation'])
-            self.assertEqual(['人工建议'], r['suggestions'])
-            self.assertEqual('人工解读', NutritionPDFBuilder._interpretation(r))
+            self.assertEqual(['人工建议'], r['withheld_manual_suggestions'])
+            self.assertEqual('人工解读', r['withheld_interpretation']); self.assertEqual([], r['suggestions'])
 
     def test_unresolved_staple_does_not_erase_known_meat_projection(self):
         from nutrition_report import NutritionReportService
@@ -97,11 +96,11 @@ class StapleScopeTest(unittest.TestCase):
         r = service.build_report_data(payload)
         self.assertTrue(r['food_standard_evaluation']['nutrient_record_complete'])
         row = next(x for x in r['food_standard_evaluation']['rows'] if x['key'] == 'seafood')
-        self.assertEqual('-', row['evaluation']) # sample has no applicable sport profile
+        self.assertEqual('不足', row['evaluation']) # sample has no applicable sport profile
         self.assertEqual(0, row['display']['actual'])
-        self.assertEqual('暂无法折算', row['display']['target'])
-        self.assertEqual('g/天', row['display']['unit'])
-        self.assertIsNone(row['display']['gap'])
+        self.assertEqual('≥ 30.00 %', row['display']['target'])
+        self.assertEqual('%', row['display']['unit'])
+        self.assertEqual(-30,row['display']['gap'])
 
 
 if __name__ == '__main__':

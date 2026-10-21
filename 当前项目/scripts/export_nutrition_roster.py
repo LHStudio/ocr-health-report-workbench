@@ -114,7 +114,7 @@ def export_roster(roster_path, state_path, output_dir, *, aliases=None, service=
         adapted=service.adapt_ocr_person(person,include_quality_page=False)
         if not adapted.usable_food_count:raise ValueError(f'{name}没有可换算食物，不能导出零摄入报告')
         data=service.build_report_data({**adapted.payload,'report_style':'modern'})
-        ready=data['assessment_status']=='ready'
+        ready=data.get('report_status',data['assessment_status'])=='ready'
         folder=output_dir/team if ready else output_dir/'待核对'/team
         folder.mkdir(parents=True,exist_ok=True)
         path=folder/(name+('_营养报告.pdf' if ready else '_待核对营养报告.pdf'))
@@ -123,7 +123,7 @@ def export_roster(roster_path, state_path, output_dir, *, aliases=None, service=
         modified['people'].append(person)
         a={r['key']:r for r in data['athlete_evaluation']['rows']}
         manifest['results'].append({'name':name,'team':team,'person_id':person['id'],'file':str(path.resolve()),
-            'status':data['assessment_status'],'issues':data['assessment_issues'],'energy':data['nutrition']['energy'],
+            'status':data.get('report_status',data['assessment_status']),'issues':data['assessment_issues']+data.get('recommendation_issues',[]),'energy':data['nutrition']['energy'],
             'protein':a['protein'],'carbohydrate':a['carbohydrate'],'fat':a['fat'],
             'report_checks':data.get('report_checks',{}),
             'personal_targets':data.get('food_standard_evaluation',{}).get('personal_targets',{}),
@@ -138,7 +138,7 @@ def export_roster(roster_path, state_path, output_dir, *, aliases=None, service=
     assert all(hashlib.sha256(Path(p).read_bytes()).hexdigest()==h for p,h in hashes.items())
     manifest['source_hashes_unchanged']=hashes
     dump(output_dir/'导出清单.json',manifest)
-    lines=[f"名单{manifest['roster_count']}人；已导出营养报告{manifest['counts'].get('ready',0)}份；无问卷缓存{len(manifest['missing'])}人。",
+    lines=[f"名单{manifest['roster_count']}人；已导出营养报告{manifest['counts'].get('ready',0)}份；待核对{manifest['counts'].get('needs_review',0)}份；无问卷缓存{len(manifest['missing'])}人。",
         '篮球、足球：团体（有氧+力量）；体操：力量为主；活动量高。训练阶段沿用项目默认训练期，显式选择优先。',
         '对虾、奶粉、包装饮料及区间份量采用统一常用份量估算后纳入计算。',
         '营养数据来源：'+str(manifest['food_data_source'].get('label'))]

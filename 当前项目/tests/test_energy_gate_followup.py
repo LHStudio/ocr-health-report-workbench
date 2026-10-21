@@ -21,10 +21,10 @@ class EnergyGateFollowupTest(unittest.TestCase):
         r=self.report()
         self.assertEqual('适宜',r['nutrition']['energy']['evaluation'])
         self.assertEqual('不足',next(x for x in r['athlete_evaluation']['rows'] if x['key']=='carbohydrate')['evaluation'])
-        self.assertTrue(any(s.startswith('碳水化合物不足') for s in r['suggestions']))
-        self.assertEqual('总能量适宜。',r['suggestions'][0])
+        self.assertEqual([],r['suggestions'])
+        self.assertEqual('blocked',r['recommendation_status'])
         for builder in [NutritionPDFBuilder,LegacyPDFBuilder]:
-            self.assertIn('按个人营养目标',builder._interpretation(r))
+            self.assertIn('未通过',builder._interpretation(r))
 
     def test_outside_band_staple_targets_do_not_follow_energy_direction(self):
         baseline=self.report()
@@ -33,7 +33,7 @@ class EnergyGateFollowupTest(unittest.TestCase):
             r=self.report(energy)
             for row in r['food_standard_evaluation']['rows']:
                 if row['key'] not in {'beans_energy','tubers_energy','grains_remainder'}: continue
-                self.assertEqual('personal_target',row['evaluation_basis'])
+                self.assertEqual('ratio',row['evaluation_basis'])
                 self.assertEqual(base[row['key']]['evaluation'],row['evaluation'])
                 self.assertEqual(base[row['key']]['target_min'],row['target_min'])
                 self.assertEqual(base[row['key']]['target_max'],row['target_max'])
@@ -44,7 +44,7 @@ class EnergyGateFollowupTest(unittest.TestCase):
         for energy in [1890,1995,2100,2310]:
             r=self.report(energy)
             self.assertEqual('适宜',r['nutrition']['energy']['evaluation'])
-            self.assertEqual('personal_target',next(x for x in r['food_standard_evaluation']['rows'] if x['key']=='grains_remainder')['evaluation_basis'])
+            self.assertEqual('ratio',next(x for x in r['food_standard_evaluation']['rows'] if x['key']=='grains_remainder')['evaluation_basis'])
 
     def test_missing_energy_profile_does_not_invent_a_staple_target(self):
         r=self.report(user=dict(gender='male',age=23,weight=54.6,athleteType='team',trainingPhase='training'))
@@ -58,17 +58,17 @@ class EnergyGateFollowupTest(unittest.TestCase):
         self.assertEqual(self.report()['category_result'],r['category_result'])
         r=self.report(2500,autoEvaluation=False,manualEvaluations=dict(standardEvaluations=dict(grains_remainder=''),overallSuggestions='人工建议',interpretation='人工解读'))
         self.assertEqual('',r['category_result']['谷类']['evaluation'])
-        self.assertEqual(['人工建议'],r['suggestions'])
-        self.assertEqual('人工解读',NutritionPDFBuilder._interpretation(r))
+        self.assertEqual(['人工建议'],r['withheld_manual_suggestions'])
+        self.assertEqual('人工解读', r['withheld_interpretation']); self.assertEqual([], r['suggestions'])
 
     def test_food_targets_are_grams_and_not_total_energy_instructions(self):
         for energy in [1800,2500]:
             r=self.report(energy)
             for row in r['food_standard_evaluation']['rows']:
                 if row['key'] not in {'beans_energy','tubers_energy','grains_remainder'}: continue
-                self.assertNotIn('%',row['display']['target'])
+                self.assertIn('%',row['display']['target'])
                 self.assertNotIn('总量',row['display']['target'])
-                self.assertIn('g/天',row['display']['target'])
+                self.assertEqual('%',row['display']['unit'])
 
 
 if __name__=='__main__': unittest.main()

@@ -72,8 +72,8 @@ test('snack advice is an alert without coloring normal or partial strings', () =
 })
 
 test('staple ratings describe energy share, not food grams; manual values stay supported', () => {
-  assert.equal(finalEvaluation({key:'grains_remainder',evaluation:'过多'}), '能量占比偏高')
-  assert.equal(finalEvaluation({key:'beans_energy',evaluation:'不足'}), '能量占比偏低')
+  assert.equal(finalEvaluation({key:'grains_remainder',evaluation:'过多'}), '过多')
+  assert.equal(finalEvaluation({key:'beans_energy',evaluation:'不足'}), '不足')
   assert.equal(finalEvaluation({key:'grains_remainder',evaluation:'过多'},{standard_grains_remainderEvaluation:'人工结论'}), '人工结论')
   assert.equal(evaluationAlertClass('能量占比偏高'), 'evaluation-alert')
   assert.equal(evaluationAlertClass('能量占比适中'), '')
@@ -84,4 +84,9 @@ test('staple ratings describe energy share, not food grams; manual values stay s
   assert.equal(finalEvaluation(row),'不足')
   assert.equal(evaluationRows({food_standard_evaluation:{rows:[row]}})[0].unit,'g/天')
   assert.equal(evaluationRows({food_standard_evaluation:{rows:[row]}})[0].actual,12.35)
+ })
+
+ test('confirmed snack and blocked gate stay visible in preview', () => {
+  assert.equal(finalEvaluation({key:'snacks',evaluation:'不建议吃零食'},{standard_snacksEvaluation:'建议吃'}),'不建议吃零食')
+  assert.ok(evaluationWarnings({report_status:'needs_review',report_checks:{warnings:[]}}).some(x=>x.includes('未通过')))
  })

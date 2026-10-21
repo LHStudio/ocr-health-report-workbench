@@ -15,7 +15,7 @@ class NutritionTableLayoutTest(unittest.TestCase):
             service.pdf_builder.build(report,pdf);service.excel_builder.build(report,xlsx)
             with fitz.open(pdf) as doc:
                 spans=[s for p in doc for b in p.get_text('dict')['blocks'] for l in b.get('lines',[]) for s in l['spans']]
-                advice=[s for s in spans if s['text'].strip()=='建议尽量不吃']
+                advice=[s for s in spans if s['text'].strip()=='不建议吃零食']
                 self.assertTrue(advice)
                 self.assertTrue(any(s['color']==0 for s in advice),[(s['text'],s['color']) for s in advice])
                 for page in doc:
@@ -27,7 +27,7 @@ class NutritionTableLayoutTest(unittest.TestCase):
             for w in wb:
                 for row in w:
                     for c in row:
-                        if c.value=='建议尽量不吃':self.assertEqual('000000' if w.title=='运动员专项评价' and c.column==4 else 'DC2626',c.font.color.rgb[-6:])
+                        if c.value=='不建议吃零食':self.assertEqual('000000' if w.title=='运动员专项评价' and c.column==4 else 'DC2626',c.font.color.rgb[-6:])
             self.assertLess(ws.column_dimensions['F'].width,30)
             self.assertGreater(ws.column_dimensions['A'].width,30)
             self.assertGreater(ws.column_dimensions['D'].width,30)

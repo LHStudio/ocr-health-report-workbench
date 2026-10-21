@@ -103,13 +103,14 @@ def fetch_cloud_foods(
                 name = str(record.get("name") or "").strip()
                 if not name:
                     continue
+                # Missing API parameters are unknown, never an invented zero.
                 foods[name] = {
                     "category": category_name,
-                    "energy": record.get("energy", 0),
-                    "protein": record.get("protein", 0),
-                    "fat": record.get("fat", 0),
-                    "carbohydrate": record.get("carbohydrate", 0),
-                    "calcium": record.get("calcium", 0),
+                    "energy": record.get("energy"),
+                    "protein": record.get("protein"),
+                    "fat": record.get("fat"),
+                    "carbohydrate": record.get("carbohydrate"),
+                    "calcium": record.get("calcium"),
                 }
     if not foods:
         raise RuntimeError("云端食物营养数据为空")

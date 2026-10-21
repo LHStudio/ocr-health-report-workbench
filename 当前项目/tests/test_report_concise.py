@@ -11,7 +11,7 @@ from nutrition_report.builders.presentation import evaluation_rows, evaluation_w
 class ConciseReportTest(unittest.TestCase):
     def setUp(self):
         self.service = NutritionReportService(prefer_cloud=False)
-        self.payload = dict(user=dict(name='验证样例', gender='female', age=22, weight=65,
+        self.payload = dict(user=dict(name='验证样例', gender='female', age=22, weight=60, projectType='篮球', bmrMin=1500, bmrMax=1800,
             activityLevel='2', athleteType='team', trainingPhase='training'),
             meals=[dict(name='米饭', amount=100), dict(name='牛肉', amount=20),
                    dict(name='鲜奶', amount=100), dict(name='蛋类', amount=20)])
@@ -29,8 +29,8 @@ class ConciseReportTest(unittest.TestCase):
         self.assertNotIn('meat', rows)
         raw = {r['key']: r for r in data['food_standard_evaluation']['rows']}
         for key in ('livestock_remainder','seafood'):
-            self.assertIn('不扣除实际', raw[key]['note'])
-            self.assertEqual('protein', raw[key]['conversion_basis'])
+            self.assertEqual('%',raw[key]['unit'])
+            self.assertEqual('protein', raw[key]['actual_equivalent']['conversion_basis'])
 
     def test_pdf_suggestion_numbers_and_units_never_wrap_apart(self):
         data = self.service.build_report_data(self.payload)
@@ -43,7 +43,7 @@ class ConciseReportTest(unittest.TestCase):
             self.service.pdf_builder.build(data, path)
             with fitz.open(path) as doc:
                 # Section boundaries, not removed running headers, identify advice pages.
-                start = next(i for i, p in enumerate(doc) if '整体评估及建议' in p.get_text())
+                start = next(i for i, p in enumerate(doc) if '整体评估及建议' in p.get_text().splitlines())
                 end = len(doc)
                 text = '\n'.join(doc[i].get_text() for i in range(start, end))
                 self.assertFalse(re.search(r'\d\s*\n\s*(?:kcal|mg|g)/天', text), text)
@@ -57,8 +57,8 @@ class ConciseReportTest(unittest.TestCase):
         self.assertFalse(any(s.startswith('肉类（含水产品）') for s in data['suggestions']))
         rows = {r['key']:r for r in evaluation_rows(data)}
         self.assertNotIn('meat',rows)
-        self.assertAlmostEqual(237.259906*.7, rows['livestock_remainder']['target_min'], places=5)
-        self.assertAlmostEqual(237.259906*.3, rows['seafood']['target_min'], places=5)
+        self.assertEqual(70,rows['livestock_remainder']['target_max'])
+        self.assertEqual(30,rows['seafood']['target_min'])
 
     def test_chinese_protein_advice_fills_the_line_before_wrapping(self):
         data = self.service.build_report_data(self.payload)
@@ -66,7 +66,7 @@ class ConciseReportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             pdf = Path(tmp) / 'report.pdf'; self.service.pdf_builder.build(data, pdf)
             with fitz.open(pdf) as doc:
-                page = next(p for p in doc if '整体评估及建议' in p.get_text())
+                page = next(p for p in doc if '整体评估及建议' in p.get_text().splitlines())
                 lines = [l for b in page.get_text('dict')['blocks'] for l in b.get('lines', [])]
                 first = next(l for l in lines if '蛋白质不足：' in ''.join(s['text'] for s in l['spans']))
                 text = ''.join(s['text'] for s in first['spans'])

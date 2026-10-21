@@ -38,6 +38,27 @@ class NutritionCloudSourceTest(unittest.TestCase):
         self.assertEqual("cloud", report["food_data_source"]["kind"])
         self.assertEqual("云端食物营养库", report["foods"][0]["data_source"])
 
+    def test_missing_cloud_parameter_stays_unknown_and_blocks_report(self) -> None:
+        from nutrition_report.cloud import fetch_cloud_foods
+        from nutrition_report.release_gate import density_review
+        original = {"name": "米饭", "energy": 400, "protein": 10,
+                    "carbohydrate": 70, "calcium": 20}
+        def getter(url, **kwargs):
+            if url.endswith('/category'):
+                return {"records": [{"id": 1, "name": "谷类"}]}
+            return {"records": [dict(original)]}
+        foods = fetch_cloud_foods(getter=getter)
+        self.assertIsNone(foods['米饭']['fat'])
+        self.assertTrue(density_review(foods, ['米饭']))
+        source = FoodDataResult(foods=foods, metadata={"kind": "cloud"})
+        report = NutritionReportService(food_data=source).build_report_data({
+            "user": {}, "meals": [{"name": "米饭", "amount": 100}],
+        })
+        self.assertFalse(report['food_standard_evaluation']['nutrient_record_complete'])
+        self.assertEqual('needs_review', report['assessment_status'])
+        self.assertEqual([], report['suggestions'])
+        self.assertNotIn('fat', original)
+
     def test_cloud_failure_falls_back_locally_with_visible_message(self) -> None:
         def unavailable(**_kwargs):
             raise ConnectionError("测试连接被拒绝")

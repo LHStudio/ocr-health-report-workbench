@@ -8,12 +8,9 @@ def attach_gram_display(report, food_db, merged_meals):
             display = {key: row.get(key) for key in ('label', 'actual', 'unit', 'target', 'gap', 'note')}
             # Historical ratios without a plan cannot become gram requirements
             # by multiplying their bounds by actual intake.
-            if row.get('unit') == '%':
-                display.update(unit='g/天', target='暂无法折算', gap=None,
-                               note='缺少个人计划目标，不以实际摄入反推目标克数。')
-            else:
-                display['target'] = re.sub(r'\d+(?:\.\d+)?', lambda m: f'{float(m.group()):.2f}', str(display['target']))
-                display['note'] = ''
+            display['target'] = re.sub(r'\d+(?:\.\d+)?', lambda m: f'{float(m.group()):.2f}', str(display['target']))
+            # A planned amount never becomes part of a normative target range.
+            display['note'] = ''  # Keep detailed formulas in raw audit rows, not repeated in the table.
             for field in ('actual', 'gap'):
                 if display.get(field) is not None:
                     display[field] = round(display[field], 2)

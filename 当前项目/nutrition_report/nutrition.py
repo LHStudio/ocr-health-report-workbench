@@ -37,6 +37,8 @@ class NutritionService:
             self.female_eer = json.load(f)
         with open(package_root / "config" / "athlete_intervention_v2.json", encoding="utf-8") as f:
             self.athlete_config = json.load(f)
+        with open(package_root / "config" / "standards_review.json", encoding="utf-8") as f:
+            self.standards_policy = json.load(f)
 
     def build_report_data(self, front_json):
         user = front_json.get("user", {})
@@ -71,7 +73,7 @@ class NutritionService:
         for row in sorted(food_standard['rows'], key=lambda r: r['key'] != 'quality_protein'):
             category = category_keys.get(row['key'])
             if category in category_result:
-                category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row.get('evaluation_basis') == 'ratio' and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
+                category_result[category]['evaluation'] = row['evaluation']
                 if row['key'] == 'milk':
                     category_result[category]['equivalent_value'] = row['actual']
                 elif row.get('representative') and row.get('conversion_basis'):
@@ -107,8 +109,15 @@ class NutritionService:
                     row['evaluation'] = category_result[category_keys[row['key']]]['evaluation']
                 category = category_keys.get(row['key'])
                 if category in category_result:
-                    category_result[category]['evaluation'] = ({'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row['evaluation'], row['evaluation']) if row.get('evaluation_basis') == 'ratio' and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'} else row['evaluation'])
+                    category_result[category]['evaluation'] = row['evaluation']
             next(r for r in athlete['rows'] if r['key'] == 'vegetables')['evaluation'] = vegetable['evaluation']
+
+        # The confirmed qualitative snack rule has no energy/fat branch.
+        snack = next(r for r in food_standard['rows'] if r['key'] == 'snacks')
+        if snack.get('evaluation') != '不建议吃零食':
+            snack['manual_evaluation_record'] = snack.get('evaluation')
+        snack['evaluation'] = '不建议吃零食'
+        category_result['零食']['evaluation'] = '不建议吃零食'
 
         generated = datetime.now(timezone(timedelta(hours=8)))
         report = {
@@ -160,8 +169,14 @@ class NutritionService:
             report['energy_guidance'] = review_note + '。补齐这些条目的克数或容量后，才能评价全天能量、蛋白质及主食总量。'
             # Blocking issues are displayed separately, not as a 15th advice item.
 
+        plan = report['personal_targets']
+        report['recommendation_issues'] = list(plan.get('plan_warnings') or [])
+        report['recommendation_status'] = 'validated' if report['assessment_status']=='ready' and plan.get('status')=='validated' else 'blocked'
+        report['report_status'] = 'ready' if report['recommendation_status']=='validated' else 'needs_review'
+        if report['recommendation_status'] != 'validated':
+            report['energy_guidance'] = energy_summary(report)+'配餐联合校验未通过，暂停克数及增减建议；实际记录和个人需求保留。'
         attach_gram_display(report, self.food_db, merged_meals)
-        if report['assessment_status'] == 'ready':
+        if report['recommendation_status'] == 'validated':
             report['energy_guidance'] = energy_summary(report) + '各类食物按个人营养目标与实际摄入独立比较，不按总能量方向统一增减主食。'
         # One shared 17-item structure for all energy states; explicit manual
         # advice remains verbatim and receives a separate consistency warning.
@@ -171,9 +186,18 @@ class NutritionService:
         else:
             report['suggestion_items'] = []
         check_report_consistency(report)
+        if report['recommendation_status'] != 'validated':
+            if not auto_evaluation and report.get('suggestions'):
+                report['withheld_manual_suggestions'] = list(report['suggestions'])
+            report['suggestion_items'] = []
+            report['suggestions'] = []
+            if report.get('interpretation'):
+                report['withheld_interpretation'] = report.pop('interpretation')
         for issue in report['assessment_issues']:
             report['report_checks']['warnings'].append('数据核查：' + issue)
             report['report_checks']['status'] = 'review'
+        from .release_gate import apply_release_gate
+        apply_release_gate(report, self.standards_policy, self.food_db)
         return report
 
     def build_intake_preview(self, front_json):
@@ -271,6 +295,9 @@ class NutritionService:
         training = training_expenditure(user, resting)
         if training['applied']:
             bounds = tuple(resting[i] + training['net_daily_kcal'][i] for i in (0, 1))
+        else:
+            # A resting-only interval is not the confirmed daily reference.
+            bounds = None
         energy_standard = self._lookup_energy_eer(user) if bounds is None else None
         energy_eval = self._eval_energy_against_standard(total_energy, energy_standard)
         activity = str(user.get('activityLevel', '')).strip()

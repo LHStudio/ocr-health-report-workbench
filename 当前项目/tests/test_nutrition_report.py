@@ -36,13 +36,16 @@ def sample_person() -> dict:
 class OCRNutritionAdapterTest(unittest.TestCase):
     def test_all_38_fixed_foods_have_a_real_database_reference(self) -> None:
         service = NutritionReportService(prefer_cloud=False)
-        self.assertEqual(38, len(FOOD_REFERENCE_MAP))
+        # The original 38 mappings remain; two explicit fries aliases are API-only.
+        self.assertEqual(38, len(set(FOOD_REFERENCE_MAP) - {"零食", "薯条"}))
+        self.assertEqual(("薯条", False), FOOD_REFERENCE_MAP["零食"])
+        self.assertEqual(("薯条", True), FOOD_REFERENCE_MAP["薯条"])
         missing = {
             reference
             for reference, _ in FOOD_REFERENCE_MAP.values()
             if reference not in service.nutrition_service.food_db
         }
-        self.assertEqual(set(), missing)
+        self.assertEqual({"薯条"}, missing)  # No fabricated offline fries density.
 
     def test_frequency_rows_are_converted_to_daily_grams_with_traceability(self) -> None:
         adapted = build_payload_from_ocr_person(
@@ -377,13 +380,13 @@ class NutritionReportServiceTest(unittest.TestCase):
             report = pdf_result["report_data"]
             self.assertEqual("偏多", report["category_result"]["谷类"]["evaluation"])
             self.assertEqual("偏少", report["nutrition"]["calcium"]["evaluation"])
-            self.assertEqual(["人工建议一", "人工建议二"], report["suggestions"])
-            self.assertEqual("该结论已由营养师人工复核。", report["interpretation"])
+            self.assertEqual(["人工建议一", "人工建议二"], report["withheld_manual_suggestions"])
+            self.assertEqual("该结论已由营养师人工复核。", report["withheld_interpretation"])
             self.assertIn("不包含维生素", report["nutrition_disclaimer"])
 
             with fitz.open(pdf_path) as document:
                 text = "\n".join(page.get_text() for page in document)
-            self.assertIn("该结论已由营养师人工复核。", text)
+            self.assertNotIn("该结论已由营养师人工复核。", text); self.assertIn("未通过",text)
             self.assertIn("不包含维生素", text)
 
             workbook = load_workbook(excel_path, read_only=True, data_only=True)

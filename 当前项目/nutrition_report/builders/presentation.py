@@ -28,13 +28,12 @@ def evaluation_rows(data):
         for row in (data.get(section) or {}).get('rows', []):
             display = {**row, **(row.get('display') or {})}
             rows[row['key']] = {**display, 'note': clean_display_text(display.get('note', ''))}
-    for row in rows.values():
-        if row.get('evaluation_basis') in {None, 'ratio'} and row['key'] in {'beans_energy', 'tubers_energy', 'grains_remainder'}:
-            row['evaluation'] = {'不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中'}.get(row.get('evaluation'), row.get('evaluation'))
     return list(rows.values())
 
 
 def evaluation_warnings(data):
+    if data.get('report_status') == 'needs_review':
+        return ['最终校验未通过：本页仅为原记录与原规则核查，非已批准的营养建议；完整原因见最后一页。']
     notes = []
     for section in ('athlete_evaluation', 'food_standard_evaluation'):
         for note in (data.get(section) or {}).get('warnings', []):
@@ -70,5 +69,12 @@ def _display_warning(note):
 
 
 def report_alerts(data):
-    return list(dict.fromkeys(text for note in (data.get('report_checks') or {}).get('warnings', [])
-                             if (text := _display_warning(note))))
+    checks = data.get('report_checks') or {}
+    notes = [text for note in checks.get('warnings', []) if (text := _display_warning(note))]
+    # Filtering explanatory copy must NEVER erase an export blocker.
+    notes += [('训练能量只是计划估算，不能确认全天总消耗；完整参数保留在核查证据。'
+               if c.get('code') == 'training_energy_estimate' else c['message']) for c in checks.get('checks', [])
+              if c.get('severity') == 'blocking' and c.get('message')]
+    if data.get('report_status') == 'needs_review' or checks.get('status') == 'review':
+        notes.insert(0, '最终校验未通过／待确认：本报告不输出增减或配餐建议。')
+    return list(dict.fromkeys(notes))

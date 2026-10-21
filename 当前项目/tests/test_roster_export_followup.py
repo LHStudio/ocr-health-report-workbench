@@ -56,7 +56,7 @@ class RosterExportFollowupTest(unittest.TestCase):
         self.assertNotIn('待核对',''.join(r['suggestions']))
         for row in r['food_standard_evaluation']['rows']:
             if row['key'] in {'beans_energy','tubers_energy','grains_remainder'}:
-                self.assertEqual('personal_target',row['evaluation_basis'])
+                self.assertEqual('ratio',row['evaluation_basis'])
                 self.assertIn(row['evaluation'], {'不足','过少','适中','过多'})
 
     def test_export_estimates_make_common_ocr_shorthand_complete(self):

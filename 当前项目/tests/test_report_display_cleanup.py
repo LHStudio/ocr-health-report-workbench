@@ -10,7 +10,7 @@ from openpyxl import load_workbook
 from nutrition_report.nutrition import NutritionService
 from nutrition_report.builders.pdf import NutritionPDFBuilder
 from nutrition_report.builders.excel import NutritionExcelBuilder
-from nutrition_report.builders.presentation import evaluation_warnings
+from nutrition_report.builders.presentation import evaluation_warnings, report_alerts
 
 
 HIDDEN = ('代表食物估算（需复核）', '训练计划估算', '周净消耗÷7',
@@ -33,12 +33,12 @@ class ReportDisplayCleanupTests(unittest.TestCase):
         return d
 
     def test_nuts_immediately_follows_vegetables_without_changing_topic_count(self):
-        for energy_user in ({}, {'bmrMin': 400, 'bmrMax': 500}, {'bmrMin': 3000, 'bmrMax': 3500}):
-            d = self.report(**energy_user)
-            keys = [i['key'] for i in d['suggestion_items']]
-            self.assertEqual(17, len(keys))
-            self.assertEqual(keys.index('vegetables')+1, keys.index('nuts'))
-            self.assertIn('坚果', d['suggestions'][keys.index('nuts')])
+        d=self.report(sport='篮球',bmrMin=1500,bmrMax=1800)
+        keys=[i['key'] for i in d['suggestion_items']]
+        self.assertEqual(17,len(keys));self.assertEqual(keys.index('vegetables')+1,keys.index('nuts'))
+        for energy_user in ({'bmrMin':400,'bmrMax':500},{'bmrMin':3000,'bmrMax':3500}):
+            r=self.report(**energy_user)
+            self.assertEqual([],r['suggestions']);self.assertEqual('blocked',r['recommendation_status'])
 
     def test_pdf_both_styles_hide_requested_copy_keep_numbers_and_other_alerts(self):
         with tempfile.TemporaryDirectory() as root:
@@ -79,7 +79,7 @@ class ReportDisplayCleanupTests(unittest.TestCase):
     def test_incompatible_plan_warning_is_not_hidden(self):
         d = self.report()
         d['report_checks']['warnings'] = ['既有优质蛋白至少一半约束下，示例食谱蛋白质计划点由100.00g/天调整为200.00g/天，已超个人蛋白质参考上限，现有食谱约束不相容；请核对约束，不自动倒扣肉类为0。']
-        warnings = '\n'.join(evaluation_warnings(d))
+        warnings = '\n'.join(report_alerts(d))
         self.assertIn('超', warnings)
         self.assertIn('不相容', warnings)
 
@@ -87,7 +87,7 @@ class ReportDisplayCleanupTests(unittest.TestCase):
         payload = dict(user=dict(projectType='足球', weight=60), meals=[dict(name='米饭', amount=100)],
                        autoEvaluation=False, manualEvaluations={'overallSuggestions': '坚果：人工第一条\n蔬菜：人工第二条'})
         d = NutritionService().build_report_data(payload)
-        self.assertEqual(['坚果：人工第一条', '蔬菜：人工第二条'], d['suggestions'])
+        self.assertEqual(['坚果：人工第一条', '蔬菜：人工第二条'], d['withheld_manual_suggestions'])
 
 
 if __name__ == '__main__':

@@ -66,6 +66,13 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
         name = str(meal.get('name') or '')
         info = food_db.get(name)
         grams = number(meal.get('amount'))
+        if not info and grams is not None and grams > 0 and name in {v[0] for v in FOOD_REFERENCE_MAP.values()}:
+            # Explicitly selected reference missing from the API is missing
+            # nutrient data, not an unmatched OCR row that may be skipped.
+            unknown_all = True
+            missing_nutrient_parameters.append(dict(food=name, nutrient='完整营养密度'))
+            notes.append(f'{name}已指定为计算食物，但营养库缺少其密度；不能替换或按0计入完整营养结论。')
+            continue
         if not info or grams is None:
             continue  # 与营养合计一致：忽略未匹配或无法换算的条目。
         category = info.get('category') or ''
@@ -165,8 +172,8 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
     add('fruit', '水果', {'水果'}, 200, 500)
     add('vegetables', '蔬菜', {'蔬菜'}, vegetable_min,
         note=f'取400g与原有分类标准的较高值：{vegetable_min:g}g/天（基础体重）')
-    add('snacks', '零食', {'零食'}, target='建议尽量不吃',
-        qualitative=lambda _: '建议尽量不吃', advisory=True)
+    add('snacks', '零食', {'零食'}, target='不建议吃零食',
+        qualitative=lambda _: '不建议吃零食', advisory=True)
     all_categories = set(totals) | set(missing)
     add('quality_protein', '肉蛋奶优质蛋白占比', all_categories, 50,
         ratio=(total(animal, 'protein'), total(all_categories, 'protein')))

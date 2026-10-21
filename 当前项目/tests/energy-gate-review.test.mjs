@@ -27,7 +27,7 @@ test('conflicting historical edits retain existing standard precedence and remai
 })
 test('energy priority labels are never retranslated to ratio labels in the preview',()=>{
   assert.equal(presentation.finalEvaluation({key:'grains_remainder',evaluation:'过多',evaluation_basis:'energy_excess'}),'过多')
-  assert.equal(presentation.finalEvaluation({key:'grains_remainder',evaluation:'不足',evaluation_basis:'ratio'}),'能量占比偏低')
+  assert.equal(presentation.finalEvaluation({key:'grains_remainder',evaluation:'不足',evaluation_basis:'ratio'}),'不足')
 })
 
 function componentFunction(name, context) {

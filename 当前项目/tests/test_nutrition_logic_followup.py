@@ -12,21 +12,15 @@ class LogicTest(unittest.TestCase):
   payload={'user':{'name':'合成示例','weight':61.9,'age':25,'gender':'female','activityLevel':'2','athleteType':'strength','trainingPhase':'training'},'meals':[{'name':n,'amount':g} for n,g in amounts.items()]}
   return NutritionService(food_db=db).build_report_data(payload)
  def test_logic(self):
-  r=self.report(); self.assertEqual('-',r['category_result']['谷类']['evaluation'])
-  self.assertEqual('不足',next(x for x in r['athlete_evaluation']['rows'] if x['key']=='carbohydrate')['evaluation'])
-  self.assertTrue(any('蛋白质不足：' in s for s in r['suggestions']))
-  grain=next(x for x in evaluation_rows(r) if x['key']=='grains_remainder')
-  self.assertEqual('-',grain['evaluation']); self.assertTrue(any('谷类缺少有效代表食物' in w for w in r['personal_targets']['plan_warnings']))
-  self.assertEqual('',grain['note'])
-  self.assertEqual('personal_target',next(x for x in r['food_standard_evaluation']['rows'] if x['key']=='grains_remainder')['evaluation_basis'])
-  text=NutritionPDFBuilder._interpretation(r)
-  self.assertNotIn('能量摄入不足，应增加碳水化合物摄入',text)
-  self.assertNotIn('占比偏高',text)
-  self.assertIn('按个人营养目标',text); self.assertNotIn('先补足主食总量',text)
-  r['nutrition']['energy']['evaluation']='不足'
-  r['athlete_evaluation']['rows']=[]
-  self.assertNotIn('碳水化合物摄入不足',NutritionPDFBuilder._interpretation(r))
-  r['interpretation']='人工解读保持原样';self.assertEqual('人工解读保持原样',NutritionPDFBuilder._interpretation(r))
+     r=self.report()
+     self.assertEqual('过多',r['category_result']['谷类']['evaluation'])
+     self.assertEqual('不足',next(x for x in r['athlete_evaluation']['rows'] if x['key']=='carbohydrate')['evaluation'])
+     self.assertEqual([],r['suggestions'])
+     grain=next(x for x in evaluation_rows(r) if x['key']=='grains_remainder')
+     self.assertEqual('ratio',grain['evaluation_basis']);self.assertEqual('%',grain['unit'])
+     self.assertEqual(80,grain['target_max']);self.assertTrue(r['personal_targets']['plan_warnings'])
+     text=NutritionPDFBuilder._interpretation(r)
+     self.assertIn('未通过',text);self.assertNotIn('先补足主食总量',text)
  def test_global_interval_concurrent_batches(self):
   starts=[];ends=[]; lock=threading.Lock()
   def getter(url,**kw):

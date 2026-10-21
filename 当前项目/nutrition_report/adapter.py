@@ -42,6 +42,9 @@ FOOD_REFERENCE_MAP: dict[str, tuple[str, bool]] = {
     "豆浆": ("豆浆", True),
     "新鲜蔬菜": ("白菜", False),
     "糕点": ("蛋糕", False),
+    # 2026-10-21: generic snacks explicitly use fries; named foods stay intact.
+    "零食": ("薯条", False),
+    "薯条": ("薯条", True),
     "新鲜水果": ("苹果", False),
     "坚果": ("核桃仁", False),
     "果汁饮料": ("苹果汁", False),

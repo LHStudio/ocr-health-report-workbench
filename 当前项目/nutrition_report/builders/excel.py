@@ -4,7 +4,7 @@ from pathlib import Path
 import math
 from copy import copy
 from ..energy_reference import energy_reference_text
-from .presentation import evaluation_rows, evaluation_warnings, evaluation_context
+from .presentation import evaluation_rows, evaluation_warnings, evaluation_context, report_alerts
 
 
 class NutritionExcelBuilder:
@@ -42,7 +42,7 @@ class NutritionExcelBuilder:
         for sheet in wb:
             for row in sheet:
                 for cell in row:
-                    if cell.value in ("不足", "过少", "过多", "建议尽量不吃", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"):
+                    if cell.value in ("不足", "过少", "过多", "不建议吃零食", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"):
                         font = copy(cell.font)
                         font.color = "DC2626"
                         cell.font = font
@@ -52,7 +52,7 @@ class NutritionExcelBuilder:
         if '运动员专项评价' in wb.sheetnames:
             for row in wb['运动员专项评价']:
                 cell = row[3] if len(row) > 3 else None
-                if cell is not None and cell.value == '建议尽量不吃':
+                if cell is not None and cell.value == '不建议吃零食':
                     font = copy(cell.font)
                     font.color = '000000'
                     cell.font = font
@@ -312,6 +312,17 @@ class NutritionExcelBuilder:
             display_width = sum(2 if ord(c) > 127 else 1 for c in str(suggestion))
             ws.row_dimensions[row_idx].height = max(30, 16 * max(len(str(suggestion).splitlines()), math.ceil(display_width / 96)) + 8)
 
+        if data.get('joint_plan_summary'):
+            summary_row = len(suggestions)+3
+            ws.cell(summary_row,2,data['joint_plan_summary']).font=cell_font
+            ws.cell(summary_row,2).alignment=cell_alignment
+            ws.row_dimensions[summary_row].height=72
+        for message in report_alerts(data):
+            row = ws.max_row + 1
+            ws.cell(row, 1, '核查').font = cell_font
+            ws.cell(row, 2, message).font = cell_font
+            ws.cell(row, 2).alignment = cell_alignment
+            ws.row_dimensions[row].height = max(30, 16 * math.ceil(sum(2 if ord(c)>127 else 1 for c in message)/96)+8)
         ws.column_dimensions["A"].width = 10
         ws.column_dimensions["B"].width = 100
 

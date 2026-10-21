@@ -2,6 +2,21 @@
 import math
 
 
+def accepted_energy_bounds(energy):
+    """One legacy comparison band; release approval separately checks its scope."""
+    try:
+        if energy.get('reference_type') in {'bmr', 'bmr_plus_net'}:
+            low, high = float(energy['standard_min']), float(energy['standard_max'])
+        else:
+            value = float(energy['standard'])
+            low, high = value * .9, value * 1.1
+        if math.isfinite(low) and math.isfinite(high) and 0 < low <= high:
+            return low, high
+    except (KeyError, TypeError, ValueError):
+        pass
+    return None, None
+
+
 def bmr_bounds(user):
     raw = [user.get('bmrMin'), user.get('bmrMax')]
     if all(v is None or str(v).strip() == '' for v in raw):

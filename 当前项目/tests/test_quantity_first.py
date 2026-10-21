@@ -16,23 +16,14 @@ class QuantityFirstTest(unittest.TestCase):
         return {r['key']:r for r in evaluation_rows(data)}
 
     def test_personal_quantities_replace_energy_gate_in_all_presentations(self):
-        data=self.service.build_report_data(self.payload); rows=self.rows(data)
-        for k in ['beans_energy','tubers_energy','grains_remainder']:
-            self.assertEqual('不足',rows[k]['evaluation'],k)
-            self.assertEqual(0, rows[k]['score'])
-            self.assertEqual('personal_target', rows[k]['evaluation_basis'])
-        for cat in ['谷类','豆类','薯类']:
-            self.assertEqual('不足',data['category_result'][cat]['evaluation'],cat)
-        suggestions='\n'.join(data['suggestions'])
-        self.assertNotIn('先增加主食',suggestions)
-        self.assertIn('蛋白质不足：',suggestions)
-        self.assertEqual('不足', rows['livestock_remainder']['evaluation'])
-        self.assertEqual('不足', rows['seafood']['evaluation'])
-        self.assertNotIn('谷类能量占比偏高',suggestions)
-        self.assertEqual('总能量过少。',data['suggestions'][0])
-        self.assertNotIn('占比偏高',self.service.pdf_builder._interpretation(data))
-        self.assertEqual(0,sum(s.startswith('肉类（含水产品）') for s in data['suggestions']))
-        self.assertEqual(17, len(data['suggestions']))
+        data=self.service.build_report_data(self.payload);rows=self.rows(data)
+        for k,status in [('beans_energy','不足'),('tubers_energy','不足'),('grains_remainder','过多')]:
+            self.assertEqual(status,rows[k]['evaluation']);self.assertEqual('ratio',rows[k]['evaluation_basis'])
+            self.assertEqual('%',rows[k]['unit'])
+        self.assertEqual('过多',rows['livestock_remainder']['evaluation'])
+        self.assertEqual('不足',rows['seafood']['evaluation'])
+        self.assertEqual([],data['suggestions']);self.assertEqual('blocked',data['recommendation_status'])
+        self.assertNotIn('meat',rows)
 
     def test_split_meat_targets_do_not_depend_on_recorded_grain_or_milk(self):
         data=self.service.build_report_data(self.payload)
@@ -40,9 +31,9 @@ class QuantityFirstTest(unittest.TestCase):
         self.assertNotIn('meat',self.rows(data))
         for key in ('livestock_remainder','seafood'):
             row=self.rows(data)[key]
-            self.assertGreater(row['target_min'],0)
+            self.assertEqual((None,70) if key=='livestock_remainder' else (30,None), (row['target_min'],row['target_max']))
             self.assertEqual(row['target'],self.rows(changed)[key]['target'])
-            self.assertEqual('protein',row['conversion_basis'])
+            self.assertEqual('%',row['unit'])
 
     def test_every_energy_state_compares_fixed_personal_food_targets(self):
         # Rice provides enough carbohydrate/energy; beef supplies enough protein, no seafood.
@@ -59,7 +50,7 @@ class QuantityFirstTest(unittest.TestCase):
         self.assertEqual('-',rows['grains_remainder']['evaluation'])
         self.assertEqual('-',rows['livestock_remainder']['evaluation'])
         self.assertIsNone(rows['livestock_remainder']['actual'])
-        self.assertGreater(rows['livestock_remainder']['target_min'],0)
+        self.assertEqual(70,rows['livestock_remainder']['target_max'])
 
     def test_quality_page_default_off_and_explicit_opt_in_and_generation_date(self):
         for enabled in [False,True]:
@@ -87,6 +78,6 @@ class QuantityFirstTest(unittest.TestCase):
         self.assertEqual('人工结构',data['category_result']['谷类']['evaluation'])
         self.assertEqual('人工结构',self.rows(data)['grains_remainder']['evaluation'])
         self.assertEqual('人工畜禽肉',self.rows(data)['livestock_remainder']['evaluation'])
-        self.assertEqual(['人工建议'],data['suggestions'])
+        self.assertEqual(['人工建议'],data['withheld_manual_suggestions'])
 
 if __name__=='__main__': unittest.main()

@@ -9,3 +9,4 @@ Pillow>=10,<13
 opencv-python-headless>=4.10,<4.11
 reportlab>=4.2,<5.0
 matplotlib>=3.8,<4.0
+scipy>=1.11,<2.0

@@ -1,6 +1,6 @@
 // Display-only union. Do not alter evaluator rows or manual-review storage.
 export function evaluationAlertClass(value) {
-  return ['不足', '过少', '过多', '建议尽量不吃', '能量占比偏低', '能量占比偏高', '占比偏低', '占比偏高'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
+  return ['不足', '过少', '过多', '建议尽量不吃', '不建议吃零食', '能量占比偏低', '能量占比偏高', '占比偏低', '占比偏高'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
 }
 
 export function cleanDisplayText(text = '') {
@@ -38,6 +38,7 @@ export function evaluationWarnings(data) {
     .filter(note => !['奶粉、奶酪折算鲜奶等价量', '蔬菜最低400g/天'].some(text => note.startsWith(text)))
     .filter(note => !note.includes('%') && !note.includes('优质蛋白=') && !note.includes('水产品占比'))
     .map(cleanDisplayText).filter(note => !['仅训练期', '60-70kg标准', '基础膳食参考标准'].includes(note))
+  if (data?.report_status === 'needs_review') notes.unshift('最终校验未通过：不输出增减或配餐建议。')
   return [...new Set([...notes, ...(data?.report_checks?.warnings || [])].map(displayWarning).filter(Boolean))]
 }
 
@@ -61,8 +62,7 @@ export function finalEvaluation(row, review = {}) {
   const field = ['protein', 'carbohydrate', 'fat', 'calcium'].includes(row.key)
     ? `${row.key}Evaluation` : `standard_${row.key}Evaluation`
   const value = Object.hasOwn(review, field) ? review[field] : row.evaluation
-  return [undefined, null, 'ratio'].includes(row.evaluation_basis) && ['beans_energy', 'tubers_energy', 'grains_remainder'].includes(row.key)
-    ? ({ '不足': '能量占比偏低', '过多': '能量占比偏高', '适中': '能量占比适中' }[value] || value) : value
+  return row.key === 'snacks' ? '不建议吃零食' : value
 }
 
 // A single editable control per food identity. Keep the standard control,

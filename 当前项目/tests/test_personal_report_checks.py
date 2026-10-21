@@ -18,19 +18,14 @@ class PersonalReportChecksTest(unittest.TestCase):
             meals=[dict(name='米饭', amount=100), dict(name='牛肉', amount=20)])
 
     def test_fixed_fourteen_items_and_one_line_energy_for_all_energy_bands(self):
-        keys = None
-        for amount in [100, 1400, 10000]:
-            data = self.service.build_report_data({**self.payload, 'meals':[dict(name='米饭',amount=amount)]})
-            self.assertEqual(17, len(data['suggestions']))
-            self.assertEqual(17, len(data['suggestion_items']))
-            energy = data['nutrition']['energy']['evaluation']
-            expected = {'适宜':'总能量适宜。','适中':'总能量适宜。','过多':'总能量过多。','过少':'总能量过少。','不足':'总能量过少。'}[energy]
-            self.assertEqual(expected, data['suggestions'][0])
-            new_keys = [x['key'] for x in data['suggestion_items']]
-            if keys is None: keys = new_keys
-            self.assertEqual(keys, new_keys)
-            self.assertNotIn('以替换为主', '\n'.join(data['suggestions']))
-            self.assertNotIn('应先控制主食总量', data['energy_guidance'])
+        from nutrition_report.report_checks import energy_summary
+        for amount in [100,1400,10000]:
+            data=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=amount)]})
+            self.assertEqual([],data['suggestions']);self.assertEqual([],data['suggestion_items'])
+            self.assertEqual('blocked',data['recommendation_status'])
+            state=data['nutrition']['energy']['evaluation']
+            self.assertEqual({'适宜':'总能量适宜。','过多':'总能量过多。','过少':'总能量过少。'}[state],energy_summary(data))
+            self.assertNotIn('应先控制主食总量',data['energy_guidance'])
 
     def test_extreme_intake_is_flagged_without_mutating_intake(self):
         payload = {**self.payload, 'meals':[dict(name='牛肉',amount=5000)]}
@@ -42,15 +37,15 @@ class PersonalReportChecksTest(unittest.TestCase):
         warning = '\n'.join(data['report_checks']['warnings'])
         self.assertIn('核查', warning)
         self.assertNotIn('肯定是录入错误', warning)
-        self.assertEqual(17, len(data['suggestions']))
+        self.assertEqual([],data['suggestions'])
 
     def test_manual_conflict_is_visible_and_manual_values_untouched(self):
         payload = {**self.payload, 'autoEvaluation':False, 'manualEvaluations':{
             'overallSuggestions':'应减少主食总量', 'interpretation':'人工解读保持',
             'proteinEvaluation':'过多'}}
         data = self.service.build_report_data(payload)
-        self.assertEqual(['应减少主食总量'], data['suggestions'])
-        self.assertEqual('人工解读保持', data['interpretation'])
+        self.assertEqual(['应减少主食总量'], data['withheld_manual_suggestions'])
+        self.assertEqual('人工解读保持', data['withheld_interpretation'])
         protein = next(r for r in data['athlete_evaluation']['rows'] if r['key']=='protein')
         self.assertEqual('过多', protein['evaluation'])
         self.assertIn('manual_conflict', {x['code'] for x in data['report_checks']['checks']})
@@ -94,14 +89,12 @@ class PersonalReportChecksTest(unittest.TestCase):
         self.assertIn('invalid_numeric',codes)
 
     def test_bmr_is_preserved_and_incompatible_macro_energy_is_visible(self):
-        payload={**self.payload, 'user':{**self.payload['user'],'bmrMin':1200,'bmrMax':1400}}
-        data=self.service.build_report_data(payload)
-        self.assertEqual(1200,data['nutrition']['energy']['standard_min'])
-        self.assertEqual(1400,data['nutrition']['energy']['standard_max'])
+        payload={**self.payload,'user':{**self.payload['user'],'bmrMin':1200,'bmrMax':1400}}
+        data=self.service.build_report_data(payload);e=data['nutrition']['energy']
+        self.assertEqual([1200,1400],e['resting_bounds']);self.assertEqual('eer',e['reference_type'])
+        self.assertEqual(2100,e['standard'])
         codes={x['code'] for x in data['report_checks']['checks']}
-        self.assertIn('bmr_reference_scope',codes)
-        self.assertIn('macro_energy_conflict',codes)
-        self.assertIn('静息', '\n'.join(data['report_checks']['warnings']))
+        self.assertNotIn('bmr_reference_scope',codes);self.assertIn('macro_energy_conflict',codes)
 
     def test_personal_target_machine_label_is_checked_against_numbers(self):
         from nutrition_report.report_checks import check_report_consistency
@@ -114,13 +107,10 @@ class PersonalReportChecksTest(unittest.TestCase):
         self.assertIn('machine_evaluation_corrected',{x['code'] for x in data['report_checks']['checks']})
 
     def test_low_total_carb_with_excess_grain_uses_reallocation_not_reduction(self):
-        data=self.service.build_report_data({**self.payload,'meals':[
-            dict(name='米饭',amount=1400),dict(name='牛肉',amount=500)]})
+        data=self.service.build_report_data({**self.payload,'meals':[dict(name='米饭',amount=1400),dict(name='牛肉',amount=500)]})
         grain=next(r for r in data['food_standard_evaluation']['rows'] if r['key']=='grains_remainder')
         self.assertEqual('过多',grain['evaluation'])
-        advice=next(i['text'] for i in data['suggestion_items'] if i['key']=='grains_remainder')
-        self.assertNotIn('应减少本类摄入',advice)
-        self.assertIn('不直接减少主食总碳水',advice)
+        self.assertEqual([],data['suggestions']);self.assertEqual('blocked',data['recommendation_status'])
         self.assertIn('staple_mix_reallocation',{x['code'] for x in data['report_checks']['checks']})
 
     def test_negative_manual_direction_does_not_trigger_false_conflict(self):
@@ -132,7 +122,7 @@ class PersonalReportChecksTest(unittest.TestCase):
         data=self.service.build_report_data({**self.payload,'autoEvaluation':False,
             'manualEvaluations':{'energyEvaluation':'适宜'}})
         self.assertEqual('适宜',data['nutrition']['energy']['evaluation'])
-        self.assertEqual('总能量适宜。',data['suggestions'][0])
+        self.assertEqual([],data['suggestions'])
         self.assertIn('energy',{x['key'] for x in data['report_checks']['checks'] if x['code']=='manual_conflict'})
 
     def test_macro_machine_label_is_checked_and_float_epsilon_is_not_misclassified(self):

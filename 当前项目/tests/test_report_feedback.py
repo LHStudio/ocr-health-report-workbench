@@ -40,11 +40,11 @@ class ReportFeedbackTest(unittest.TestCase):
     def test_snacks_show_only_requested_advice_for_positive_zero_and_missing(self):
         for amount in [0,10]:
             row=next(r for r in self.result(糕点=amount)['rows'] if r['key']=='snacks')
-            self.assertEqual('建议尽量不吃',row['evaluation'])
+            self.assertEqual('不建议吃零食',row['evaluation'])
             self.assertIsNone(row['score'])
         report=NutritionService().build_report_data({'user':{},'meals':[], 'source_foods':[]})
         row=next(r for r in report['food_standard_evaluation']['rows'] if r['key']=='snacks')
-        self.assertEqual('建议尽量不吃',row['evaluation'])
+        self.assertEqual('不建议吃零食',row['evaluation'])
         self.assertIsNone(row['actual'])
         self.assertIsNone(row['score'])
 

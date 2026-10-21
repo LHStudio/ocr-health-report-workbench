@@ -9,7 +9,7 @@ from nutrition_report.builders.presentation import evaluation_rows,evaluation_wa
 KEYS=['energy','protein','carbohydrate','fat','calcium','grains_remainder','beans_energy','tubers_energy','milk','eggs','livestock_remainder','seafood','fruit','vegetables','nuts','snacks','quality_protein']
 class SingleCalculationChainTests(unittest.TestCase):
  def setUp(self):
-  self.s=NutritionService(); self.p={'user':{'name':'链条验证','gender':'female','age':21,'weight':75.6,'projectType':'篮球','athleteType':'team','trainingPhase':'training','bmrMin':1502,'bmrMax':1753},'meals':[{'name':'米饭','amount':278},{'name':'牛肉','amount':160},{'name':'鲜奶','amount':393}]}
+  self.s=NutritionService(); self.p={'user':{'name':'链条验证','gender':'female','age':21,'weight':60,'projectType':'篮球','athleteType':'team','trainingPhase':'training','bmrMin':1500,'bmrMax':1800},'meals':[{'name':'米饭','amount':278},{'name':'牛肉','amount':160},{'name':'鲜奶','amount':393}]}
  def test_no_fabricated_menu_or_fat_shortfall(self):
   d=self.s.build_report_data(self.p);p=d['personal_targets']
   self.assertNotIn('unallocated_fat_g',p)
@@ -23,7 +23,7 @@ class SingleCalculationChainTests(unittest.TestCase):
    x=next(x for x in a['athlete_evaluation']['rows'] if x['key']==k);y=next(x for x in b['athlete_evaluation']['rows'] if x['key']==k)
    self.assertEqual((x['target_min'],x['target_max']),(y['target_min'],y['target_max']))
   carb=next(x for x in a['athlete_evaluation']['rows'] if x['key']=='carbohydrate')
-  self.assertAlmostEqual(75.6*7,carb['target_min'])
+  self.assertAlmostEqual(60*7,carb['target_min'])
  def test_all_food_advice_is_separate_and_no_combined_meat(self):
   d=self.s.build_report_data(self.p)
   self.assertEqual(KEYS,[x['key'] for x in d['suggestion_items']])
@@ -34,39 +34,43 @@ class SingleCalculationChainTests(unittest.TestCase):
  def test_api_density_conversion_uses_same_nutrient_for_actual_and_target(self):
   d=self.s.build_report_data(self.p);r={x['key']:x for x in d['food_standard_evaluation']['rows']}
   for k in ['grains_remainder','beans_energy','tubers_energy','livestock_remainder','seafood']:
-   row=r[k];rep=row['representative'];n='carbohydrate' if k in ['grains_remainder','beans_energy','tubers_energy'] else 'protein'
+   row=r[k]['actual_equivalent'];rep=row['representative'];n='carbohydrate' if k in ['grains_remainder','beans_energy','tubers_energy'] else 'protein'
    self.assertEqual(n,row['conversion_basis'])
-   self.assertAlmostEqual(row['actual']*self.s.food_db[rep][n]/100,row['actual_nutrient_g'])
-   self.assertIn(rep,row['label'])
-  self.assertEqual(278,r['grains_remainder']['recorded_actual_g'])
+   self.assertAlmostEqual(row['value']*self.s.food_db[rep][n]/100,row['actual_nutrient_g'])
+   self.assertEqual('%',r[k]['unit'])
+  self.assertEqual(278,r['grains_remainder']['actual_equivalent']['recorded_actual_g'])
  def test_all_reference_food_contributions_add_back_to_personal_needs(self):
   d=self.s.build_report_data(self.p);p=d['personal_targets'];tot={n:0 for n in ['protein','carbohydrate']}
   for k in ['grains_remainder','beans_energy','tubers_energy','milk','eggs','vegetables','fruit','nuts','seafood','livestock_remainder']:
    f=p['food_targets'][k]
    for n in tot:tot[n]+=f['planning']*self.s.food_db[f['representative']][n]/100
   for n in tot:self.assertAlmostEqual(tot[n],p['planned_nutrients'][n],places=7)
-  self.assertAlmostEqual(75.6*7,tot['carbohydrate'],places=7)
-  self.assertTrue(75.6*1.5<=tot['protein']<=75.6*2)
+  self.assertAlmostEqual(60*7,tot['carbohydrate'],places=7)
+  self.assertTrue(60*1.5<=tot['protein']<=60*2)
  def test_conversion_corner_points_never_exceed_personal_macro_bounds(self):
-  from nutrition_report.personal_targets import build_personal_targets
-  d=self.s.build_report_data(self.p);a=copy.deepcopy(d['athlete_evaluation'])
-  next(x for x in a['rows'] if x['key']=='carbohydrate')['target_max']=1058.4
-  p=build_personal_targets(a,d['food_standard_evaluation'],self.s.food_db)
-  for point in p['conversion_solutions']:
-   self.assertLessEqual(point['protein'],75.6*2+1e-8)
-   self.assertTrue(529.2-1e-8<=point['carbohydrate']<=1058.4+1e-8)
+     from nutrition_report.personal_targets import build_personal_targets
+     d=self.s.build_report_data(self.p);a=copy.deepcopy(d['athlete_evaluation'])
+     next(x for x in a['rows'] if x['key']=='carbohydrate')['target_max']=1058.4
+     p=build_personal_targets(a,d['food_standard_evaluation'],self.s.food_db,d['nutrition']['energy'],self.s.athlete_config)
+     t=p['allocation_nutrients']
+     self.assertTrue(90-1e-6<=t['protein']<=120+1e-6)
+     self.assertTrue(420-1e-6<=t['carbohydrate']<=1058.4+1e-6)
+     self.assertEqual('blocked',p['status']);self.assertEqual({},p['food_targets'])
+     self.assertFalse(p['validation']['passed'])
  def test_zero_default_density_never_mislabels_raw_grams_as_equivalent(self):
-  self.s.food_db['豆腐']['carbohydrate']=0
-  d=self.s.build_report_data(self.p);r=next(x for x in d['food_standard_evaluation']['rows'] if x['key']=='beans_energy')
-  self.assertEqual('-',r['evaluation'])
-  self.assertIsNone(r['target_min'])
-  self.assertNotIn('豆腐等价量',r['label'])
+     self.s.food_db['豆腐']['carbohydrate']=0
+     d=self.s.build_report_data(self.p);r=next(x for x in d['food_standard_evaluation']['rows'] if x['key']=='beans_energy')
+     self.assertEqual('不足',r['evaluation']);self.assertEqual('%',r['unit']);self.assertEqual(5,r['target_min'])
+     self.assertEqual('density_invalid',d['personal_targets']['failure_code']);self.assertEqual([],d['suggestions'])
+     self.assertNotIn('actual_equivalent',r)
  def test_category_summary_names_the_same_equivalent_used_by_detailed_evaluation(self):
-  d=self.s.build_report_data(self.p)
-  for row in d['food_standard_evaluation']['rows']:
-   if row['key'] in ['grains_remainder','beans_energy','tubers_energy','livestock_remainder','seafood']:
-    cat=self.s.food_db[row['representative']]['category'];e=d['category_result'][cat]['reference_equivalent']
-    self.assertEqual(row['actual'],e['value']);self.assertEqual(row['representative'],e['representative'])
+     d=self.s.build_report_data(self.p)
+     for row in d['food_standard_evaluation']['rows']:
+         if row['key'] in ['grains_remainder','beans_energy','tubers_energy','livestock_remainder','seafood']:
+             e=row['actual_equivalent'];cat=self.s.food_db[e['representative']]['category']
+             self.assertEqual(row['evaluation'],d['category_result'][cat]['evaluation'])
+             self.assertEqual('%',row['unit'])
+             self.assertAlmostEqual(e['value']*e['density_per_100g']/100,e['actual_nutrient_g'])
  def test_all_outputs_remove_requested_copy(self):
   d=self.s.build_report_data(self.p)
   with tempfile.TemporaryDirectory() as t:

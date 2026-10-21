@@ -94,7 +94,7 @@ class ReportStyleTest(unittest.TestCase):
         self.assertTrue(signatures[1][2] != signatures[2][2], "legacy must use the original layout")
         for text, fonts, geometry in signatures:
             self.assertIn("版式测试", text)
-            self.assertIn("人工建议保持原文", text)
+            self.assertNotIn("人工建议保持原文", text); self.assertIn("未通过", text)
             self.assertIn("人工专项结论", text)
             self.assertTrue(fonts)
             self.assertTrue(geometry)
