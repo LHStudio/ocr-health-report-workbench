@@ -43,7 +43,7 @@ class PushTests(unittest.TestCase):
         before = self.file.read_bytes()
         p = push.read_report(self.file)
         self.assertEqual(p['analysisDate'], '2025-12-03')
-        self.assertEqual(p['食物明细'][0]['摄入量 (g)'], 170)
+        self.assertEqual(p['食物明细'][0]['摄入量(g)'], 170)
         self.assertEqual(p['营养总计'][1]['摄入量'], '1700-2200')
         self.assertEqual(p['运动员专项评价'][0]['实际摄入'], 0)
         self.assertEqual(p['建议'][-1]['建议内容'], '2026-10-22 10:08:19')
@@ -57,6 +57,33 @@ class PushTests(unittest.TestCase):
         w.save(self.file)
         with self.assertRaisesRegex(ValueError, '日期'):
             push.read_report(self.file)
+
+    def test_remote_display_contract_uses_compact_unit_keys(self):
+        p = push.read_report(self.file)
+        # Exact property names used by the deployed platform table columns.
+        self.assertEqual(p['食物明细'][0].get('摄入量(g)'), 170)
+        self.assertEqual(p['食物明细'][0].get('能量(kcal)'), 197.2)
+        self.assertEqual(p['分类评估'][0].get('摄入原重(g)'), 170)
+
+    def test_spaced_input_headers_emit_all_compact_numeric_keys(self):
+        from openpyxl import load_workbook
+        w = load_workbook(self.file)
+        food = w['食物明细']
+        food.delete_rows(1, food.max_row)
+        fields = ['摄入量(g)', '能量(kcal)', '蛋白质(g)', '脂肪(g)', '碳水(g)', '钙(mg)']
+        food.append(['食物名称', '分类'] + [f.replace('(', ' (') for f in fields])
+        food.append(['米饭', '谷类', 170, 197.2, 4.42, 0, 44.03, 11.9])
+        category = w['分类评估']
+        category.delete_rows(1, category.max_row)
+        category.append(['分类', '摄入原重 (g)', '奶类鲜奶等价量 (g)', '评价等价量 (g)'])
+        category.append(['奶类', 100, 400, None])
+        w.save(self.file)
+        p = push.read_report(self.file)
+        self.assertEqual([p['食物明细'][0].get(f) for f in fields], [170, 197.2, 4.42, 0, 44.03, 11.9])
+        self.assertEqual(p['分类评估'][0].get('摄入原重(g)'), 100)
+        self.assertEqual(p['分类评估'][0].get('奶类鲜奶等价量(g)'), 400)
+        self.assertIn('评价等价量(g)', p['分类评估'][0])
+        self.assertIsNone(p['分类评估'][0]['评价等价量(g)'])
 
     def test_invalid_birthday_rejected(self):
         with self.assertRaises(ValueError):
