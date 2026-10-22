@@ -25,13 +25,13 @@ class NutritionExcelBuilder:
             ws = wb.create_sheet("运动员专项评价")
             ws.append(["运动员专项膳食评价"])
             ws.append([evaluation_context(data)])
-            ws.merge_cells('A2:G2')
+            ws.merge_cells('A2:F2')
             for note in evaluation_warnings(data):
                 ws.append([note])
-            ws.append(["项目", "实际摄入", "单位", "参考目标", "差值", "最终评价", "口径"])
+            ws.append(["项目", "实际摄入", "单位", "参考目标", "差值", "最终评价"])
             for row in evaluation_rows(data):
-                ws.append([row[k] for k in ("label", "actual", "unit", "target", "gap", "evaluation")] + [row.get("note", "")])
-            for column, width in zip("ABCDEFG", (38, 22, 12, 40, 32, 18, 50)):
+                ws.append([row[k] for k in ("label", "actual", "unit", "target", "gap", "evaluation")])
+            for column, width in zip("ABCDEF", (38, 22, 12, 40, 32, 18)):
                 ws.column_dimensions[column].width = width
             for cells in ws:
                 for cell in cells:
@@ -178,7 +178,7 @@ class NutritionExcelBuilder:
             bottom=Side(style="thin")
         )
 
-        headers = ["分类", "摄入原重(g)", "评价", "奶类鲜奶等价量(g)", "评价等价食物", "评价等价量(g)"]
+        headers = ["分类", "摄入原重(g)", "评价"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.fill = header_fill
@@ -200,21 +200,11 @@ class NutritionExcelBuilder:
             ws.cell(row=row_idx, column=3, value=info.get("evaluation", "")).font = cell_font
             ws.cell(row=row_idx, column=3).alignment = cell_alignment
             ws.cell(row=row_idx, column=3).border = thin_border
-            if cat == '奶类':
-                ws.cell(row=row_idx, column=4, value=info.get('equivalent_value'))
-            equivalent = info.get('reference_equivalent')
-            if equivalent:
-                ws.cell(row=row_idx, column=5, value=equivalent['representative'])
-                ws.cell(row=row_idx, column=6, value=equivalent['value'])
             row_idx += 1
 
         ws.column_dimensions["A"].width = 15
         ws.column_dimensions["B"].width = 15
         ws.column_dimensions["C"].width = 15
-        ws.column_dimensions["D"].width = 36
-        ws.column_dimensions['E'].width = 20
-        ws.column_dimensions['F'].width = 20
-        ws['D1'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
         ws.row_dimensions[1].height = 34
 
     def _create_nutrition_sheet(self, wb, data):
