@@ -4,6 +4,8 @@ from collections.abc import Mapping
 
 
 PLANS = {
+    '体操': dict(total=[720, 720], strength=[0, 0], sport_met=[3.8, 3.8], strength_met=[3.5, 6],
+               schedule='每周6天×120分钟；整堂训练平均3.8 MET，不额外叠加力量训练时间'),
     '足球': dict(total=[720, 720], strength=[0, 0], sport_met=[5, 8], strength_met=[3.5, 6],
                schedule='每周6次×120分钟；专项体能每周1次已包含在整堂课平均强度内，不额外叠加'),
     '篮球': dict(total=[1260, 1440], strength=[48, 180], sport_met=[5, 8], strength_met=[3.5, 6],
@@ -28,6 +30,8 @@ def training_expenditure(user, resting):
              '篮球队': '篮球', '女篮': '篮球', '男篮': '篮球'}.get(sport, sport)
     result = dict(applied=False, sport=sport, source='用户提供训练课表与整堂训练平均MET假设（2026-10-20）',
                   reason='', averaging_days=7)
+    if sport == '体操':
+        result['source'] = '用户提供体操训练课表与整堂训练平均3.8 MET假设（2026-10-23）'
     if sport not in PLANS:
         result['reason'] = '体操训练方案尚未提供，未套用足球或篮球MET。' if sport == '体操' else '此项目尚无训练方案，未猜测运动消耗。'
         return result

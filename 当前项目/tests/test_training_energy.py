@@ -42,13 +42,35 @@ class TrainingEnergyTest(unittest.TestCase):
         self.assertEqual([48,180],t['strength_weekly_minutes'])
         self.assertEqual([5008.5,10483.2],t['net_weekly_kcal'])
 
-    def test_missing_bmr_no_eer_plus_exercise_and_pending_gymnastics(self):
-        for user in [dict(bmrMin='',bmrMax=''),dict(projectType='体操'),dict(projectType='排球'),
+    def test_missing_bmr_no_eer_plus_exercise_and_unsupported_sports(self):
+        for user in [dict(bmrMin='',bmrMax=''),dict(projectType='排球'),
                      dict(trainingPhase='competition'),dict(currentStatus='康复期'),dict(weight='')]:
             with self.subTest(user=user):
                 e=self.report(**user)['nutrition']['energy']
                 self.assertNotEqual('bmr_plus_net',e['reference_type'])
                 self.assertTrue(e['training_expenditure']['reason'])
+
+    def test_gymnastics_user_example_and_net_daily_target(self):
+        e = self.report(projectType='体操')['nutrition']['energy']
+        t = e['training_expenditure']
+        self.assertEqual('bmr_plus_net', e['reference_type'])
+        self.assertEqual([720,720], t['total_weekly_minutes'])
+        self.assertEqual([0,0], t['strength_weekly_minutes'])
+        self.assertEqual([2872.8,2872.8], t['gross_weekly_kcal'])
+        self.assertAlmostEqual(478.8, t['gross_weekly_kcal'][0]/6)
+        self.assertEqual([2116.8,2116.8], t['net_weekly_kcal'])
+        self.assertAlmostEqual(302.4, t['net_daily_kcal'][0])
+        self.assertEqual([1602.4,1802.4], [e['standard_min'],e['standard_max']])
+
+    def test_gymnastics_preserves_overrides_missing_bmr_and_training_gates(self):
+        e = self.report(projectType='体操',trainingPlan={'weeklyMinutes':0})['nutrition']['energy']
+        self.assertEqual([1300,1500], [e['standard_min'],e['standard_max']])
+        e = self.report(projectType='体操',weight=120)['nutrition']['energy']
+        self.assertEqual([4233.6,4233.6], e['training_expenditure']['net_weekly_kcal'])
+        for updates in [dict(bmrMin='',bmrMax=''),dict(trainingPhase='competition'),
+                        dict(currentStatus='康复期'),dict(weight='')]:
+            e = self.report(projectType='体操',**updates)['nutrition']['energy']
+            self.assertNotEqual('bmr_plus_net',e['reference_type'])
 
     def test_zero_attendance_and_invalid_plan(self):
         e=self.report(trainingPlan={'weeklyMinutes':0})['nutrition']['energy']

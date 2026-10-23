@@ -16,7 +16,7 @@ class ConfirmedPolicyTests(unittest.TestCase):
             meals=[dict(name='米饭', amount=300), dict(name='牛肉', amount=200)])
 
     def test_bare_bmr_falls_back_to_eer(self):
-        self.payload['user']['projectType'] = '体操'
+        self.payload['user']['projectType'] = '排球'
         e = self.service.build_report_data(self.payload)['nutrition']['energy']
         self.assertEqual('eer', e['reference_type'])
         self.assertEqual(self.service._lookup_energy_eer(self.payload['user']), e['standard'])
