@@ -101,12 +101,12 @@ class TrainingEnergyTest(unittest.TestCase):
                 NutritionPDFBuilder().build(d,p)
                 with fitz.open(p) as pdf:text=''.join(page.get_text() for page in pdf)
                 self.assertIn('1732-2256',text)
-                self.assertIn('运动净消耗',text)
+                self.assertNotIn('运动净消耗',text)
                 self.assertNotIn('女性EER',text)
             p=Path(tmp)/'report.xlsx';NutritionExcelBuilder().build(d,p)
             w=load_workbook(p);text=' '.join(str(c.value) for s in w for row in s for c in row);w.close()
             self.assertIn('1732-2256',text)
-            self.assertIn('运动净消耗',text)
+            self.assertNotIn('运动净消耗',text)
 
     def test_manual_energy_preserved_and_inclusive_bounds(self):
         service=NutritionService(food_db={'fixture':dict(energy=1732,protein=1,carbohydrate=1,fat=1,calcium=1,category='谷类')})

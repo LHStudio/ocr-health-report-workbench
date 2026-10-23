@@ -27,7 +27,8 @@ class UnifiedNutritionPresentationTest(unittest.TestCase):
             wb = openpyxl.load_workbook(xlsx)
             self.assertNotIn('新增膳食标准',wb.sheetnames)
             ws = wb['运动员专项评价']; values = list(ws.values)
-            self.assertIn(('项目','实际摄入','单位','参考目标','差值','最终评价','口径'), values)
+            self.assertIn(('项目','实际摄入','单位','参考目标','差值','最终评价'), values)
+            self.assertEqual(6,ws.max_column)
             cells = '\n'.join(str(c.value or '') for w in wb for row in w for c in row)
             for phrase in banned:
                 self.assertNotIn(phrase,all_text)

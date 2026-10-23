@@ -69,7 +69,7 @@ class BmrRangeTest(unittest.TestCase):
                             self.assertIn('报告生成日期',texts[-1])
                             self.assertEqual(1,sum(t.count('报告生成日期') for t in texts))
                             energy=next(t for t in texts if '总能量摄入量' in t)
-                            self.assertIn('运动净消耗',energy); self.assertNotIn('女性EER',energy)
+                            self.assertNotIn('运动净消耗',energy); self.assertNotIn('女性EER',energy)
 
     def test_excel_reference_and_last_suggestions_sheet(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -80,7 +80,7 @@ class BmrRangeTest(unittest.TestCase):
             self.assertTrue(any('报告生成日期' in str(c.value) for row in w['建议'] for c in row))
             content=' '.join(str(c.value) for row in w['营养素摄入'] for c in row) if '营养素摄入' in w else ' '.join(str(c.value) for s in w for row in s for c in row)
             self.assertIn('1187',content); self.assertIn('1369',content)
-            self.assertIn('运动净消耗',content); self.assertNotIn('女性EER',content)
+            self.assertNotIn('运动净消耗',content); self.assertNotIn('女性EER',content)
 
     def test_summary_export_adds_bmr_to_old_templates(self):
         import local_service as api

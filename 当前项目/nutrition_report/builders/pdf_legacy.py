@@ -507,15 +507,11 @@ class NutritionPDFBuilder:
         value = escape(_as_text(energy.get("value", "-")))
         standard = energy.get("standard")
         if energy.get('reference_type') == 'bmr_plus_net':
-            t = energy['training_expenditure']
-            resting = '–'.join(f'{v:g}' for v in energy['resting_bounds'])
-            net = '–'.join(f'{v:.1f}' for v in t['net_daily_kcal'])
-            return (f"{value} kcal/day<br/>参考区间 {escape(energy_reference_text(energy))} kcal/天"
-                    f"<br/>静息代谢 {resting} ＋ 运动净消耗日均 {net} kcal/天")
+            return f"{value} kcal/day<br/>参考区间 {escape(energy_reference_text(energy))} kcal/天"
         if energy.get('reference_type') == 'bmr':
-            return f"{value} kcal/day<br/>建议能量区间 {escape(energy_reference_text(energy))} kcal/天<br/>BMR（填写区间）"
+            return f"{value} kcal/day<br/>建议能量区间 {escape(energy_reference_text(energy))} kcal/天"
         if standard not in (None, ""):
-            return f"{value} kcal/day<br/>推荐能量 {escape(_as_text(standard))} kcal/天<br/>{escape(_as_text(energy.get('activity_label')))}（女性EER）"
+            return f"{value} kcal/day<br/>推荐能量 {escape(_as_text(standard))} kcal/天"
         return f"{value} kcal/day"
 
     @staticmethod

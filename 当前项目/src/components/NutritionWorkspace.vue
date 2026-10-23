@@ -88,13 +88,12 @@
         </section>
         <section v-if="nutritionReviewOpen" class="nutrition-dialog-backdrop" @click.self="closeNutritionReview">
           <section class="nutrition-report-panel nutrition-report-dialog" role="dialog" aria-modal="true" aria-labelledby="nutrition-report-title">
-          <div class="subsection-title"><div><h4 id="nutrition-report-title">营养报告导出</h4><p>机器初稿依据运动员膳食干预参数V2.0，仅适用训练期。运动类型、体重和年龄决定参考目标；文档未规定的项目不自动判定。报告在本机生成。</p></div><button class="dialog-close" type="button" aria-label="关闭营养评价窗口" @click="closeNutritionReview">×</button></div>
+          <div class="subsection-title"><div><h4 id="nutrition-report-title">营养报告导出</h4></div><button class="dialog-close" type="button" aria-label="关闭营养评价窗口" @click="closeNutritionReview">×</button></div>
           <div class="general-grid report-profile-grid">
             <label>姓名<input v-model="reportProfile.name" class="value-input" placeholder="姓名（可选）" /></label>
             <label>年龄<input v-model="reportProfile.age" class="value-input" inputmode="numeric" placeholder="岁（可选）" /></label>
-            <label>项目种类<input v-model="reportProfile.projectType" class="value-input" placeholder="例如：女足（可选）" /></label>
-            <label>运动类型<select v-model="reportProfile.athleteType" aria-label="运动类型"><option value="">按项目精确匹配／待确认</option><option value="strength">力量为主</option><option value="team">团体（有氧+力量）</option><option value="endurance">有氧为主</option></select></label>
-            <label>训练阶段<select v-model="reportProfile.trainingPhase" aria-label="训练阶段"><option value="">按当前状态匹配／待确认</option><option value="training">训练期</option><option value="competition">赛期（不适用）</option><option value="other">其他（不适用）</option></select></label>
+            <label>项目种类<select v-model="reportProfile.projectType" aria-label="报告项目种类"><option value="" disabled>请选择</option><option v-for="sport in SPORT_OPTIONS" :key="sport" :value="sport">{{ sport }}</option></select></label>
+            <label>训练阶段<select v-model="reportProfile.trainingPhase" aria-label="训练阶段"><option value="">请选择</option><option value="training">训练期</option><option value="competition">赛期</option><option value="other">其他</option></select></label>
             <label>训练年限<input v-model="reportProfile.trainingYears" class="value-input" placeholder="例如：5年（可选）" /></label>
             <label>当前状态<input v-model="reportProfile.currentStatus" class="value-input" placeholder="例如：正常训练（可选）" /></label>
             <label>性别<select v-model="reportProfile.gender"><option value="">未填写</option><option value="female">女</option><option value="male">男</option></select></label>
@@ -103,7 +102,6 @@
             <label>去脂体重（瘦体重）<input v-model="reportProfile.fatFreeMass" class="value-input" inputmode="decimal" placeholder="kg（可选）" /></label>
             <label>活动量<select v-model="reportProfile.activityLevel"><option value="">未填写</option><option value="1">低</option><option value="2">中</option><option value="3">高</option></select></label>
           </div>
-          <label v-if="Number(reportProfile.weight) > 70">超过70kg的食物摄入倍率（专业人员确认）<input v-model="reportProfile.foodTargetScale" class="value-input" inputmode="decimal" placeholder="留空：只列基础参考；如1.2" /></label>
           <div class="nutrition-preview-panel" aria-label="营养摄入即时预览">
             <div class="nutrition-preview-head"><div><h5>即时计算结果</h5><p>随人员信息和食物核对数据自动更新。</p></div><span v-if="previewLoading">计算中…</span><span v-else>{{ previewUsableFoodCount }} 项食物已计入</span></div>
             <p v-if="previewError" class="error-message preview-message">{{ previewError }}</p>
@@ -115,7 +113,7 @@
             <div class="nutrition-preview-grid">
               <div class="preview-metric"><span>BMI</span><strong>{{ bmiValue || '—' }}</strong><small>{{ bmiStatus || '填写身高和体重后显示' }}</small></div>
               <div class="preview-metric"><span>当前能量摄入</span><strong>{{ nutritionPreview?.nutrition?.energy?.value ?? '—' }}</strong><small>kcal/天</small></div>
-              <div class="preview-metric"><span>推荐能量</span><strong>{{ nutritionPreview?.nutrition?.energy?.standard ?? '—' }}</strong><small>{{ energyStandardNote }}</small></div>
+              <div class="preview-metric"><span>推荐能量</span><strong>{{ nutritionPreview?.nutrition?.energy?.standard ?? '—' }}</strong><small>kcal/天</small></div>
               <div class="preview-metric"><span>蛋白质</span><strong>{{ nutritionPreview?.nutrition?.protein ?? '—' }}</strong><small>g/天</small></div>
               <div class="preview-metric"><span>脂肪</span><strong>{{ nutritionPreview?.nutrition?.fat ?? '—' }}</strong><small>g/天</small></div>
               <div class="preview-metric"><span>碳水化合物</span><strong>{{ nutritionPreview?.nutrition?.carbohydrate ?? '—' }}</strong><small>g/天</small></div>
@@ -125,8 +123,6 @@
           <section class="nutrition-evaluation-review" aria-label="营养评价人工复核">
             <div v-if="unifiedEvaluationRows.length" class="nutrition-preview-panel">
               <h5>运动员专项膳食评价</h5>
-              <p class="hint">{{ unifiedEvaluationContext }}</p>
-              <p v-for="note in unifiedEvaluationWarnings" :key="note" class="hint">{{ note }}</p>
               <div class="mapping-wrap"><table class="mapping-table athlete-evaluation-table"><colgroup><col style="width: 20%" /><col style="width: 17%" /><col style="width: 39%" /><col style="width: 11%" /><col style="width: 13%" /></colgroup><thead><tr><th>项目</th><th>实际摄入</th><th>参考目标</th><th>差值</th><th>最终评价</th></tr></thead><tbody><tr v-for="row in unifiedEvaluationRows" :key="row.key"><td style="white-space: pre-line">{{ row.label }}</td><td>{{ row.actual ?? '—' }} {{ row.unit }}</td><td :class="['建议尽量不吃', '不建议吃零食'].includes(row.target) ? '' : evaluationAlertClass(row.target)">{{ row.target }}<span v-if="row.note">；{{ row.note }}</span></td><td>{{ row.gap ?? '—' }}</td><td :class="evaluationAlertClass(finalEvaluation(row, reportReview))">{{ finalEvaluation(row, reportReview) || '—' }}</td></tr></tbody></table></div>
             </div>
             <div class="subsection-title"><div><h4>营养评价人工复核</h4><p>机器评价仅作初稿。请按实际情况逐项选择不足、适中、过多或其他自定义评价，并编辑最终建议和解读。</p></div><div class="review-header-actions"><button class="secondary-button mini-button" type="button" :disabled="!nutritionPreview" @click="resetReportReviewFromMachine">重载机器初稿</button></div></div>
@@ -147,17 +143,16 @@
           </section>
         </section>
         <h4>人员与问卷信息</h4>
+        <div class="general-grid"><label>项目种类<select v-model="selected.general['项目种类']" aria-label="问卷项目种类"><option value="" disabled>请选择</option><option v-for="sport in SPORT_OPTIONS" :key="sport" :value="sport">{{ sport }}</option></select></label></div>
         <div class="general-grid"><label v-for="(value, key) in questionnaireGeneral" :key="key">{{ key }}<input v-model="selected.general[key]" class="value-input" :placeholder="key.includes('地点') || key.includes('时段') || key.includes('部位') ? '请根据勾选补充' : ''" /></label></div>
         <div class="general-grid bmr-range-fields">
           <label>BMR最低值（kcal/天）<input v-model="selected.general['BMR最低值']" type="number" min="0" step="any" class="value-input" aria-label="BMR最低值" placeholder="建议能量下限" /></label>
           <label>BMR最高值（kcal/天）<input v-model="selected.general['BMR最高值']" type="number" min="0" step="any" class="value-input" aria-label="BMR最高值" placeholder="建议能量上限" /></label>
         </div>
-        <p class="hint">BMR上下限须同时填写且为正数，最低值不得大于最高值。足球、篮球正常训练期自动叠加日均运动净消耗，不使用女性EER；BMR均留空则沿用EER且不重复加运动消耗。体操方案尚未提供，暂不叠加。</p>
         <div class="general-grid">
-          <label>个人每周训练总分钟（含力量）<input v-model="selected.general['每周训练总分钟']" type="number" min="0" max="10080" step="any" class="value-input" placeholder="留空采用项目课表；0表示不训练" /></label>
-          <label>其中每周力量分钟<input v-model="selected.general['每周力量分钟']" type="number" min="0" max="10080" step="any" class="value-input" placeholder="留空采用项目课表" /></label>
+          <label>个人每周训练总分钟（含力量）<input v-model="selected.general['每周训练总分钟']" type="number" min="0" max="10080" step="any" class="value-input" placeholder="分钟（可选）" /></label>
+          <label>其中每周力量分钟<input v-model="selected.general['每周力量分钟']" type="number" min="0" max="10080" step="any" class="value-input" placeholder="分钟（可选）" /></label>
         </div>
-        <p class="hint">足球默认6次×120分钟，整堂5–8 MET（含每周专项体能）；篮球每周21–24小时，其中力量48–180分钟，专项5–8 MET、力量3.5–6 MET。个人出勤有变化请填写实际分钟；周净消耗除以7。此参考不含日常非训练活动和食物热效应。</p>
         <section v-if="checkboxReview.length" class="checkbox-review-panel" aria-label="纸质勾选识别核对">
           <div class="checkbox-review-head"><div><h4>纸质勾选识别核对</h4><p>点击“已选 / 未选 / 不确定”即可人工修改；设为已选后会同步更新上方对应餐次，保存时写入 Excel。</p></div><span>{{ checkboxReview.length }} 项</span></div>
           <div class="checkbox-review-grid">
@@ -186,6 +181,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storedOcrApiUrl } from '../runtime-config'
 import { buildBatchPayload } from '../nutrition-batch'
+import { SPORT_OPTIONS, profileFromGeneral, syncProfileToGeneral } from '../nutrition-profile'
 import { evaluationRows, evaluationWarnings, evaluationContext, finalEvaluation, evaluationAlertClass, reviewCategoryRows, coalesceReviewAliases, energyDisplayNote } from '../nutrition-presentation'
 
 const includeQualityPage = ref(localStorage.getItem('nutrition-include-quality-page') === 'true')
@@ -329,17 +325,21 @@ function manualEvaluationsPayload() {
 function openNutritionReview() { reportErrorMessage.value = ''; reportSuccessMessage.value = ''; nutritionReviewOpen.value = true; scheduleNutritionPreview() }
 function closeNutritionReview() { nutritionReviewOpen.value = false }
 function formatSourceTime(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value || '') : date.toLocaleString('zh-CN', { hour12: false }) }
-const questionnaireGeneral = computed(() => Object.fromEntries(Object.entries(selected.value?.general || {}).filter(([key]) => !['BMR最低值', 'BMR最高值', '训练计划', '每周训练总分钟', '每周力量分钟'].includes(key))))
+const questionnaireGeneral = computed(() => Object.fromEntries(Object.entries(selected.value?.general || {}).filter(([key]) => !['BMR最低值', 'BMR最高值', '训练计划', '每周训练总分钟', '每周力量分钟', '项目种类', '运动类型', '食物摄入倍率'].includes(key))))
 function genderForReport(value) { const text = String(value || '').trim().toLowerCase(); return ['女', '女性', 'female', 'f'].includes(text) ? 'female' : ['男', '男性', 'male', 'm'].includes(text) ? 'male' : '' }
 function trainingPhaseForReport(general) {
   if (Object.hasOwn(general || {}, '训练阶段')) return general['训练阶段']
   const status = String(general?.当前状态 || '').trim()
   return ({ '正常训练': 'training', '训练期': 'training', '比赛期': 'competition', '赛期': 'competition' })[status] ?? (status ? '' : 'training')
 }
+let syncingProfile = false
 function selectPerson(person) {
   if (selectedId.value) { reportProfiles.value[selectedId.value] = { ...reportProfile.value }; reportReviews.value[selectedId.value] = copyReportReview(reportReview.value) }
-  selectedId.value = person.id
-  reportProfile.value = { ...emptyReportProfile(), ...(reportProfiles.value[person.id] || { name: person.general?.姓名 || '', age: person.general?.年龄 || '', projectType: person.general?.项目种类 || '', trainingPhase: trainingPhaseForReport(person.general), trainingYears: person.general?.训练年限 || '', currentStatus: person.general?.当前状态 || '', gender: genderForReport(person.general?.性别), height: person.general?.身高 || '', weight: person.general?.体重 || '', fatFreeMass: person.general?.去脂体重 || '', activityLevel: person.general?.运动量 || '' }) }
+  syncingProfile = true
+  try {
+    selectedId.value = person.id
+    reportProfile.value = { ...emptyReportProfile(), ...profileFromGeneral(person.general || {}, reportProfiles.value[person.id] || {}) }
+  } finally { syncingProfile = false }
   reportReview.value = copyReportReview(reportReviews.value[person.id])
   nutritionPreview.value = null
   scheduleNutritionPreview()
@@ -518,7 +518,25 @@ async function generateReport(format) {
     reportSuccessMessage.value = `${format === 'pdf' ? '营养 PDF 报告' : '营养分析 Excel'}已生成并开始下载。${sourceMessage}`
   } catch (error) { reportErrorMessage.value = error.message || '报告生成失败' } finally { reportGenerating.value = '' }
 }
-watch(reportProfile, scheduleNutritionPreview, { deep: true })
+watch(reportProfile, () => {
+  if (syncingProfile || !selected.value) return
+  syncingProfile = true
+  try {
+    syncProfileToGeneral(reportProfile.value, selected.value.general)
+    reportProfiles.value[selected.value.id] = { ...reportProfile.value }
+  } finally { syncingProfile = false }
+  scheduleNutritionPreview()
+}, { deep: true, flush: 'sync' })
+watch(() => selected.value?.general, general => {
+  if (syncingProfile || !general) return
+  syncingProfile = true
+  try {
+    reportProfile.value = { ...reportProfile.value, ...profileFromGeneral(general, reportProfile.value) }
+    syncProfileToGeneral(reportProfile.value, general)
+  }
+  finally { syncingProfile = false }
+  scheduleNutritionPreview()
+}, { deep: true, flush: 'sync' })
 watch(selected, scheduleNutritionPreview, { deep: true })
 watch([nutritionPersonSearch, nutritionPageSize], () => { nutritionPage.value = 1; ensureNutritionSelectionOnPage() })
 watch(nutritionPageCount, (pageCount) => { if (nutritionPage.value > pageCount) nutritionPage.value = pageCount })

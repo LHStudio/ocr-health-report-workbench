@@ -1,3 +1,4 @@
+import { profileFromGeneral } from './nutrition-profile.js'
 // Preserve deliberate edits, but recompute machine drafts against the current input.
 export function buildBatchPayload(people, format, profiles, reviews) {
   const manual = {}
@@ -20,5 +21,7 @@ export function buildBatchPayload(people, format, profiles, reviews) {
     }
     if (Object.keys(changes).length) manual[person.id] = changes
   }
-  return { people, format, profiles, reviews: manual }
+  const currentProfiles = Object.fromEntries(people.map(person => [person.id,
+    profileFromGeneral(person.general || {}, profiles?.[person.id] || {})]))
+  return { people, format, profiles: currentProfiles, reviews: manual }
 }

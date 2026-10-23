@@ -2825,7 +2825,7 @@ def write_nutrition_workbook(state: dict[str, Any], people: list[dict[str, Any]]
     # Older/custom templates retain resting reference and personal attendance.
     header_row = detect_header_row(general_sheet)
     headers = [clean(general_sheet.cell(header_row, c).value) for c in range(1, general_sheet.max_column + 1)]
-    for field in ("BMR最低值", "BMR最高值", "每周训练总分钟", "每周力量分钟"):
+    for field in ("BMR最低值", "BMR最高值", "每周训练总分钟", "每周力量分钟", "项目种类", "训练阶段", "训练年限", "当前状态", "运动量"):
         if field not in headers:
             cell = general_sheet.cell(header_row, general_sheet.max_column + 1, field)
             cell._style = copy(general_sheet.cell(header_row, 1)._style)

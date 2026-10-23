@@ -13,13 +13,8 @@ def clean_display_text(text):
 
 
 def evaluation_context(data):
-    parts = [(data.get('athlete_evaluation') or {}).get('athlete_label', '')]
-    for section in ('athlete_evaluation', 'food_standard_evaluation'):
-        for note in (data.get(section) or {}).get('warnings', []):
-            note = clean_display_text(note)
-            if note in ('仅训练期', '60-70kg标准', '基础膳食参考标准') and note not in parts:
-                parts.append(note)
-    return ' · '.join(p for p in parts if p)
+    # Classification thresholds and scope are internal calculation metadata.
+    return ''
 
 
 def evaluation_rows(data):
@@ -32,25 +27,24 @@ def evaluation_rows(data):
 
 
 def evaluation_warnings(data):
+    # Keep only factual missing-input notices, never policy or scoring prose.
     notes = []
     for section in ('athlete_evaluation', 'food_standard_evaluation'):
         for note in (data.get(section) or {}).get('warnings', []):
-            note = _display_warning(note)
-            if not note:
-                continue
-            if note.startswith(('奶粉、奶酪折算鲜奶等价量', '蔬菜最低400g/天')):
-                continue
-            if '%' in note or '优质蛋白=' in note or '水产品占比' in note:
-                continue
-            if not any(text in note for text in ('原文未明确年龄分界', '每项定量规则达标')) and note not in notes:
-                note = clean_display_text(note)
-                if note not in ('仅训练期', '60-70kg标准', '基础膳食参考标准') and note not in notes:
-                    notes.append(note)
+            if note.startswith(('缺少体重', '缺少有效体重', '缺少年龄', '缺少有效年龄')) and note not in notes:
+                notes.append(note)
     return notes
 
 
 def _display_warning(note):
     """Hide requested explanatory copy only; retain underlying audit messages."""
+    if '工程筛查' in note:
+        if '，达到参考' in note:
+            return note.split('，达到参考', 1)[0] + '，请核对份量、单位及频率。'
+        if note.startswith('总能量记录达到参考值的'):
+            return '请核对总能量记录所用的份量、单位及频率。'
+        if ' 超过单项' in note:
+            return note.split(' 超过单项', 1)[0] + '，请核对份量、单位及频率。'
     if note.startswith('示例食谱脂肪'):
         return ''
     if note.startswith(('代表食物估算（需复核）：', '足球训练计划估算：', '篮球训练计划估算：')):

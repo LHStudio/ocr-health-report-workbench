@@ -56,7 +56,7 @@ class ReportDisplayCleanupTests(unittest.TestCase):
                         for phrase in HIDDEN:
                             self.assertNotIn(phrase, compact)
                         self.assertIn('1732-2256' if sport == '足球' else '2015.5-2997.6', compact)
-                        self.assertIn('运动净消耗', compact)
+                        self.assertNotIn('运动净消耗', compact)
                         self.assertIn('保留测试', compact)
                         self.assertEqual(before, d)
 
