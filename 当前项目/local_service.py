@@ -3596,6 +3596,10 @@ def generate_nutrition_batch_reports(job_id: str, payload: dict[str, Any]):
     })
 
 
+from platform_push import register_platform_push
+register_platform_push(app, lambda job_id: JOBS.get(job_id) or recover_nutrition_job(job_id))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="127.0.0.1", port=8000)

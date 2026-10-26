@@ -49,6 +49,7 @@
     </section>
 
     <section v-if="records.length" class="card people-card">
+      <PlatformPush kind="imaging" label="影像" :job-id="lastJobId" :count="records.length" :disabled="processing || saving" :snapshot="() => ({ records })" />
       <div class="section-title imaging-review-title"><div><span class="step">2</span><h2>逐份核对识别结果</h2></div><div class="title-actions imaging-review-actions"><span :class="['imaging-review-summary', { clear: reviewRecordCount === 0 }]">{{ reviewRecordCount ? `${reviewRecordCount} 份待核对` : '字段完整' }}</span><button class="primary-button imaging-export-button" type="button" :disabled="saving" @click="saveAndDownload">{{ saving ? '正在导出…' : '导出 Excel' }}</button></div></div>
       <p class="hint">黄色记录存在缺失或格式不完整字段。病人ID会优先读取版面 OCR；缺失时会高分辨率补充识别右上角，但不会猜测模糊字符。</p>
       <div class="review-layout imaging-review">
@@ -84,6 +85,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import PlatformPush from './PlatformPush.vue'
 import { storedOcrApiUrl } from '../runtime-config'
 
 const storageKey = 'medical-ocr-api-url'

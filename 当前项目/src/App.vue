@@ -44,6 +44,7 @@
     </section>
 
     <section v-if="people.length" class="card people-card">
+      <PlatformPush kind="lab" label="化验" :job-id="lastJobId" :count="people.length" :disabled="processing || savingReview" :snapshot="() => ({ people })" />
       <div class="section-title"><div><span class="step">2</span><h2>逐人核对与人工修正</h2></div></div>
       <p class="hint">所有模板字段均可编辑；自动未匹配字段保持空白，人工填写后点击保存。每页云端返回的 OCR Excel 已留存在本机。</p>
       <div class="review-layout">
@@ -77,6 +78,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import appMetadata from '../package.json'
 import NutritionWorkspace from './components/NutritionWorkspace.vue'
+import PlatformPush from './components/PlatformPush.vue'
 import ImagingWorkspace from './components/ImagingWorkspace.vue'
 import GeneralOcrWorkspace from './components/GeneralOcrWorkspace.vue'
 import { storedOcrApiUrl } from './runtime-config'

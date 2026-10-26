@@ -38,6 +38,7 @@
   </section>
 
   <section v-if="people.length" class="card people-card nutrition-workspace">
+    <PlatformPush kind="nutrition" label="食物营养" :job-id="jobId" :count="people.length" :disabled="saving || batchGenerating || reportGenerating !== '' || appendingBodyComposition || applyingBodyCompositionMatches" :snapshot="nutritionPushSnapshot" />
     <div class="nutrition-section-head"><div><h2>问卷核对</h2><p>逐人核对人员资料、勾选信息和食物频率。</p></div><div class="nutrition-section-actions"><button class="secondary-button" type="button" :disabled="saving" @click="save">{{ saving ? '正在保存…' : '保存并下载 Excel' }}</button><button class="primary-button" type="button" :disabled="saving" @click="saveCurrentReview">{{ saving ? '保存中…' : '保存当前核对信息' }}</button></div></div>
     <p class="hint">已完成问卷中，食物摄入空白项按未食用处理；“未识别”或无法换算的非空填写仍保留核对提示。</p>
     <section class="nutrition-report-launch nutrition-batch-export" aria-label="批量导出全部营养报告">
@@ -179,6 +180,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
+import PlatformPush from './PlatformPush.vue'
 import { storedOcrApiUrl } from '../runtime-config'
 import { buildBatchPayload } from '../nutrition-batch'
 import { SPORT_OPTIONS, profileFromGeneral, syncProfileToGeneral } from '../nutrition-profile'
@@ -497,6 +499,13 @@ async function generateAllReports() {
     if (failures) batchError.value = `${failures} 份文件未生成，请查看 ZIP 内“导出清单.txt”的具体原因，补齐后重试。`
   } catch (error) { batchError.value = error.message || '批量报告生成失败' }
   finally { batchGenerating.value = false }
+}
+function nutritionPushSnapshot() {
+  if (selected.value) {
+    reportProfiles.value[selected.value.id] = { ...reportProfile.value, bmi: bmiValue.value }
+    reportReviews.value[selected.value.id] = copyReportReview(reportReview.value)
+  }
+  return buildBatchPayload(people.value, 'excel', reportProfiles.value, reportReviews.value)
 }
 async function generateReport(format) {
   if (!selected.value || !jobId.value) return
