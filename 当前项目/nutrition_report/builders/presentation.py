@@ -23,7 +23,27 @@ def evaluation_rows(data):
         for row in (data.get(section) or {}).get('rows', []):
             display = {**row, **(row.get('display') or {})}
             rows[row['key']] = {**display, 'note': clean_display_text(display.get('note', ''))}
-    return list(rows.values())
+    category_keys = {'谷类': 'grains_remainder', '薯类': 'tubers_energy',
+        '蔬菜': 'vegetables', '水果': 'fruit', '畜禽肉': 'livestock_remainder',
+        '水产品': 'seafood', '蛋类': 'eggs', '豆类': 'beans_energy',
+        '坚果': 'nuts', '奶类': 'milk', '零食': 'snacks'}
+    categories = dict(data.get('category_result') or {})
+    if 'category_result' in data:
+        categories.setdefault('运动营养食品', {'value': None, 'evaluation': '-'})
+    for category, info in categories.items():
+        key = category_keys.get(category, 'category_' + category)
+        if key in rows:
+            continue
+        value = info.get('value')
+        if not isinstance(value, (int, float)):
+            value = None
+        rows[key] = dict(key=key, label=category, actual=value, unit='g/天',
+                         target='—', gap=None, evaluation=info.get('evaluation', '-'),
+                         note=info.get('weight_note', ''))
+    ordered = list(rows.values())
+    keys = ('grains_remainder', 'tubers_energy', 'beans_energy')
+    staples = iter(rows[k] for k in keys if k in rows)
+    return [next(staples) if row['key'] in keys else row for row in ordered]
 
 
 def evaluation_warnings(data):

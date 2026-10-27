@@ -5,8 +5,10 @@ import os
 import re
 from pathlib import Path
 from xml.sax.saxutils import escape
-from ..energy_reference import energy_reference_text
+from ..energy_reference import energy_reference_text, energy_calculation_lines
 from ..report_checks import energy_summary
+from .measurements import body_composition_table
+from ..measurements import resting_metabolism_rows, measurement_text
 from .presentation import evaluation_rows, evaluation_warnings, evaluation_context, report_alerts
 
 from reportlab.lib import colors
@@ -38,7 +40,9 @@ def _as_text(value: object) -> str:
 
 def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {"不足", "过少", "过多", "不建议吃零食", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"} else text
+    if str(value).strip() in {'不足', '严重不足', '过少', '能量占比偏低', '占比偏低'}:
+        return f'<font color="#F2994A">{text}</font>'
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {'偏多', '过多', '不建议吃零食', '按照运动情况适量补充饮料', '能量占比偏高', '占比偏高'} else text
 
 
 def _table_text(value: object, *, alert=True) -> str:
@@ -244,20 +248,7 @@ class NutritionPDFBuilder:
         ]))
         story.extend([profile_table, Spacer(1, 6 * mm)])
 
-        page_groups = [
-            ["谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类", "豆类", "坚果", "奶类", "零食", "运动营养食品", "饮料", "酒类"],
-        ]
-        for page_index, categories in enumerate(page_groups):
-            if page_index:
-                story.append(PageBreak())
-            story.append(self._build_food_report(
-                data,
-                categories,
-                normal=normal,
-                header=header,
-                category_style=category_style,
-                suggestions=None,
-            ))
+        story.extend([Paragraph('体成分结果', title), body_composition_table(data, normal, header, legacy=True)])
         story.append(PageBreak())
 
         nutrition = data.get("nutrition") or {}
@@ -300,17 +291,21 @@ class NutritionPDFBuilder:
                 "",
             ],
         ]
+        metabolic_rows = resting_metabolism_rows(data)
+        for label, value, unit in metabolic_rows:
+            energy_table.append([Paragraph(escape(label).replace("（", "<br/>（"), normal),
+                Paragraph(escape(measurement_text(value, unit)), normal), Paragraph('', normal)])
         energy_report = Table(
             energy_table,
             colWidths=[38 * mm, 108 * mm, 28 * mm],
-            rowHeights=[12 * mm, 10 * mm, 28 * mm, 55 * mm, 20 * mm, None, None],
+            rowHeights=[12 * mm, 10 * mm, None, 40 * mm, 14 * mm, None, None] + [None] * len(metabolic_rows),
             repeatRows=2,
         )
         energy_style = TableStyle([
             ("SPAN", (0, 0), (-1, 0)),
             ("SPAN", (1, 3), (2, 3)),
             ("SPAN", (1, 5), (2, 5)),
-            ("SPAN", (1, -1), (2, -1)),
+            ("SPAN", (1, 6), (2, 6)),
             ("BACKGROUND", (0, 0), (-1, 1), colors.HexColor("#BFC4D7")),
             ("BACKGROUND", (0, 2), (0, -1), colors.HexColor("#8D8FB6")),
             ("TEXTCOLOR", (0, 0), (-1, 1), colors.white),
@@ -450,6 +445,8 @@ class NutritionPDFBuilder:
                 v = equivalent['value']
                 amount_text = '记录原重：' + amount_text
                 amount_text += '<br/>' + escape(equivalent['representative']) + '等价量：' + ('-' if v is None else f'{v:.2f} g')
+            if info.get('weight_note'):
+                amount_text += '<br/>' + escape(info['weight_note'])
             table_data.append([
                 Paragraph(escape(category), category_style),
                 Paragraph(amount_text, normal),
@@ -504,6 +501,13 @@ class NutritionPDFBuilder:
 
     @staticmethod
     def _format_energy_intake(energy: dict) -> str:
+        base = NutritionPDFBuilder._format_energy_reference(energy)
+        base += "<br/>" + "<br/>".join(escape(line) for line in energy_calculation_lines(energy))
+        ea = (energy.get("availability") or {}).get("text", "")
+        return base + ("<br/>" + escape(ea) if ea else "")
+
+    @staticmethod
+    def _format_energy_reference(energy: dict) -> str:
         value = escape(_as_text(energy.get("value", "-")))
         standard = energy.get("standard")
         if energy.get('reference_type') == 'bmr_plus_net':
@@ -586,24 +590,7 @@ class NutritionPDFBuilder:
 
     @staticmethod
     def _interpretation(data: dict) -> str:
-        if data.get("interpretation"):
-            return "<br/>".join(escape(line.strip()) for line in _as_text(data["interpretation"]).splitlines() if line.strip())
-        if data.get('energy_guidance'):
-            return escape(energy_summary(data))
-        nutrition = data.get("nutrition") or {}
-        lines = []
-        energy_evaluation = (nutrition.get("energy") or {}).get("evaluation")
-        calcium_evaluation = (nutrition.get("calcium") or {}).get("evaluation")
-        if energy_evaluation in {"不足", "过少"}:
-            lines.append("总能量摄入不足，需结合训练量调整全天饮食。")
-        elif energy_evaluation == "过多":
-            lines.append("能量摄入过多，应适当控制总能量摄入")
-        carb = next((r for r in (data.get('athlete_evaluation') or {}).get('rows', []) if r['key'] == 'carbohydrate'), {})
-        grains = next((r for r in (data.get('food_standard_evaluation') or {}).get('rows', []) if r['key'] == 'grains_remainder'), {})
-        if carb.get('evaluation') == '不足':
-            lines.append('碳水化合物营养素摄入不足，需结合训练量补充碳水来源。')
-        if grains.get('evaluation_basis') == 'ratio' and grains.get('evaluation') in {'过多', '能量占比偏高'}:
-            lines.append('谷类在主食总能量中占比偏高；建议增加豆类、薯类的搭配。')
-        if calcium_evaluation == "不足":
-            lines.append("钙摄入不足，应增加奶制品摄入")
-        return "<br/>".join(lines) or "暂无"
+        if data.get('interpretation'):
+            return '<br/>'.join(escape(line.strip()) for line in str(data['interpretation']).splitlines() if line.strip())
+        from ..report_policy import interpretation_lines
+        return '<br/>'.join(f'{i}. {escape(line)}' for i,line in enumerate(interpretation_lines(data),1))

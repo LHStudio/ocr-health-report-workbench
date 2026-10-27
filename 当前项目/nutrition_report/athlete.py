@@ -1,5 +1,6 @@
 """按用户提供的V2.0文档生成机器初稿；不推导文档未给出的评分阈值。"""
 import math
+from .report_policy import amount_status, DEFICIT, EXCESS
 from .personal_targets import energy_bounds
 
 
@@ -52,18 +53,18 @@ def evaluate_athlete(user, nutrition, categories, config):
             if actual is None:
                 status = "无法计算（供能合计为0）"
             elif mode == "approx":
-                status = "不足" if actual < low - 1e-8 else "过多" if actual > low + 1e-8 else "适中"
+                status = amount_status(actual, low, low)
                 gap = actual - low if status != '适中' else 0
             elif actual < low - 1e-8:
-                status = "不足"
+                status = amount_status(actual, low, None)
                 gap = actual - low
             elif mode == "range" and actual > high + 1e-8:
-                status = "过多"
+                status = "偏多"
                 gap = actual - high
             else:
                 status = "适中"
                 gap = 0
-        status = status if status in {"不足", "过多", "适中"} else "-"
+        status = status if status in {"不足", "严重不足", "偏多", "适中"} else "-"
         rows.append(dict(key=key, label=label, actual=actual, unit=unit, target=target,
                          gap=gap, machine_evaluation=status, evaluation=status,
                          target_min=bounds[0] if bounds else None,
@@ -101,7 +102,7 @@ def evaluate_athlete(user, nutrition, categories, config):
         if row["gap"] is not None and row["gap"] < 0:
             unit = '个百分点' if row['unit'] == '%' else row['unit']
             suggestions.append(f"{row['label']}较参考{'目标' if row['key'] == 'carbohydrate' and len(rule['carbohydrate']) == 1 else '下限'}少 {display_number(abs(row['gap']))} {unit}。")
-        elif row["evaluation"] == "过多":
+        elif row["evaluation"] in EXCESS:
             suggestions.append(f"{row['label']}高于参考上限，建议适当减少相关食物摄入。")
     if not reason and rule.get("protein_preferred") and weight:
         suggestions.append(f"团体项目蛋白质优选参考约 {display_number(rule['protein_preferred'] * weight)} g/天（1.7 g/kg）。")

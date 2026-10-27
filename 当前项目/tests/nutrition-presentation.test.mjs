@@ -65,11 +65,14 @@ test('remove requested wording and move scope into one context line without chan
 })
 
 test('snack advice is an alert without coloring normal or partial strings', () => {
-  for (const value of ['不足', '过多', '建议尽量不吃', ' 建议尽量不吃 ']) assert.equal(evaluationAlertClass(value), 'evaluation-alert')
+  assert.equal(evaluationAlertClass('不足'), 'evaluation-deficit')
+  assert.equal(evaluationAlertClass('严重不足'), 'evaluation-deficit')
+  assert.equal(evaluationAlertClass('按照运动情况适量补充饮料'), 'evaluation-alert')
+  for (const value of ['过多', '建议尽量不吃', ' 建议尽量不吃 ']) assert.equal(evaluationAlertClass(value), 'evaluation-alert')
   for (const value of ['适中', '自定义评价', '建议尽量不吃但尚待核查', null]) assert.equal(evaluationAlertClass(value), '')
 })
 
-test('staple ratings describe energy share, not food grams; manual values stay supported', () => {
+test('staple ratings describe equivalent-weight share; manual values stay supported', () => {
   assert.equal(finalEvaluation({key:'grains_remainder',evaluation:'过多'}), '过多')
   assert.equal(finalEvaluation({key:'beans_energy',evaluation:'不足'}), '不足')
   assert.equal(finalEvaluation({key:'grains_remainder',evaluation:'过多'},{standard_grains_remainderEvaluation:'人工结论'}), '人工结论')

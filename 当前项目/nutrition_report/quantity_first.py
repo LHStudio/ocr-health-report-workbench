@@ -1,4 +1,5 @@
 """Keep requirement evaluation separate from one jointly validated allocation."""
+from .report_policy import amount_status, DEFICIT
 from .food_standards import number
 from .personal_targets import build_personal_targets, REPRESENTATIVES
 
@@ -13,12 +14,12 @@ def target_text(low, high, planning=None):
 
 def comparison(actual, low, high):
     if actual is None or low is None:return '-',None,None
-    if actual<low-1e-8:return '不足',0,actual-low
-    if high is not None and actual>high+1e-8:return '过多',0,actual-high
+    if actual<low-1e-8:return amount_status(actual, low, high),0,actual-low
+    if high is not None and actual>high+1e-8:return '偏多',0,actual-high
     return '适中',1,0
 
 def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, categories, config, merged_meals=None):
-    standard['energy_gate']=({'适宜':'adequate','适中':'adequate','过多':'excess','过少':'deficit','不足':'deficit'}.get(nutrition['energy'].get('evaluation'),'unknown') if standard['nutrient_record_complete'] else 'unknown')
+    standard['energy_gate']=({'适宜':'adequate','适中':'adequate','偏多':'excess','过多':'excess','过少':'deficit','不足':'deficit','严重不足':'deficit'}.get(nutrition['energy'].get('evaluation'),'unknown') if standard['nutrient_record_complete'] else 'unknown')
     plan=build_personal_targets(athlete,standard,food_db,nutrition['energy'],config)
     standard['personal_targets']=plan  # Solver diagnostics do not change report copy.
     for row in standard['rows']:
@@ -27,6 +28,12 @@ def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, catego
         # point is not a new physiological minimum or maximum.
         row['original_rule']={k:row.get(k) for k in ('label','actual','unit','target','target_min','target_max','evaluation','score','gap')}
         row['evaluation_basis']='ratio' if key in STAPLE_RATIOS|PROTEIN_RATIOS else 'original_rule'
+        if key in STAPLE_RATIOS and standard['energy_gate'] == 'deficit':
+            # User-requested energy priority; retain ratio facts and original score.
+            row['evaluation_basis'] = 'energy_priority'
+            row['energy_priority_status'] = nutrition['energy']['evaluation']
+            row['evaluation'] = row['evaluation'] if row['evaluation'] in DEFICIT else nutrition['energy']['evaluation']
+            row['machine_evaluation'] = row['evaluation']
         if not target:continue
         row.update(joint_plan_amount=target['planning'],
                    plan_representative=target['representative'],plan_note=target['note'])

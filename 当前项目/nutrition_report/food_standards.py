@@ -1,5 +1,7 @@
 """用户2026-10-12新增标准；规则达标计数不是临床风险评分。"""
 import math
+from .report_policy import amount_status
+from .food_conversion import staple_equivalents
 from collections import defaultdict
 from .adapter import FOOD_REFERENCE_MAP
 
@@ -30,7 +32,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
     scale = scale if weight and weight > 70 and scale is not None and scale >= 1 else 1
     notes = [
         '基础膳食参考标准',
-        '主食能量=谷类+豆类（包含豆制品）+薯类；豆类至少5%、薯类至少15%，因此谷类占比上限为80%，不是必须达到80%。',
+        '主食等价总重=谷类原粮等价量+豆类大豆等价量+薯类记录重量；豆类至少5%、薯类至少15%，因此谷类占比上限为80%，不是必须达到80%。',
         '水产品占比按肉类日均重量计算；畜禽肉为肉类总量扣除水产品后的部分，包含畜肉和禽肉。',
         '奶粉、奶酪折算鲜奶等价量=记录克数×该食物每100g蛋白质/鲜奶每100g蛋白质；鲜奶、酸奶按原重。折算只用于奶量评价，营养素不重复计算。',
         '蔬菜最低400g/天，原有运动分类要求更高时取更高下限；采用最低量规则，不以先前500g封顶。',
@@ -111,7 +113,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
 
     rows = []
 
-    def add(key, label, groups, low=None, high=None, ratio=None, target=None, note='', qualitative=None, actual_override=None, advisory=False, over_label='过多'):
+    def add(key, label, groups, low=None, high=None, ratio=None, target=None, note='', qualitative=None, actual_override=None, advisory=False, over_label='偏多'):
         is_ratio = ratio is not None
         unit = '%' if is_ratio else 'g/天'
         blocked = ''
@@ -139,7 +141,7 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
             if qualitative is not None:
                 status = qualitative(actual)
             elif lo is not None and actual < lo:
-                status, score, gap = '不足', 0, actual - lo
+                status, score, gap = amount_status(actual, lo, hi), 0, actual - lo
             elif hi is not None and actual > hi:
                 status, score, gap = over_label, 0, actual - hi
             else:
@@ -151,16 +153,21 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
     staples = {'谷类', '豆类', '薯类'}
     meat = {'畜禽肉', '水产品'}
     animal = meat | {'奶类', '蛋类'}
-    staple_energy = total(staples, 'energy')
+    equivalents = staple_equivalents(payload, food_db)
+    staple_weight = sum(v for v in equivalents.values() if v is not None)
+    if any(v is None for v in equivalents.values()):
+        missing.update(staples)
     beans_min, tubers_min = 5, 15
     add('nuts', '坚果', {'坚果'}, 10)
-    add('beans_energy', '豆类占主食能量', staples, beans_min,
-        ratio=(total({'豆类'}, 'energy'), staple_energy), note='分母：谷类、豆类、薯类能量合计')
-    add('tubers_energy', '薯类占主食能量', staples, tubers_min,
-        ratio=(total({'薯类'}, 'energy'), staple_energy))
-    add('grains_remainder', '谷类占主食能量', staples, high=100-beans_min-tubers_min,
-        ratio=(total({'谷类'}, 'energy'), staple_energy), over_label='过多',
-        note='能量占比上限=100%-豆类5%-薯类15%')
+    add('grains_remainder', '谷类占主食等价重量', staples, high=100-beans_min-tubers_min,
+        ratio=(equivalents['谷类'] or 0, staple_weight), note='等价重量占比上限80%')
+    add('tubers_energy', '薯类占主食等价重量', staples, tubers_min,
+        ratio=(equivalents['薯类'] or 0, staple_weight), note='等价重量占比至少15%')
+    add('beans_energy', '豆类占主食等价重量', staples, beans_min,
+        ratio=(equivalents['豆类'] or 0, staple_weight), note='等价重量占比至少5%')
+    for row in rows[-3:]:
+        row['ratio_basis'] = 'equivalent_weight'
+        row['denominator_g'] = staple_weight if all(v is not None for v in equivalents.values()) else None
     milk_note = (f'鲜奶基准蛋白质 {milk_protein:g} g/100g；' if milk_protein else '') + '；'.join(milk_trace)
     add('milk', '奶类鲜奶等价量', {'奶类'}, 400, note=milk_note or '鲜奶、酸奶原重；奶粉奶酪按蛋白质折算', actual_override=milk_equivalent)
     add('eggs', '蛋类', {'蛋类'}, 50, note='每个鸡蛋按50g；显式克数不二次折算')

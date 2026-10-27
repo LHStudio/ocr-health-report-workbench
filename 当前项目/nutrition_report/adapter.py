@@ -11,6 +11,8 @@ from typing import Any, Mapping
 # exact=False 表示使用同类代表食物的每 100g 营养值，生成结果中必须留下提示。
 FOOD_REFERENCE_MAP: dict[str, tuple[str, bool]] = {
     "米饭": ("米饭", True),
+    "大米": ("米饭", False),
+    "生米": ("米饭", False),
     "大米粥": ("米饭", False),
     "馒头": ("小麦面粉", False),
     "面包": ("小麦面粉", False),
@@ -339,7 +341,12 @@ def build_payload_from_ocr_person(
             continue
 
         daily_grams = round(grams * count / divisor, 4)
-        meals.append({"name": reference_name, "amount": daily_grams})
+        factor = 1 / 1.5 if food_name == '馒头' else 2.0 if food_name in {'大米', '生米'} else 1.0
+        database_grams = daily_grams * factor
+        basis = ('面粉:馒头=1:1.5' if food_name == '馒头' else '生米:熟米饭=1:2' if food_name in {'米饭','大米','生米'} else '')
+        meals.append({'name': reference_name, 'amount': database_grams,
+                      'recorded_amount': daily_grams, 'recorded_food': food_name,
+                      'conversion_factor': factor, 'conversion_basis': basis})
         source_foods.append({
             "food": food_name,
             "reference_food": reference_name,
@@ -348,10 +355,18 @@ def build_payload_from_ocr_person(
             "count": _text(row.get("次数")),
             "period": period,
             "daily_grams": daily_grams,
+            "database_grams": database_grams,
+            "conversion_factor": factor,
+            "conversion_basis": basis,
+            "raw_equivalent_grams": daily_grams / 2 if food_name == "米饭" else database_grams if food_name == "馒头" else None,
         })
+        if basis:
+            warnings.append(_warning('cooked_weight_conversion', f'{food_name}记录{daily_grams:g}g/天；{basis}；用于数据库{reference_name}计算{database_grams:g}g/天（米饭库为熟重，不重复折算）', food=food_name, severity='info'))
         if not exact_reference:
             warnings.append(_warning("proxy_food_reference", f"{food_name}暂按同类代表食物“{reference_name}”的每 100g 营养值估算", food=food_name))
 
+    from .measurements import load_person_measurements
+    measurements = load_person_measurements(person)
     user = _build_user(person, user_overrides)
     general = person.get("general") if isinstance(person.get("general"), Mapping) else {}
     effective_date = report_date or _text(general.get("调查日期")) or date_type.today().isoformat()
@@ -369,6 +384,8 @@ def build_payload_from_ocr_person(
     # 同一参考食物可由多个问卷条目产生，原 NutritionService 会在计算前自动合并。
     payload = {
         "user": user,
+        "body_composition": measurements.get("body_composition", {}),
+        "resting_metabolism": measurements.get("resting_metabolism", {}),
         "meals": meals,
         "date": effective_date,
         "include_quality_page": include_quality_page is True,

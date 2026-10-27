@@ -37,7 +37,7 @@ class OCRNutritionAdapterTest(unittest.TestCase):
     def test_all_38_fixed_foods_have_a_real_database_reference(self) -> None:
         service = NutritionReportService(prefer_cloud=False)
         # The original 38 mappings remain; two explicit fries aliases are API-only.
-        self.assertEqual(38, len(set(FOOD_REFERENCE_MAP) - {"零食", "薯条"}))
+        self.assertEqual(38, len(set(FOOD_REFERENCE_MAP) - {"零食", "薯条", "大米", "生米"}))
         self.assertEqual(("薯条", False), FOOD_REFERENCE_MAP["零食"])
         self.assertEqual(("薯条", True), FOOD_REFERENCE_MAP["薯条"])
         missing = {
@@ -180,7 +180,9 @@ class NutritionReportServiceTest(unittest.TestCase):
             self.assertIn("正常训练", page_texts[0])
             self.assertIn("去脂体重", page_texts[0])
             self.assertIn("46.6 kg", page_texts[0])
-            self.assertTrue(all(category in page_texts[0] for category in ("谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类", "豆类", "坚果", "奶类", "零食", "运动营养", "饮料", "酒类")))
+            self.assertIn("体成分结果", page_texts[0])
+            self.assertNotIn("食物摄入量评估报告", page_texts[0])
+            self.assertTrue(all(category in "".join(page_texts[2:]) for category in ("谷类", "薯类", "蔬菜", "水果", "畜禽肉", "水产品", "蛋类", "豆类", "坚果", "奶类", "零食", "运动营养", "饮料", "酒类")))
             self.assertIn("整体评估及建议",page_texts[-1])
             self.assertIn("能量及钙摄入量评估报告", page_texts[1])
             self.assertIn("三大营养素供能占比", page_texts[1])
@@ -202,7 +204,7 @@ class NutritionReportServiceTest(unittest.TestCase):
             workbook = load_workbook(excel_path, read_only=True, data_only=True)
             try:
                 self.assertEqual(
-                    ["个人信息", "食物明细", "分类评估", "营养总计", "OCR换算说明", "运动员专项评价", "建议"],
+                    ["个人信息", "体成分结果", "食物明细", "营养总计", "OCR换算说明", "运动员专项评价", "建议"],
                     workbook.sheetnames,
                 )
                 note_codes = {

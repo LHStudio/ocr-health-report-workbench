@@ -17,11 +17,15 @@ class GramDisplayTest(unittest.TestCase):
         rows={r['key']:r for r in evaluation_rows(data)}
         raw={r['key']:r for r in data['food_standard_evaluation']['rows']}
         for key in ['beans_energy','tubers_energy','grains_remainder','seafood','livestock_remainder']:
-            self.assertEqual('g/天',rows[key]['unit']);self.assertIn('g/天',rows[key]['target'])
+            self.assertEqual('g/天',rows[key]['unit'])
+            if raw[key].get('evaluation_basis') == 'energy_priority':
+                self.assertEqual('先补足主食，再调整谷豆薯比例',rows[key]['target'])
+            else:
+                self.assertIn('g/天',rows[key]['target'])
             self.assertEqual('%',raw[key]['unit'])
             self.assertEqual(raw[key]['original_rule']['target_min'],raw[key]['target_min'])
             self.assertEqual(raw[key]['original_rule']['target_max'],raw[key]['target_max'])
-        for key,expected in [('grains_remainder',1234.57),('beans_energy',123.46),('tubers_energy',234.57),('livestock_remainder',456.79),('seafood',0)]:
+        for key,expected in [('grains_remainder',617.28),('beans_energy',round(123.45678/5.2,2)),('tubers_energy',234.57),('livestock_remainder',456.79),('seafood',0)]:
             self.assertEqual(expected,rows[key]['actual'])
         self.assertEqual('%',rows['quality_protein']['unit'])
         self.assertEqual('g/天',rows['fat']['unit'])

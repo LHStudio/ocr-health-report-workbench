@@ -5,6 +5,7 @@ No added foods, oil, nutrient target relaxation, or independent per-category ext
 recomputed from that exact quantity, including energy, fat, calcium and ratios.
 """
 import math
+from .food_conversion import staple_equivalent_grams
 from .personal_targets import REPRESENTATIVES, energy_bounds
 from .energy_reference import accepted_energy_bounds
 from .release_gate import density_review
@@ -32,7 +33,7 @@ def build_joint_plan(athlete, standard, food_db, energy, config):
                   contributions=[], plan_warnings=[], validation={'passed':False,'checks':[]},
                   stages=[], assumptions=[
                       '营养需求沿用体重和项目标准；能量沿用当前个人参考；不以实际摄入反推需求。',
-                      '谷类至多80%、豆类至少5%、薯类至少15%；水产品至少30%、畜禽肉至多70%，均为不等式，不强制分配端点。',
+                      '谷薯豆按等价重量占比：谷类至多80%、豆类至少5%、薯类至少15%；水产品至少30%、畜禽肉至多70%，均为不等式，不强制分配端点。',
                       '只使用已确认默认食物和营养库密度；不加入烹调油、补充剂或其他食物。',
                       '按能量、蛋白质、碳水及分项规则求一个可行组合，脂肪仅汇总复验，不驱动小类食物分配。'])
     def fail(code, message):
@@ -107,9 +108,10 @@ def build_joint_plan(athlete, standard, food_db, energy, config):
     macro_e=[4*p+4*c+9*f for p,c,f in zip(density['protein'],density['carbohydrate'],density['fat'])]
     bound('calcium',density['calcium'],calcium,None)
     for k in fixed:bound(k,unit(k),rules[k]['target_min'],rules[k]['target_max'])
-    staple=[e if k in ('grains_remainder','beans_energy','tubers_energy') else 0 for k,e in zip(KEYS,density['energy'])]
+    staple=[staple_equivalent_grams(REPRESENTATIVES[k][1], 1, REPRESENTATIVES[k][0])
+            if k in ('grains_remainder','beans_energy','tubers_energy') else 0 for k in KEYS]
     for k in ('beans_energy','tubers_energy','grains_remainder'):
-        r=rules[k];own=[e if j==k else 0 for j,e in zip(KEYS,density['energy'])]
+        r=rules[k];own=[w if j==k else 0 for j,w in zip(KEYS,staple)]
         if r['target_min'] is not None:bound(k+'_share_min',[a-r['target_min']/100*b for a,b in zip(own,staple)],0,None)
         if r['target_max'] is not None:bound(k+'_share_max',[a-r['target_max']/100*b for a,b in zip(own,staple)],None,0)
     meat=[float(k in ('seafood','livestock_remainder')) for k in KEYS]

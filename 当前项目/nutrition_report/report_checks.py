@@ -4,6 +4,7 @@ Checks never edit intake or manual conclusions. 3x reference and 3000 g/food/day
 are engineering review triggers, NOT physiological or clinical upper limits.
 """
 import math
+from .report_policy import amount_status, DEFICIT, EXCESS, NORMAL, HYDRATION
 import re
 from .training_energy import training_energy_note
 from .energy_reference import accepted_energy_bounds
@@ -26,8 +27,8 @@ def finite_number(value):
 
 def energy_summary(report):
     value = (report.get('nutrition') or {}).get('energy', {}).get('evaluation')
-    return {'适宜': '总能量适宜。', '适中': '总能量适宜。', '过多': '总能量过多。',
-            '过少': '总能量过少。', '不足': '总能量过少。'}.get(value, '总能量暂无法评价。')
+    value = {'过少':'不足','过多':'偏多','适中':'适宜'}.get(value,value)
+    return f'总能量摄入量{value}。' if value and value != '-' else '总能量暂无法评价。'
 
 
 def _rows(report):
@@ -51,8 +52,8 @@ def _row_advice(row, label=None):
     actual = finite_number(shown.get('actual'))
     if actual is None or status in {'-', '未确认'}:
         return f'{label}：目前摄入或个人参考目标尚不完整，暂不判断增减；参考目标 {shown.get("target", "未确认")}。'
-    direction = ('应增加本类摄入' if status in {'不足', '过少', '偏低', '占比偏低', '能量占比偏低'}
-                 else '应减少本类摄入' if status in {'过多', '偏高', '占比偏高', '能量占比偏高'}
+    direction = ('应增加本类摄入' if status in {'严重不足', '不足', '过少', '偏低', '占比偏低', '能量占比偏低'}
+                 else '应减少本类摄入' if status in {'偏多', '过多', '偏高', '占比偏高', '能量占比偏高'}
                  else '保持在个人参考范围内' if status in {'适中', '适宜', '占比适中', '能量占比适中'}
                  else '结合完整记录和专业意见调整')
     if status in {'适中', '适宜'} and row.get('target_min') is not None and row.get('target_max') is None:
@@ -61,29 +62,93 @@ def _row_advice(row, label=None):
 
 
 def build_overall_suggestions(report):
-    """One category per numbered item; one shared personal requirement source."""
+    """Only abnormal findings; protein/milk/meat and carbohydrate/staples are grouped."""
     rows = _rows(report)
-    items = [('energy', energy_summary(report))]
-    for key, label in (
-        ('protein', '蛋白质'), ('carbohydrate', '碳水化合物'), ('fat', '脂肪'), ('calcium', '钙'),
-        ('grains_remainder', '谷类'), ('beans_energy', '豆类'), ('tubers_energy', '薯类'),
-        ('milk', '奶类'), ('eggs', '蛋类'),
-        ('livestock_remainder', '畜禽肉'), ('seafood', '水产品'),
-        ('fruit', '水果'), ('vegetables', '蔬菜'), ('nuts', '坚果')):
-        row = rows.get(key)
-        representative = (row or {}).get('representative')
-        if key in {'grains_remainder','beans_energy','tubers_energy','livestock_remainder','seafood'} and representative:
-            label += '（' + representative + '等价量）'
-        text = _row_advice(row, label)
-        # A source above its reference conversion is not evidence that total
-        # carbohydrate should be cut when the person's total is still low.
-        if key in {'grains_remainder','beans_energy','tubers_energy'} and (rows.get('carbohydrate') or {}).get('evaluation') in {'不足','过少'}:
-            text = text.replace('应减少本类摄入', '本类超过参考分配；总碳水不足，应调整来源搭配，不直接减少主食总碳水')
-        items.append((key, text))
-    items += [('snacks', '零食：不建议吃零食。'),
-              ('quality_protein', _row_advice(rows.get('quality_protein'), '肉蛋奶优质蛋白') +
-               ' 请结合训练量及完整记录，在营养专业人员指导下调整。')]
-    return [{'key': key, 'text': text} for key, text in items]
+    abnormal = lambda r: r and r.get('evaluation') in DEFICIT | EXCESS | {'偏低', '偏高', '占比偏低', '占比偏高', '能量占比偏低', '能量占比偏高'}
+    energy_state = report['nutrition']['energy'].get('evaluation')
+    items = {}
+    if energy_state in DEFICIT | EXCESS:
+        text = energy_summary(report)
+        if energy_state in DEFICIT:
+            text += '优先关注碳水与主食（谷豆薯）摄入。'
+        else:
+            text += '重点核对蛋白质及肉类摄入，结合其实际评价调整。'
+        items['energy'] = text
+    protein_parts = []
+    for key,label in (('milk','其中奶类'),('quality_protein','优质蛋白占比')):
+        if abnormal(rows.get(key)):
+            protein_parts.append(_row_advice(rows[key],label))
+    # Meat allocation is subordinate to total protein; never reduce total meat
+    # merely because livestock's share is high while protein is insufficient.
+    meat = [rows[k] for k in ('seafood','livestock_remainder') if abnormal(rows.get(k))]
+    protein_state = (rows.get('protein') or {}).get('evaluation')
+    meat_amount = sum(f['amount'] for f in report.get('foods', []) if f['category'] in {'畜禽肉','水产品'})
+    if protein_state in DEFICIT:
+        protein_parts.append(f'肉类（含水产品）：目前 {_number(meat_amount)} g/天，可结合奶类补足蛋白质。')
+    elif protein_state in EXCESS and meat_amount > 0:
+        protein_parts.append(f'肉类（含水产品）：目前 {_number(meat_amount)} g/天，优先核对并调整肉类份量。')
+    if meat:
+        details = '、'.join(('畜禽肉' if r['key']=='livestock_remainder' else '水产品') + r['evaluation'] for r in meat)
+        seafood_state = (rows.get('seafood') or {}).get('evaluation')
+        livestock_state = (rows.get('livestock_remainder') or {}).get('evaluation')
+        if seafood_state in DEFICIT and livestock_state in EXCESS:
+            advice = '建议用水产品替换部分畜禽肉，调整肉类搭配'
+            if protein_state in DEFICIT:
+                advice += '，同时补足总蛋白质'
+            elif protein_state in EXCESS:
+                advice += '，并控制总蛋白质摄入'
+        else:
+            actions = []
+            for r in meat:
+                label = '畜禽肉' if r['key']=='livestock_remainder' else '水产品'
+                if r['evaluation'] in DEFICIT:
+                    actions.append(('以'+label+'替换部分其他蛋白质来源') if protein_state in EXCESS else '增加'+label)
+                else:
+                    actions.append(('调整'+label+'占比并补足总蛋白质') if protein_state in DEFICIT else '减少'+label)
+            advice = '建议' + '、'.join(actions)
+        protein_parts.append('肉类中'+details+'；'+advice+'。')
+    if protein_parts or abnormal(rows.get('protein')):
+        protein = rows.get('protein') or {}
+        shown = {**protein, **(protein.get('display') or {})}
+        actual = finite_number(shown.get('actual'))
+        if actual is None or protein_state not in DEFICIT | EXCESS | NORMAL:
+            summary = '蛋白质：目前摄入或个人参考目标尚不完整，暂不判断增减。'
+        else:
+            direction = '建议增加摄入' if protein_state in DEFICIT else '建议减少摄入' if protein_state in EXCESS else '适中'
+            amount = f'{actual:.2f}'.rstrip('0').rstrip('.')
+            summary = f'蛋白质：目前 {amount} {shown.get("unit", "g/天")}，参考目标 {shown.get("target", "未确认")}；{direction}。'
+        items['protein'] = summary + ''.join(protein_parts)
+    carb = rows.get('carbohydrate') or {}
+    staple_keys = ('grains_remainder','beans_energy','tubers_energy')
+    if abnormal(carb) or any(abnormal(rows.get(k)) for k in staple_keys):
+        parts = [_row_advice(carb,'碳水化合物')] if abnormal(carb) else []
+        if energy_state in DEFICIT:
+            if carb.get('evaluation') in EXCESS:
+                parts.append('谷豆薯按总能量不足规则评价；总碳水已偏多，应优先用主食替换其他碳水来源，不叠加增加总碳水。')
+            else:
+                parts.append('谷豆薯摄入不足，优先补足主食总量并合理搭配。')
+        else:
+            details = []
+            for k,label in zip(staple_keys,('谷类','豆类','薯类')):
+                if abnormal(rows.get(k)):
+                    r = rows[k]
+                    details.append(label+r['evaluation'])
+            if details:
+                parts.append('谷豆薯：'+'、'.join(details)+'；在总碳水目标内调整搭配。')
+            if carb.get('evaluation') in EXCESS:
+                parts.append('以豆薯替换部分现有碳水来源，控制总碳水摄入。')
+            elif carb.get('evaluation') in DEFICIT:
+                parts.append('优先补足谷豆薯等主食来源。')
+        items['carbohydrate'] = ''.join(parts)
+    for key,label in (('calcium','钙'),('vegetables','蔬菜'),('fat','脂肪'),('eggs','蛋类'),('fruit','水果'),('nuts','坚果')):
+        if abnormal(rows.get(key)):
+            items[key] = _row_advice(rows[key],label)
+    sport = (report.get('user') or {}).get('projectType','')
+    priority = ['energy','protein','vegetables','calcium'] if sport == '体操' else ['energy','protein','calcium']
+    order = priority + [k for k in ('carbohydrate','vegetables','fat','eggs','fruit','nuts') if k not in priority]
+    result = [{'key':k,'text':items[k]} for k in order if k in items]
+    result.append({'key':'hydration','text':HYDRATION})
+    return result
 
 
 _REDUCE_STAPLES = re.compile(r'(?:减少|控制|限制|下调).{0,12}(?:主食|碳水|谷类|豆类|薯类)|(?:主食|碳水|谷类|豆类|薯类).{0,12}(?:减少|控制|限制|下调)')
@@ -121,13 +186,12 @@ def check_report_consistency(report):
         lower, upper = finite_number(row.get('target_min')), finite_number(row.get('target_max'))
         if (row.get('evaluation_basis') == 'personal_target' or key in {'protein', 'carbohydrate', 'fat', 'calcium'}) and actual is not None and (lower is not None or upper is not None):
             # Exactly the planner's arithmetic epsilon, not a dietary tolerance.
-            expected = ('不足' if lower is not None and actual < lower-1e-8 else
-                        '过多' if upper is not None and actual > upper+1e-8 else '适中')
-            if row.get('machine_evaluation') in {'不足', '过少', '过多', '适中', '适宜'} and row.get('machine_evaluation') != expected:
+            expected = amount_status(actual, lower, upper)
+            if row.get('machine_evaluation') in {'严重不足', '不足', '过少', '偏多', '过多', '适中', '适宜'} and row.get('machine_evaluation') != expected:
                 if automatic:
                     before = row.get('evaluation')
                     row.update(machine_evaluation=expected, evaluation=expected,
-                        gap=actual-lower if expected == '不足' else actual-upper if expected == '过多' else 0)
+                        gap=actual-lower if expected in DEFICIT else actual-upper if expected in EXCESS else 0)
                     if row.get('display'):
                         row['display']['gap'] = row['gap']
                     category = {'grains_remainder':'谷类','beans_energy':'豆类','tubers_energy':'薯类',
@@ -169,8 +233,8 @@ def check_report_consistency(report):
     low, ref = accepted_energy_bounds(energy)
     if actual is not None and ref and report.get('assessment_status') != 'needs_review':
         high = ref
-        expected_energy = '过少' if low is not None and actual < low else '过多' if actual > high else '适宜'
-        final_energy = {'适中':'适宜', '不足':'过少'}.get(energy.get('evaluation'), energy.get('evaluation'))
+        expected_energy = amount_status(energy.get('exact_value', actual), low, high, '适宜')
+        final_energy = {'适中':'适宜', '过少':'不足', '过多':'偏多'}.get(energy.get('evaluation'), energy.get('evaluation'))
         if final_energy != expected_energy:
             if automatic:
                 before = energy.get('evaluation')
@@ -219,11 +283,11 @@ def check_report_consistency(report):
 
     carb = rows.get('carbohydrate') or {}
     carb_state = carb.get('machine_evaluation') or carb.get('evaluation')
-    if carb_state in {'不足', '过少'} and any((rows.get(key) or {}).get('machine_evaluation') == '过多'
+    if carb_state in DEFICIT and any((rows.get(key) or {}).get('machine_evaluation') in EXCESS
                                              for key in ('grains_remainder', 'beans_energy', 'tubers_energy')):
         add('staple_mix_reallocation', 'staple_mix',
             '总碳水未达现有目标，同时部分主食能量占比超过原规则界限。总量与结构是不同约束，不能从单项占比推导主食总量增减；当前仅记录核查结果。')
-    conflict_pattern = _REDUCE_STAPLES if carb_state in {'不足', '过少'} else _INCREASE_STAPLES if carb_state == '过多' else None
+    conflict_pattern = _REDUCE_STAPLES if carb_state in DEFICIT else _INCREASE_STAPLES if carb_state in EXCESS else None
     # Only total-staple / carbohydrate direction is checked. Reducing one grain
     # while increasing beans/tubers is a valid reallocation, not a contradiction.
     candidates = list(report.get('suggestions') or []) + [report.get('interpretation') or '']

@@ -1,6 +1,7 @@
 // Display-only union. Do not alter evaluator rows or manual-review storage.
 export function evaluationAlertClass(value) {
-  return ['不足', '过少', '过多', '建议尽量不吃', '不建议吃零食', '能量占比偏低', '能量占比偏高', '占比偏低', '占比偏高'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
+  if (['不足', '严重不足', '过少', '能量占比偏低', '占比偏低'].includes(String(value ?? '').trim())) return 'evaluation-deficit'
+  return ['按照运动情况适量补充饮料', '偏多', '过多', '建议尽量不吃', '不建议吃零食', '能量占比偏低', '能量占比偏高', '占比偏低', '占比偏高'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
 }
 
 export function cleanDisplayText(text = '') {
@@ -29,7 +30,13 @@ export function evaluationRows(data) {
   for (const section of ['athlete_evaluation', 'food_standard_evaluation']) {
     for (const row of data?.[section]?.rows || []) rows.set(row.key, { ...row, ...(row.display || {}), note: cleanDisplayText(row.display?.note ?? row.note ?? '') })
   }
-  return [...rows.values()]
+  for (const row of reviewCategoryRows(data)) {
+    rows.set('category_' + row.key, {key:'category_' + row.key,label:row.label,actual:row.value === '—' ? null : row.value,unit:'g/天',target:'—',gap:null,evaluation:row.machineEvaluation})
+  }
+  const ordered = [...rows.values()], keys = ['grains_remainder','tubers_energy','beans_energy']
+  const staples = keys.map(key => rows.get(key)).filter(Boolean)
+  let index = 0
+  return ordered.map(row => keys.includes(row.key) ? staples[index++] : row)
 }
 
 export function evaluationWarnings(data) {
@@ -61,6 +68,11 @@ export function finalEvaluation(row, review = {}) {
   const field = ['protein', 'carbohydrate', 'fat', 'calcium'].includes(row.key)
     ? `${row.key}Evaluation` : `standard_${row.key}Evaluation`
   const value = Object.hasOwn(review, field) ? review[field] : row.evaluation
+  if (row.key === 'category_饮料') return '按照运动情况适量补充饮料'
+  if (row.key?.startsWith('category_')) {
+    const category = row.key.slice('category_'.length)
+    return Object.hasOwn(review.categoryEvaluations || {}, category) ? review.categoryEvaluations[category] : row.evaluation
+  }
   return row.key === 'snacks' ? '不建议吃零食' : value
 }
 

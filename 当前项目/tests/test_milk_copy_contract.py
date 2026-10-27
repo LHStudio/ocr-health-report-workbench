@@ -12,14 +12,15 @@ class MilkCopyContract(unittest.TestCase):
  def test_labels_and_advice_change_only_visible_milk_name(self):
   rows={r['key']:r for r in evaluation_rows(self.report)}
   self.assertEqual('奶类',rows['milk']['label']);self.assertEqual('肉蛋奶\n优质蛋白占比',rows['quality_protein']['label'])
-  milk=next(i['text'] for i in self.report['suggestion_items'] if i['key']=='milk');self.assertNotIn('鲜奶等价量',milk)
+  self.assertNotIn('milk',[i['key'] for i in self.report['suggestion_items']])
+  self.assertNotIn('奶类适中',''.join(self.report['suggestions']))
  def test_pdf_removes_extra_milk_line_and_breaks_label_after_milk(self):
   before=copy.deepcopy(self.report)
   with tempfile.TemporaryDirectory() as t:
    for style in ['modern','legacy']:
     p=Path(t)/(style+'.pdf');NutritionPDFBuilder().build(dict(self.report,report_style=style),p)
     with fitz.open(p) as d:
-     self.assertNotIn('鲜奶等价量',''.join(d[0].get_text().split()));self.assertIn('500.4',d[0].get_text())
+     self.assertNotIn('鲜奶等价量',''.join(d[0].get_text().split()));self.assertIn('体成分结果',d[0].get_text());self.assertIn('500.4',''.join(page.get_text() for page in d))
      page=next(x for x in d if '运动员专项膳食评价' in x.get_text());lines=[''.join(s['text'] for s in l['spans']) for b in page.get_text('dict')['blocks'] for l in b.get('lines',[])]
      self.assertIn('肉蛋奶',lines);self.assertIn('优质蛋白占比',lines)
   self.assertEqual(before,self.report)

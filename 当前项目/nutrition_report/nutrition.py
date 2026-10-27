@@ -1,5 +1,7 @@
 import json
 import math
+from .food_conversion import normalize_meals, attach_conversion_display
+from .report_policy import amount_status, finalize_report_copy
 from .energy_reference import bmr_bounds, energy_reference_text
 from .training_energy import training_expenditure
 from datetime import datetime, timezone, timedelta
@@ -41,11 +43,13 @@ class NutritionService:
             self.standards_policy = json.load(f)
 
     def build_report_data(self, front_json):
+        front_json = normalize_meals(front_json)
         user = front_json.get("user", {})
         meals = front_json.get("meals", [])
         auto_evaluation = front_json.get("autoEvaluation", True)
 
         merged_meals = self._merge_meals(meals)
+        recorded_meals = self._merge_meals([{**m, 'amount': m.get('recorded_amount', m.get('amount', 0))} for m in meals])
         food_details, nutrition_total, unmatched_foods = self._calculate_nutrition(merged_meals, user)
         category_result = self._build_category_result_from_foods(food_details)
         # Keep the established outward totals while comparing personal targets
@@ -64,7 +68,7 @@ class NutritionService:
         energy_gate = food_standard['energy_gate']
         # Total energy is descriptive only: it never suppresses macro findings.
         suggestions = priority_notes + suggestions
-        attach_gram_display(dict(nutrition=nutrition_total, athlete_evaluation=athlete, food_standard_evaluation=food_standard, foods=food_details), self.food_db, merged_meals)
+        attach_gram_display(dict(nutrition=nutrition_total, athlete_evaluation=athlete, food_standard_evaluation=food_standard, foods=food_details), self.food_db, merged_meals, recorded_meals=recorded_meals)
         category_keys = {'nuts': '坚果', 'beans_energy': '豆类', 'tubers_energy': '薯类',
                          'grains_remainder': '谷类', 'milk': '奶类', 'eggs': '蛋类',
                          'seafood': '水产品', 'livestock_remainder': '畜禽肉',
@@ -118,6 +122,8 @@ class NutritionService:
             snack['manual_evaluation_record'] = snack.get('evaluation')
         snack['evaluation'] = '不建议吃零食'
         category_result['零食']['evaluation'] = '不建议吃零食'
+        if '饮料' in category_result:
+            category_result['饮料']['evaluation'] = '按照运动情况适量补充饮料'
 
         generated = datetime.now(timezone(timedelta(hours=8)))
         report = {
@@ -141,7 +147,7 @@ class NutritionService:
         }
 
         # OCR 适配器写入的可追溯信息原样带到报告构建数据中。
-        for key in ("source_person_id", "source_foods", "conversion_warnings", "blank_food_policy"):
+        for key in ("body_composition", "resting_metabolism", "source_person_id", "source_foods", "conversion_warnings", "blank_food_policy"):
             if key in front_json:
                 report[key] = front_json[key]
 
@@ -174,8 +180,8 @@ class NutritionService:
         # Report availability is independent from optional mathematical-plan validation.
         report['recommendation_status'] = 'available'
         report['report_status'] = 'ready'
-        attach_gram_display(report, self.food_db, merged_meals)
-        report['energy_guidance'] = energy_summary(report)
+        attach_gram_display(report, self.food_db, merged_meals, recorded_meals=recorded_meals)
+        finalize_report_copy(report)
         # One shared 17-item structure for all energy states; explicit manual
         # advice remains verbatim and receives a separate consistency warning.
         if auto_evaluation or 'overallSuggestions' not in (front_json.get('manualEvaluations') or {}):
@@ -189,6 +195,8 @@ class NutritionService:
             report['report_checks']['status'] = 'review'
         from .release_gate import apply_release_gate
         apply_release_gate(report, self.standards_policy, self.food_db)
+        attach_conversion_display(report, front_json, self.food_db)
+        finalize_report_copy(report)
         return report
 
     def build_intake_preview(self, front_json):
@@ -271,6 +279,7 @@ class NutritionService:
                 "amount": round(grams, 1),
                 "category": food_info.get("category", ""),
                 "data_source": self.food_data_source.get("label", ""),
+                "exact_energy": energy,
                 "nutrition": {
                     "energy": round(energy, 2),
                     "protein": round(protein, 2),
@@ -299,7 +308,7 @@ class NutritionService:
         if bounds is not None:
             low, high = bounds
             energy_standard = f'{low:g}-{high:g}'
-            energy_eval = '过少' if total_energy < low else '过多' if total_energy > high else '适宜'
+            energy_eval = amount_status(total_energy, low, high, '适宜')
             standard_note = 'kcal/天 · BMR建议能量区间（按填写上下限）'
             if training['applied']:
                 standard_note = 'kcal/天 · 静息代谢＋日均运动净消耗（计划估算，非完整全天总消耗）'
@@ -308,6 +317,7 @@ class NutritionService:
         nutrition_total = {
             "energy": {
                 "value": round(total_energy, 2),
+                "exact_value": total_energy,
                 "standard": energy_standard,
                 "evaluation": energy_eval,
                 "standard_source": ('静息代谢＋运动净消耗' if training['applied'] else 'BMR建议能量区间') if bounds is not None else self.female_eer['title'],
@@ -384,12 +394,7 @@ class NutritionService:
         if not math.isfinite(value) or not math.isfinite(standard) or value < 0 or standard <= 0:
             return "-"
 
-        ratio = value / standard
-        if ratio < under_ratio:
-            return rules.get("under_label", "过少")
-        if ratio <= over_ratio:
-            return rules.get("adequate_label", "适宜")
-        return rules.get("over_label", "过多")
+        return amount_status(value, standard*under_ratio, standard*over_ratio, '适宜')
 
     def _build_category_result_from_foods(self, food_details):
         # 1. 先把配置里的所有分类都初始化为 0

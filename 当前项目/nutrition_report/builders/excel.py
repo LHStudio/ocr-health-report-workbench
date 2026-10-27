@@ -3,7 +3,8 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from pathlib import Path
 import math
 from copy import copy
-from ..energy_reference import energy_reference_text
+from ..energy_reference import energy_reference_text, energy_calculation_lines
+from ..measurements import body_composition_rows, resting_metabolism_rows
 from .presentation import evaluation_rows, evaluation_warnings, evaluation_context, report_alerts
 
 
@@ -16,7 +17,7 @@ class NutritionExcelBuilder:
 
         self._create_user_sheet(wb, data)
         self._create_food_details_sheet(wb, data)
-        self._create_category_sheet(wb, data)
+        self._create_body_composition_sheet(wb, data)
         self._create_nutrition_sheet(wb, data)
         self._create_suggestions_sheet(wb, data)
         self._create_conversion_notes_sheet(wb, data)
@@ -42,9 +43,9 @@ class NutritionExcelBuilder:
         for sheet in wb:
             for row in sheet:
                 for cell in row:
-                    if cell.value in ("不足", "过少", "过多", "不建议吃零食", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高"):
+                    if cell.value in ("严重不足", "不足", "过少", "偏多", "过多", "不建议吃零食", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高", "按照运动情况适量补充饮料"):
                         font = copy(cell.font)
-                        font.color = "DC2626"
+                        font.color = "F2994A" if cell.value in ("不足", "严重不足", "过少", "能量占比偏低", "占比偏低") else "DC2626"
                         cell.font = font
         ws = wb['建议']
         wb.move_sheet(ws, offset=len(wb.sheetnames)-1-wb.sheetnames.index('建议'))
@@ -164,48 +165,28 @@ class NutritionExcelBuilder:
         for idx, width in enumerate(col_widths, 1):
             ws.column_dimensions[chr(64 + idx)].width = width
 
-    def _create_category_sheet(self, wb, data):
-        ws = wb.create_sheet("分类评估")
-
-        header_fill = PatternFill(start_color="4F75B5", end_color="4F75B5", fill_type="solid")
-        header_font = Font(name="微软雅黑", size=11, bold=True, color="FFFFFF")
-        cell_font = Font(name="微软雅黑", size=10)
-        cell_alignment = Alignment(horizontal="center", vertical="center")
-        thin_border = Border(
-            left=Side(style="thin"),
-            right=Side(style="thin"),
-            top=Side(style="thin"),
-            bottom=Side(style="thin")
-        )
-
-        headers = ["分类", "摄入原重(g)", "评价"]
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=1, column=col, value=header)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = cell_alignment
-            cell.border = thin_border
-
-        category_result = data.get("category_result", {})
-        row_idx = 2
-        for cat, info in category_result.items():
-            ws.cell(row=row_idx, column=1, value=cat).font = cell_font
-            ws.cell(row=row_idx, column=1).alignment = cell_alignment
-            ws.cell(row=row_idx, column=1).border = thin_border
-
-            ws.cell(row=row_idx, column=2, value=info.get("value", "")).font = cell_font
-            ws.cell(row=row_idx, column=2).alignment = cell_alignment
-            ws.cell(row=row_idx, column=2).border = thin_border
-
-            ws.cell(row=row_idx, column=3, value=info.get("evaluation", "")).font = cell_font
-            ws.cell(row=row_idx, column=3).alignment = cell_alignment
-            ws.cell(row=row_idx, column=3).border = thin_border
-            row_idx += 1
-
-        ws.column_dimensions["A"].width = 15
-        ws.column_dimensions["B"].width = 15
-        ws.column_dimensions["C"].width = 15
-        ws.row_dimensions[1].height = 34
+    def _create_body_composition_sheet(self, wb, data):
+        ws = wb.create_sheet("体成分结果", 1)
+        ws.append(["项目", "实测结果"])
+        for label, value, unit in body_composition_rows(data):
+            ws.append([label, value])
+            if isinstance(value, (int, float)) and unit:
+                ws.cell(ws.max_row, 2).number_format = '0.##" ' + unit + '"'
+        ws.insert_rows(1)
+        ws['A1'] = '体成分结果'
+        ws['A1'].font = Font(name="微软雅黑", size=18, bold=True, color='183B4E')
+        ws.merge_cells('A1:B1')
+        for col, width in zip('AB', (38, 35)):
+            ws.column_dimensions[col].width = width
+        for row in ws:
+            for cell in row:
+                cell.font = Font(name="微软雅黑", size=11)
+                cell.alignment = Alignment(vertical="center", wrap_text=True)
+            ws.row_dimensions[row[0].row].height = 26
+        ws["A1"].font = Font(name="微软雅黑", size=18, bold=True, color="183B4E")
+        for cell in ws[2]:
+            cell.fill = PatternFill('solid', fgColor='4F75B5')
+            cell.font = Font(name="微软雅黑", size=11, bold=True, color='FFFFFF')
 
     def _create_nutrition_sheet(self, wb, data):
         ws = wb.create_sheet("营养总计")
@@ -241,12 +222,22 @@ class NutritionExcelBuilder:
             ("活动量", nutrition.get("energy", {}).get("activity_label") or "未选择", "", ""),
         ]
 
+        rows.extend((label, value, unit, '')
+                    for label, value, unit in resting_metabolism_rows(data))
+
+        rows.append(('推荐能量计算', '\n'.join(energy_calculation_lines(nutrition.get('energy', {}))), '', ''))
+        ea = (nutrition.get('energy', {}).get('availability') or {})
+        rows.append(('能量可用性（EA）', ea.get('text', '暂无法计算'), 'kcal/kg FFM/天', ea.get('evaluation', '-')))
+        rows.append(('能量解读', data.get('energy_guidance', ''), '', ''))
+
         for row_idx, row_data in enumerate(rows, 2):
             for col_idx, value in enumerate(row_data, 1):
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 cell.font = cell_font
-                cell.alignment = cell_alignment
+                cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                 cell.border = thin_border
+            if row_data[0] == "推荐能量计算":
+                ws.row_dimensions[row_idx].height = 125
 
         note_row = len(rows) + 2
         note = data.get("nutrition_disclaimer") or "以上营养成分仅根据记录饮食计算，不包含其他补充剂摄入。"

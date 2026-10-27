@@ -183,6 +183,7 @@ h1 { margin: 0; font-size: clamp(1.9rem, 4vw, 2.75rem); letter-spacing: -.04em; 
 
 /* Nutrition: emphasize insufficient/excessive evaluations, not normal or advisory text. */
 .nutrition-evaluation-review .evaluation-alert { color: #dc2626; }
+.nutrition-evaluation-review .evaluation-deficit { color: #F2994A; }
 
 /* Wider labels/targets/gaps, a compact final decision, and stable unit wrapping. */
 .athlete-evaluation-table { table-layout: fixed; min-width: 920px; }

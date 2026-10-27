@@ -133,7 +133,7 @@ class TrainingEnergyTest(unittest.TestCase):
     def test_manual_energy_preserved_and_inclusive_bounds(self):
         service=NutritionService(food_db={'fixture':dict(energy=1732,protein=1,carbohydrate=1,fat=1,calcium=1,category='谷类')})
         user=dict(projectType='足球',weight=60,bmrMin=1300,bmrMax=1500,trainingPhase='training',athleteType='team',age=22)
-        for amount, expected in [(100,'适宜'),(2256/1732*100,'适宜'),(99,'过少'),(131,'过多')]:
+        for amount, expected in [(100,'适宜'),(2256/1732*100,'适宜'),(99,'不足'),(131,'偏多')]:
             d=service.build_report_data(dict(user=user,meals=[dict(name='fixture',amount=amount)]))
             self.assertEqual(expected,d['nutrition']['energy']['evaluation'])
         d=service.build_report_data(dict(user=user,meals=[dict(name='fixture',amount=100)],
