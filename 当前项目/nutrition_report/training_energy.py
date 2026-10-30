@@ -89,6 +89,10 @@ def training_energy_note(energy):
         return '–'.join(f'{v:.1f}'.rstrip('0').rstrip('.') for v in values)
     if not t.get('applied'):
         return t.get('reason', '')
+    if energy.get('reference_type') == 'tdee':
+        return (f"{t['sport']}全天总消耗估算：NEAT＝10.5×{t['weight_kg']:g}＝{energy['neat_kcal']:.2f} kcal/天；"
+                f"TEF＝TDEE×9%；TDEE＝(静息代谢＋日均运动净消耗＋NEAT)÷0.91。{t['schedule']}。"
+                '运动消耗按训练计划估算，周净消耗除以7；非个人实测全天总消耗。')
     return (f"{t['sport']}训练计划估算：静息代谢区间{span(energy['resting_bounds'])} kcal/天＋"
             f"运动净消耗日均{span(t['net_daily_kcal'])} kcal/天（每周净{span(t['net_weekly_kcal'])}、"
             f"总{span(t['gross_weekly_kcal'])} kcal）。{t['schedule']}。{t['limitation']}")

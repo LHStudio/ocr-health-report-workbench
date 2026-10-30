@@ -44,7 +44,16 @@ class NutritionService:
 
     def build_report_data(self, front_json):
         front_json = normalize_meals(front_json)
-        user = front_json.get("user", {})
+        user = dict(front_json.get("user", {}))
+        # Identity-bound measurements supplied by the adapter take priority.
+        measured_ree = ((front_json.get('resting_metabolism') or {}).get('values') or {}).get('REE')
+        try:
+            measured_ree = float(measured_ree)
+        except (TypeError, ValueError):
+            measured_ree = None
+        if measured_ree is not None and math.isfinite(measured_ree) and measured_ree > 0:
+            user['restingMeasuredRee'] = measured_ree
+        front_json = {**front_json, 'user': user}
         meals = front_json.get("meals", [])
         auto_evaluation = front_json.get("autoEvaluation", True)
 
@@ -197,6 +206,13 @@ class NutritionService:
         apply_release_gate(report, self.standards_policy, self.food_db)
         attach_conversion_display(report, front_json, self.food_db)
         finalize_report_copy(report)
+        if nutrition_total['energy'].get('reference_type') == 'tdee_pending':
+            issue = nutrition_total['energy']['tdee_pending_reason'] + '；已计算NEAT，TDEE及TEF待补充后计算。'
+            report['assessment_status'] = report['report_status'] = 'needs_review'
+            report['assessment_issues'].append(issue)
+            report['report_checks']['warnings'].append(issue)
+            report['report_checks']['status'] = 'review'
+            nutrition_total['energy']['evaluation'] = '待补充数据'
         return report
 
     def build_intake_preview(self, front_json):
@@ -293,8 +309,13 @@ class NutritionService:
         bounds = bmr_bounds(user)
         resting = bounds
         training = training_expenditure(user, resting)
+        try:
+            weight = float(user.get('weight'))
+        except (TypeError, ValueError):
+            weight = 0
+        neat = 10.5 * weight if math.isfinite(weight) and weight > 0 else None
         if training['applied']:
-            bounds = tuple(resting[i] + training['net_daily_kcal'][i] for i in (0, 1))
+            bounds = tuple((resting[i] + training['net_daily_kcal'][i] + neat) / 0.91 for i in (0, 1))
         else:
             # A resting-only interval is not the confirmed daily reference.
             bounds = None
@@ -311,7 +332,7 @@ class NutritionService:
             energy_eval = amount_status(total_energy, low, high, '适宜')
             standard_note = 'kcal/天 · BMR建议能量区间（按填写上下限）'
             if training['applied']:
-                standard_note = 'kcal/天 · 静息代谢＋日均运动净消耗（计划估算，非完整全天总消耗）'
+                standard_note = 'kcal/天 · TDEE＝(静息代谢＋日均运动净消耗＋NEAT)÷0.91（估算）'
             activity_label = ''
 
         nutrition_total = {
@@ -320,10 +341,17 @@ class NutritionService:
                 "exact_value": total_energy,
                 "standard": energy_standard,
                 "evaluation": energy_eval,
-                "standard_source": ('静息代谢＋运动净消耗' if training['applied'] else 'BMR建议能量区间') if bounds is not None else self.female_eer['title'],
-                "reference_type": 'bmr_plus_net' if training['applied'] else 'bmr' if bounds is not None else 'eer',
+                "standard_source": ('TDEE（含NEAT和TEF）' if training['applied'] else 'BMR建议能量区间') if bounds is not None else self.female_eer['title'],
+                "reference_type": 'tdee' if training['applied'] else 'bmr' if bounds is not None else 'eer',
                 "resting_bounds": list(resting) if resting is not None else None,
                 "training_expenditure": training,
+                "resting_source": '个人REE实测' if user.get('restingMeasuredRee') is not None else '个人BMR参考区间' if resting else '缺少REE及BMR',
+                "neat_kcal": neat,
+                "neat_kcal_per_kg_day": 10.5 if neat is not None else None,
+                "tef_fraction": 0.09 if training['applied'] else None,
+                "tef_kcal": [value * 0.09 for value in bounds] if training['applied'] else None,
+                "tdee_formula": '(BMR + EEE_daily + 10.5 * weight_kg) / 0.91' if training['applied'] else None,
+                "tdee_source": '用户指定NEAT/TEF计算口径（2026-10-30）；优先个人REE实测，否则BMR参考区间；EEE沿用个人训练计划日均净消耗' if training['applied'] else None,
                 "standard_min": bounds[0] if bounds is not None else None,
                 "standard_max": bounds[1] if bounds is not None else None,
                 "standard_note": standard_note,
@@ -338,6 +366,13 @@ class NutritionService:
                 "evaluation": "待专项评价"
             }
         }
+
+        if neat is not None and not training['applied'] and (resting is not None or training.get('net_daily_kcal') is not None):
+            missing = '缺少个人REE及BMR' if resting is None else '缺少适用的日均运动消耗EEE（康复期等需个人训练方案）'
+            nutrition_total['energy'].update(reference_type='tdee_pending', standard=None,
+                tdee_pending_reason=missing,
+                standard_source=missing+'，TDEE及TEF待计算', evaluation='待补充数据',
+                standard_note='NEAT可按体重计算；未将EER或分组均值代替个人REE/BMR。')
 
         return details, nutrition_total, unmatched_foods
 

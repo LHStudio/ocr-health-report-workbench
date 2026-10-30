@@ -5,7 +5,7 @@ import math
 def accepted_energy_bounds(energy):
     """One legacy comparison band; release approval separately checks its scope."""
     try:
-        if energy.get('reference_type') in {'bmr', 'bmr_plus_net'}:
+        if energy.get('reference_type') in {'bmr', 'bmr_plus_net', 'tdee'}:
             low, high = float(energy['standard_min']), float(energy['standard_max'])
         else:
             value = float(energy['standard'])
@@ -18,6 +18,14 @@ def accepted_energy_bounds(energy):
 
 
 def bmr_bounds(user):
+    measured = user.get('restingMeasuredRee')
+    if measured is not None:
+        try:
+            measured = float(measured)
+        except (TypeError, ValueError):
+            measured = None
+        if measured is not None and math.isfinite(measured) and measured > 0:
+            return measured, measured
     raw = [user.get('bmrMin'), user.get('bmrMax')]
     if all(v is None or str(v).strip() == '' for v in raw):
         return None
@@ -31,7 +39,7 @@ def bmr_bounds(user):
 
 
 def energy_reference_text(energy):
-    if energy.get('reference_type') in {'bmr', 'bmr_plus_net'}:
+    if energy.get('reference_type') in {'bmr', 'bmr_plus_net', 'tdee'}:
         return f"{energy['standard_min']:g}-{energy['standard_max']:g}"
     value = energy.get('standard')
     return str(value) if value not in (None, '') else '-'
@@ -41,6 +49,22 @@ def energy_calculation_lines(energy):
     """Expand the same correlated MET endpoints used for the reference interval."""
     training = energy.get('training_expenditure') or {}
     resting = energy.get('resting_bounds')
+    if energy.get('reference_type') == 'tdee_pending':
+        return [f"NEAT＝10.5×体重＝{energy['neat_kcal']:.2f} kcal/天",
+                energy.get('tdee_pending_reason', '缺少计算数据')+'；TDEE与TEF暂无法计算。',
+                'TDEE＝(静息代谢＋EEE日均＋NEAT)÷0.91；TEF＝TDEE×9%。']
+    if energy.get('reference_type') == 'tdee' and training.get('applied') and resting:
+        neat = energy['neat_kcal']
+        lines = ['推荐能量TDEE＝(静息代谢＋EEE日均＋NEAT)÷0.91',
+                 f"NEAT＝10.5×{training['weight_kg']:g} kg＝{neat:.2f} kcal/天"]
+        for i, label in enumerate(('下限', '上限')):
+            total = energy['standard_min' if i == 0 else 'standard_max']
+            eee = training['net_daily_kcal'][i]
+            lines.append(f'{label}：({resting[i]:g}＋{eee:.2f}＋{neat:.2f})÷0.91＝{total:.2f}')
+        lines.append(f"TEF＝TDEE×9%＝{energy['tef_kcal'][0]:.2f}–{energy['tef_kcal'][1]:.2f} kcal/天")
+        source = 'REE实测' if energy.get('resting_source') == '个人REE实测' else 'BMR区间'
+        lines.append(f'静息代谢采用{source}；EEE＝周净消耗÷7（估算）。')
+        return lines
     if energy.get('reference_type') == 'bmr_plus_net' and training.get('applied') and resting:
         factor = 3.5 * training['weight_kg'] / 200 / 7
         combinations = [(factor * (met-1) * (total-strength), factor * (lift-1) * strength)

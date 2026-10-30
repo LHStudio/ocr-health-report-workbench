@@ -27,7 +27,7 @@ def positive(value):
 
 def energy_bounds(energy):
     """Use interval reference (resting + net if applicable), otherwise personal EER."""
-    if energy.get('reference_type') in {'bmr', 'bmr_plus_net'}:
+    if energy.get('reference_type') in {'bmr', 'bmr_plus_net', 'tdee'}:
         low, high = positive(energy.get('standard_min')), positive(energy.get('standard_max'))
         return (low, high) if low is not None and high is not None else (None, None)
     value = positive(energy.get('standard'))

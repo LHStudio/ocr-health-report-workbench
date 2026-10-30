@@ -510,7 +510,7 @@ class NutritionPDFBuilder:
     def _format_energy_reference(energy: dict) -> str:
         value = escape(_as_text(energy.get("value", "-")))
         standard = energy.get("standard")
-        if energy.get('reference_type') == 'bmr_plus_net':
+        if energy.get('reference_type') in {'bmr_plus_net', 'tdee'}:
             return f"{value} kcal/day<br/>参考区间 {escape(energy_reference_text(energy))} kcal/天"
         if energy.get('reference_type') == 'bmr':
             return f"{value} kcal/day<br/>建议能量区间 {escape(energy_reference_text(energy))} kcal/天"

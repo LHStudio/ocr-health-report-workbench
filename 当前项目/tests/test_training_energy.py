@@ -17,11 +17,12 @@ class TrainingEnergyTest(unittest.TestCase):
 
     def test_football_gross_and_net_and_daily_reference(self):
         e=self.report()['nutrition']['energy']
-        self.assertEqual('bmr_plus_net',e['reference_type'])
+        self.assertEqual('tdee',e['reference_type'])
         t=e['training_expenditure']
         self.assertEqual([3780,6048],t['gross_weekly_kcal'])
         self.assertEqual([3024,5292],t['net_weekly_kcal'])
-        self.assertEqual([1732,2256],[e['standard_min'],e['standard_max']])
+        self.assertAlmostEqual((1300+432+630)/.91,e['standard_min'])
+        self.assertAlmostEqual((1500+756+630)/.91,e['standard_max'])
         self.assertEqual([1300,1500],e['resting_bounds'])
 
     def test_football_two_and_half_hours(self):
@@ -47,34 +48,35 @@ class TrainingEnergyTest(unittest.TestCase):
                      dict(trainingPhase='competition'),dict(currentStatus='康复期'),dict(weight='')]:
             with self.subTest(user=user):
                 e=self.report(**user)['nutrition']['energy']
-                self.assertNotEqual('bmr_plus_net',e['reference_type'])
+                self.assertNotEqual('tdee',e['reference_type'])
                 self.assertTrue(e['training_expenditure']['reason'])
 
     def test_gymnastics_user_example_and_net_daily_target(self):
         e = self.report(projectType='体操')['nutrition']['energy']
         t = e['training_expenditure']
-        self.assertEqual('bmr_plus_net', e['reference_type'])
+        self.assertEqual('tdee', e['reference_type'])
         self.assertEqual([720,720], t['total_weekly_minutes'])
         self.assertEqual([0,0], t['strength_weekly_minutes'])
         self.assertEqual([2872.8,2872.8], t['gross_weekly_kcal'])
         self.assertAlmostEqual(478.8, t['gross_weekly_kcal'][0]/6)
         self.assertEqual([2116.8,2116.8], t['net_weekly_kcal'])
         self.assertAlmostEqual(302.4, t['net_daily_kcal'][0])
-        self.assertEqual([1602.4,1802.4], [e['standard_min'],e['standard_max']])
+        self.assertAlmostEqual((1602.4+630)/.91,e['standard_min'])
+        self.assertAlmostEqual((1802.4+630)/.91,e['standard_max'])
 
     def test_gymnastics_preserves_overrides_missing_bmr_and_training_gates(self):
         e = self.report(projectType='体操',trainingPlan={'weeklyMinutes':0})['nutrition']['energy']
-        self.assertEqual([1300,1500], [e['standard_min'],e['standard_max']])
+        self.assertEqual([(1300+630)/.91,(1500+630)/.91], [e['standard_min'],e['standard_max']])
         e = self.report(projectType='体操',weight=120)['nutrition']['energy']
         self.assertEqual([4233.6,4233.6], e['training_expenditure']['net_weekly_kcal'])
         for updates in [dict(bmrMin='',bmrMax=''),dict(trainingPhase='competition'),
                         dict(currentStatus='康复期'),dict(weight='')]:
             e = self.report(projectType='体操',**updates)['nutrition']['energy']
-            self.assertNotEqual('bmr_plus_net',e['reference_type'])
+            self.assertNotEqual('tdee',e['reference_type'])
 
     def test_zero_attendance_and_invalid_plan(self):
         e=self.report(trainingPlan={'weeklyMinutes':0})['nutrition']['energy']
-        self.assertEqual([1300,1500],[e['standard_min'],e['standard_max']])
+        self.assertEqual([(1300+630)/.91,(1500+630)/.91],[e['standard_min'],e['standard_max']])
         for plan in [{'weeklyMinutes':-1},{'weeklyMinutes':float('nan')},
                      {'weeklyMinutes':60,'strengthMinutes':61}, {'sportMET':0}, {'foo':2}]:
             with self.subTest(plan=plan),self.assertRaises(ValueError):self.report(trainingPlan=plan)
@@ -83,9 +85,9 @@ class TrainingEnergyTest(unittest.TestCase):
         a=self.report(weight=120)['nutrition']['energy']
         self.assertEqual([6048,10584],a['training_expenditure']['net_weekly_kcal'])
         from nutrition_report.energy_reference import energy_reference_text
-        self.assertEqual('1732-2256',energy_reference_text(self.report()['nutrition']['energy']))
+        self.assertEqual('2595.6-3171.43',energy_reference_text(self.report()['nutrition']['energy']))
         fat=next(r for r in self.report()['athlete_evaluation']['rows'] if r['key']=='fat')
-        self.assertAlmostEqual(1732*.2/9,fat['target_min'])
+        self.assertAlmostEqual(((1300+432+630)/.91)*.2/9,fat['target_min'])
 
     def test_adapter_preserves_personal_override(self):
         p=dict(id='test',general={'姓名':'测试','训练计划':{'weeklyMinutes':600}})
@@ -122,19 +124,21 @@ class TrainingEnergyTest(unittest.TestCase):
                 p=Path(tmp)/(style+'.pdf')
                 NutritionPDFBuilder().build(d,p)
                 with fitz.open(p) as pdf:text=''.join(page.get_text() for page in pdf)
-                self.assertIn('1732-2256',text)
-                self.assertNotIn('运动净消耗',text)
+                self.assertIn('2595.6-3171.43',text)
+                self.assertIn('9%',text)
+                self.assertIn('0.91',text)
                 self.assertNotIn('女性EER',text)
             p=Path(tmp)/'report.xlsx';NutritionExcelBuilder().build(d,p)
             w=load_workbook(p);text=' '.join(str(c.value) for s in w for row in s for c in row);w.close()
-            self.assertIn('1732-2256',text)
-            self.assertNotIn('运动净消耗',text)
+            self.assertIn('2595.6-3171.43',text)
+            self.assertIn('9%',text)
 
     def test_manual_energy_preserved_and_inclusive_bounds(self):
-        service=NutritionService(food_db={'fixture':dict(energy=1732,protein=1,carbohydrate=1,fat=1,calcium=1,category='谷类')})
         user=dict(projectType='足球',weight=60,bmrMin=1300,bmrMax=1500,trainingPhase='training',athleteType='team',age=22)
-        for amount, expected in [(100,'适宜'),(2256/1732*100,'适宜'),(99,'不足'),(131,'偏多')]:
-            d=service.build_report_data(dict(user=user,meals=[dict(name='fixture',amount=amount)]))
+        low,high=(1300+432+630)/.91,(1500+756+630)/.91
+        for energy, expected in [(low,'适宜'),(high,'适宜'),(low-1,'不足'),(high+1,'偏多')]:
+            service=NutritionService(food_db={'fixture':dict(energy=energy,protein=1,carbohydrate=1,fat=1,calcium=1,category='谷类')})
+            d=service.build_report_data(dict(user=user,meals=[dict(name='fixture',amount=100)]))
             self.assertEqual(expected,d['nutrition']['energy']['evaluation'])
         d=service.build_report_data(dict(user=user,meals=[dict(name='fixture',amount=100)],
             autoEvaluation=False,manualEvaluations={'energyEvaluation':'人工保留'}))
@@ -151,8 +155,8 @@ class TrainingEnergyTest(unittest.TestCase):
 
     def test_nontraining_status_or_explicit_blank_blocks_default(self):
         for status in ['比赛期','赛期','不训练','休息期','非训练期']:
-            self.assertNotEqual('bmr_plus_net',self.report(currentStatus=status)['nutrition']['energy']['reference_type'])
-        self.assertNotEqual('bmr_plus_net',self.report(trainingPhase='',currentStatus='正常训练')['nutrition']['energy']['reference_type'])
+            self.assertNotEqual('tdee',self.report(currentStatus=status)['nutrition']['energy']['reference_type'])
+        self.assertNotEqual('tdee',self.report(trainingPhase='',currentStatus='正常训练')['nutrition']['energy']['reference_type'])
 
     def test_override_plan_wins_general_minutes_and_zero_is_retained(self):
         p=dict(id='test',general={'每周训练总分钟':600,'每周力量分钟':60,'训练计划':{'sportMET':6}})
