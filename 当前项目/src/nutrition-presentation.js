@@ -1,7 +1,7 @@
 // Display-only union. Do not alter evaluator rows or manual-review storage.
 export function evaluationAlertClass(value) {
   if (['不足', '严重不足', '过少', '能量占比偏低', '占比偏低'].includes(String(value ?? '').trim())) return 'evaluation-deficit'
-  return ['按照运动情况适量补充饮料', '偏多', '过多', '建议尽量不吃', '不建议吃零食', '能量占比偏低', '能量占比偏高', '占比偏低', '占比偏高'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
+  return ['按照运动情况适当补充运动饮料', '偏多', '过多', '建议尽量不吃', '不建议吃零食', '能量占比偏低', '能量占比偏高', '占比偏低', '占比偏高'].includes(String(value ?? '').trim()) ? 'evaluation-alert' : ''
 }
 
 export function cleanDisplayText(text = '') {
@@ -68,7 +68,7 @@ export function finalEvaluation(row, review = {}) {
   const field = ['protein', 'carbohydrate', 'fat', 'calcium'].includes(row.key)
     ? `${row.key}Evaluation` : `standard_${row.key}Evaluation`
   const value = Object.hasOwn(review, field) ? review[field] : row.evaluation
-  if (row.key === 'category_饮料') return '按照运动情况适量补充饮料'
+  if (row.key === 'category_饮料') return '按照运动情况适当补充运动饮料'
   if (row.key?.startsWith('category_')) {
     const category = row.key.slice('category_'.length)
     return Object.hasOwn(review.categoryEvaluations || {}, category) ? review.categoryEvaluations[category] : row.evaluation

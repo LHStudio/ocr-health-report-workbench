@@ -48,7 +48,7 @@ def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
     if str(value).strip() in {'不足', '严重不足', '过少', '能量占比偏低', '占比偏低'}:
         return f'<font color="#F2994A">{text}</font>'
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {'偏多', '过多', '不建议吃零食', '按照运动情况适量补充饮料', '能量占比偏高', '占比偏高'} else text
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {'偏多', '过多', '不建议吃零食', '按照运动情况适当补充运动饮料', '能量占比偏高', '占比偏高'} else text
 
 
 def _table_text(value: object, *, alert=True) -> str:
@@ -244,7 +244,7 @@ class NutritionPDFBuilder:
         profile = Table([
             [*profile_cell('姓名', user.get('name') or ''), *profile_cell('年龄', age+' 岁' if age else '')],
             [*profile_cell('项目种类', user.get('projectType') or ''), *profile_cell('训练年限', user.get('trainingYears') or '')],
-            [*profile_cell('当前状态', user.get('currentStatus') or ''), *profile_cell('去脂体重（瘦体重）', ffm+' kg' if ffm else '')],
+            [*profile_cell('当前状态', user.get('currentStatus') or ''), *profile_cell('去脂体重（瘦体重）', ffm+' kg'+('（估算）' if user.get('fatFreeMassEstimated') else '') if ffm else '')],
         ], colWidths=[30*mm, 57*mm, 43*mm, 44*mm], splitInRow=1)
         profile.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),pale),
             ('VALIGN',(0,0),(-1,-1),'TOP'), ('LEFTPADDING',(0,0),(-1,-1),10),

@@ -13,6 +13,54 @@ from nutrition_report.builders.presentation import evaluation_rows
 
 
 class MeasurementReportTest(unittest.TestCase):
+    def test_approved_estimates_are_identity_bound_and_preserve_measurements(self):
+        from copy import deepcopy
+        from nutrition_report.measurements import apply_approved_estimates
+        person={'id':'ocr/test','general':{'姓名':'测试甲'}}
+        user={'projectType':'足球','gender':'female','weight':60,'fatFreeMass':''}
+        record=dict(name='测试甲',person_id='ocr/test',project_type='足球',gender='female',approved=True,
+                    values={'ffm':45,'REE':1300},method='同项目实测均值',sample_counts={'ffm':10,'REE':5})
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/'estimates.json';p.write_text(json.dumps({'records':[record]}),encoding='utf-8')
+            old=deepcopy(user)
+            m,u=apply_approved_estimates(person,{},user,p)
+            self.assertEqual(old,user)
+            self.assertEqual(45,u['fatFreeMass']);self.assertTrue(u['fatFreeMassEstimated'])
+            self.assertIn('ffm',m['body_composition']['estimated_fields'])
+            self.assertIn('REE',m['resting_metabolism']['estimated_fields'])
+            self.assertEqual(({},old),apply_approved_estimates({**person,'id':'other'},{},user,p))
+            self.assertEqual(({},old),apply_approved_estimates({**person,'general':{'姓名':'测试乙'}},{},user,p))
+            measured={'body_composition':{'values':{'ffm':47}},'resting_metabolism':{'values':{'REE':1450}}}
+            self.assertEqual((measured,old),apply_approved_estimates(person,measured,user,p))
+            m,u=apply_approved_estimates(person,{},dict(user,fatFreeMass=48,bmrMin=1200,bmrMax=1400),p)
+            self.assertEqual({},m);self.assertEqual(48,u['fatFreeMass'])
+            p.write_text(json.dumps({'records':[dict(record,approved=False)]}),encoding='utf-8')
+            self.assertEqual(({},old),apply_approved_estimates(person,{},user,p))
+
+    def test_estimated_ree_is_used_and_labeled_without_claiming_measurement(self):
+        service=NutritionReportService(prefer_cloud=False)
+        d=service.build_report_data({'user':{'name':'测试甲','age':22,'projectType':'足球','weight':60,
+            'gender':'female','athleteType':'team','trainingPhase':'training','fatFreeMass':45,'fatFreeMassEstimated':True},
+            'body_composition':{'values':{'ffm':45},'estimated_fields':{'ffm':{'method':'均值'}}},
+            'resting_metabolism':{'values':{'REE':1300},'estimated_fields':{'REE':{'method':'均值'}}},
+            'meals':[{'name':'米饭','amount':800}]})
+        e=d['nutrition']['energy']
+        self.assertEqual('同项目REE均值估算',e['resting_source'])
+        self.assertNotIn('restingMeasuredRee',d['user'])
+        self.assertEqual([1300,1300],e['resting_bounds'])
+        self.assertNotEqual('missing',e['availability']['status'])
+        self.assertIn('估算',body_composition_rows(d)[5][0])
+        self.assertIn('估算',resting_metabolism_rows(d)[0][0])
+        with tempfile.TemporaryDirectory() as tmp:
+            for style in ['modern','legacy']:
+                d['report_style']=style;p=Path(tmp)/(style+'.pdf');service.pdf_builder.build(d,p)
+                with fitz.open(p) as doc:text=''.join(page.get_text() for page in doc)
+                self.assertIn('45 kg（估算）',text)
+                self.assertIn('1300.00 kcal/天（估算）',text)
+            p=Path(tmp)/'report.xlsx';service.excel_builder.build(d,p)
+            w=openpyxl.load_workbook(p);text=' '.join(str(c.value) for s in w for row in s for c in row);w.close()
+            self.assertIn('45 kg（估算）',text);self.assertIn('静息能量消耗（REE）（估算）',text)
+
     def test_energy_equations_match_correlated_reference_endpoints(self):
         from nutrition_report.training_energy import training_expenditure
         from nutrition_report.energy_reference import energy_calculation_lines

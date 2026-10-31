@@ -42,7 +42,7 @@ def _evaluation_text(value: object) -> str:
     text = escape(_as_text(value))
     if str(value).strip() in {'不足', '严重不足', '过少', '能量占比偏低', '占比偏低'}:
         return f'<font color="#F2994A">{text}</font>'
-    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {'偏多', '过多', '不建议吃零食', '按照运动情况适量补充饮料', '能量占比偏高', '占比偏高'} else text
+    return f'<font color="#DC2626">{text}</font>' if str(value).strip() in {'偏多', '过多', '不建议吃零食', '按照运动情况适当补充运动饮料', '能量占比偏高', '占比偏高'} else text
 
 
 def _table_text(value: object, *, alert=True) -> str:
@@ -222,6 +222,8 @@ class NutritionPDFBuilder:
         age_display = f"{escape(age)} 岁" if age else ""
         fat_free_mass = _as_text(user.get("fatFreeMass")).strip()
         fat_free_mass_display = f"{escape(fat_free_mass)} kg" if fat_free_mass else ""
+        if fat_free_mass and user.get('fatFreeMassEstimated'):
+            fat_free_mass_display += '（估算）'
         label_color = "#7E74B7"
 
         def profile_line(label: str, value: object) -> Paragraph:

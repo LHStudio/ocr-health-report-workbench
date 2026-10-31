@@ -52,7 +52,8 @@ class NutritionService:
         except (TypeError, ValueError):
             measured_ree = None
         if measured_ree is not None and math.isfinite(measured_ree) and measured_ree > 0:
-            user['restingMeasuredRee'] = measured_ree
+            estimated = 'REE' in (front_json.get('resting_metabolism') or {}).get('estimated_fields', {})
+            user['restingEstimatedRee' if estimated else 'restingMeasuredRee'] = measured_ree
         front_json = {**front_json, 'user': user}
         meals = front_json.get("meals", [])
         auto_evaluation = front_json.get("autoEvaluation", True)
@@ -132,7 +133,7 @@ class NutritionService:
         snack['evaluation'] = '不建议吃零食'
         category_result['零食']['evaluation'] = '不建议吃零食'
         if '饮料' in category_result:
-            category_result['饮料']['evaluation'] = '按照运动情况适量补充饮料'
+            category_result['饮料']['evaluation'] = '按照运动情况适当补充运动饮料'
 
         generated = datetime.now(timezone(timedelta(hours=8)))
         report = {
@@ -345,13 +346,13 @@ class NutritionService:
                 "reference_type": 'tdee' if training['applied'] else 'bmr' if bounds is not None else 'eer',
                 "resting_bounds": list(resting) if resting is not None else None,
                 "training_expenditure": training,
-                "resting_source": '个人REE实测' if user.get('restingMeasuredRee') is not None else '个人BMR参考区间' if resting else '缺少REE及BMR',
+                "resting_source": '个人REE实测' if user.get('restingMeasuredRee') is not None else '同项目REE均值估算' if user.get('restingEstimatedRee') is not None else '个人BMR参考区间' if resting else '缺少REE及BMR',
                 "neat_kcal": neat,
                 "neat_kcal_per_kg_day": 10.5 if neat is not None else None,
                 "tef_fraction": 0.09 if training['applied'] else None,
                 "tef_kcal": [value * 0.09 for value in bounds] if training['applied'] else None,
                 "tdee_formula": '(BMR + EEE_daily + 10.5 * weight_kg) / 0.91' if training['applied'] else None,
-                "tdee_source": '用户指定NEAT/TEF计算口径（2026-10-30）；优先个人REE实测，否则BMR参考区间；EEE沿用个人训练计划日均净消耗' if training['applied'] else None,
+                "tdee_source": ('用户批准同项目REE实测均值估算；NEAT/TEF及训练计划计算口径不变' if user.get('restingEstimatedRee') is not None else '用户指定NEAT/TEF计算口径（2026-10-30）；优先个人REE实测，否则BMR参考区间；EEE沿用个人训练计划日均净消耗') if training['applied'] else None,
                 "standard_min": bounds[0] if bounds is not None else None,
                 "standard_max": bounds[1] if bounds is not None else None,
                 "standard_note": standard_note,

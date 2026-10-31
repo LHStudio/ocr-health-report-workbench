@@ -21,6 +21,8 @@ def energy_summary_lines(energy):
         lines = []
         if kind == 'tdee':
             lines.append(f"推荐能量（TDEE）：{energy_reference_text(energy)} kcal/天")
+            if energy.get('resting_source') == '同项目REE均值估算':
+                lines.append(f"静息能量消耗（REE）：{energy['resting_bounds'][0]:.2f} kcal/天（估算）")
         if energy.get('neat_kcal') is not None:
             lines.append(f"非运动性活动产热（NEAT）：{energy['neat_kcal']:.2f} kcal/天")
         tef = energy.get('tef_kcal')
@@ -53,6 +55,8 @@ def accepted_energy_bounds(energy):
 
 def bmr_bounds(user):
     measured = user.get('restingMeasuredRee')
+    if measured is None:
+        measured = user.get('restingEstimatedRee')
     if measured is not None:
         try:
             measured = float(measured)

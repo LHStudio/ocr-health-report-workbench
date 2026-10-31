@@ -67,7 +67,7 @@ class WeightShareTest(unittest.TestCase):
         keys=[r['key'] for r in evaluation_rows(data)]
         self.assertLess(keys.index('grains_remainder'),keys.index('tubers_energy'))
         self.assertLess(keys.index('tubers_energy'),keys.index('beans_energy'))
-        self.assertEqual('按照运动情况适量补充饮料',data['category_result']['饮料']['evaluation'])
+        self.assertEqual('按照运动情况适当补充运动饮料',data['category_result']['饮料']['evaluation'])
         with tempfile.TemporaryDirectory() as tmp:
             for style in ('modern','legacy'):
                 pdf=Path(tmp)/(style+'.pdf')
@@ -92,7 +92,7 @@ class WeightShareTest(unittest.TestCase):
             for row in w['运动员专项评价']:
                 if row[-1].value in ('不足','严重不足'):
                     self.assertEqual('00F2994A',row[-1].font.color.rgb)
-                if row[-1].value=='按照运动情况适量补充饮料':
+                if row[-1].value=='按照运动情况适当补充运动饮料':
                     self.assertEqual('00DC2626',row[-1].font.color.rgb)
             w.close()
 

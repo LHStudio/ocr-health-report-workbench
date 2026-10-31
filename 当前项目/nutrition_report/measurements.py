@@ -1,6 +1,8 @@
 """Persisted, identity-bound examination results; never infer missing measurements."""
 import json
 import os
+import math
+from copy import deepcopy
 from pathlib import Path
 
 BODY_FIELDS = (
@@ -40,8 +42,9 @@ def load_person_measurements(person, path=None):
 
 
 def body_composition_rows(data):
-    values = (data.get('body_composition') or {}).get('values') or {}
-    return [(label, values.get(key), unit) for key, label, unit in BODY_FIELDS]
+    record = data.get('body_composition') or {}
+    values = record.get('values') or {}
+    return [(label + ('（估算）' if key in record.get('estimated_fields', {}) else ''), values.get(key), unit) for key, label, unit in BODY_FIELDS]
 
 
 def resting_metabolism_rows(data):
@@ -49,7 +52,49 @@ def resting_metabolism_rows(data):
     if not record:
         return []
     values = record.get('values') or {}
-    return [(label, values.get(key), unit) for key, label, unit in METABOLIC_FIELDS]
+    return [(label + ('（估算）' if key in record.get('estimated_fields', {}) else ''), values.get(key), unit) for key, label, unit in METABOLIC_FIELDS]
+
+
+def apply_approved_estimates(person, measurements, user, path=None):
+    """Apply only explicitly approved identity-bound estimates; retain real data."""
+    path = Path(path or os.environ.get('NUTRITION_ESTIMATES_PATH') or
+                Path(__file__).resolve().parents[1] / 'data' / 'nutrition_measurement_estimates.json')
+    result, user = deepcopy(measurements), dict(user)
+    if not path.exists():
+        return result, user
+    general = person.get('general') or {}
+    matches = [r for r in json.loads(path.read_text('utf-8')).get('records', [])
+               if r.get('approved') is True and r.get('person_id') == str(person.get('id') or '').strip()
+               and r.get('name') == str(general.get('姓名') or '').strip()
+               and r.get('project_type') == user.get('projectType') and r.get('gender') == user.get('gender')]
+    if len(matches) > 1:
+        raise ValueError('估算存档存在重复身份，请核对')
+    if not matches:
+        return result, user
+    estimate = matches[0]
+    for field, section in [('ffm', 'body_composition'), ('REE', 'resting_metabolism')]:
+        value = estimate.get('values', {}).get(field)
+        existing = (result.get(section) or {}).get('values') or {}
+        if value is None or existing.get(field) not in (None, ''):
+            continue
+        if field == 'ffm' and user.get('fatFreeMass') not in (None, ''):
+            continue
+        if field == 'REE' and any(user.get(k) not in (None, '') for k in ['restingMeasuredRee', 'bmrMin', 'bmrMax']):
+            continue
+        value = float(value)
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError('批准估算值须为有限正数')
+        if field == 'ffm' and user.get('weight') not in (None, '') and value >= float(user['weight']):
+            raise ValueError('估算去脂体重须小于体重')
+        record = deepcopy(result.get(section) or {})
+        record.setdefault('values', {})[field] = value
+        record.setdefault('estimated_fields', {})[field] = {
+            'method': estimate.get('method'), 'sample_count': estimate.get('sample_counts', {}).get(field),
+            'sources': estimate.get('sources', {}).get(field, []), 'approved_date': estimate.get('approved_date')}
+        result[section] = record
+        if field == 'ffm':
+            user.update(fatFreeMass=value, fatFreeMassEstimated=True)
+    return result, user
 
 
 def measurement_text(value, unit=''):

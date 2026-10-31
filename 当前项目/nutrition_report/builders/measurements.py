@@ -7,7 +7,8 @@ from ..measurements import body_composition_rows, measurement_text
 
 
 def body_composition_table(data, normal, header, legacy=False):
-    rows = [[Paragraph(t, header) for t in ('项目', '实测结果')]]
+    has_estimates = bool((data.get('body_composition') or {}).get('estimated_fields'))
+    rows = [[Paragraph(t, header) for t in ('项目', '结果' if has_estimates else '实测结果')]]
     rows.extend([Paragraph(escape(label), normal),
                  Paragraph(escape(measurement_text(value, unit)).replace('²', '<super>2</super>'), normal)]
                 for label, value, unit in body_composition_rows(data))

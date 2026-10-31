@@ -43,7 +43,7 @@ class NutritionExcelBuilder:
         for sheet in wb:
             for row in sheet:
                 for cell in row:
-                    if cell.value in ("严重不足", "不足", "过少", "偏多", "过多", "不建议吃零食", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高", "按照运动情况适量补充饮料"):
+                    if cell.value in ("严重不足", "不足", "过少", "偏多", "过多", "不建议吃零食", "能量占比偏低", "能量占比偏高", "占比偏低", "占比偏高", "按照运动情况适当补充运动饮料"):
                         font = copy(cell.font)
                         font.color = "F2994A" if cell.value in ("不足", "严重不足", "过少", "能量占比偏低", "占比偏低") else "DC2626"
                         cell.font = font
@@ -99,7 +99,7 @@ class NutritionExcelBuilder:
             ("当前状态", user.get("currentStatus", "")),
             ("身高", f"{user.get('height', '')} cm"),
             ("体重", f"{user.get('weight', '')} kg"),
-            ("去脂体重（瘦体重）", f"{user.get('fatFreeMass', '')} kg"),
+            ("去脂体重（瘦体重）", f"{user.get('fatFreeMass', '')} kg" + ('（估算）' if user.get('fatFreeMassEstimated') else '')),
             ("日期", date),
             ("营养数据来源", source.get("label", "未记录")),
             ("营养库查询时间", source.get("queried_at", "")),
@@ -167,7 +167,7 @@ class NutritionExcelBuilder:
 
     def _create_body_composition_sheet(self, wb, data):
         ws = wb.create_sheet("体成分结果", 1)
-        ws.append(["项目", "实测结果"])
+        ws.append(["项目", "结果" if (data.get('body_composition') or {}).get('estimated_fields') else "实测结果"])
         for label, value, unit in body_composition_rows(data):
             ws.append([label, value])
             if isinstance(value, (int, float)) and unit:

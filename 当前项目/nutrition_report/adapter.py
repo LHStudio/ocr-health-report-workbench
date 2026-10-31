@@ -365,9 +365,10 @@ def build_payload_from_ocr_person(
         if not exact_reference:
             warnings.append(_warning("proxy_food_reference", f"{food_name}暂按同类代表食物“{reference_name}”的每 100g 营养值估算", food=food_name))
 
-    from .measurements import load_person_measurements
+    from .measurements import load_person_measurements, apply_approved_estimates
     measurements = load_person_measurements(person)
     user = _build_user(person, user_overrides)
+    measurements, user = apply_approved_estimates(person, measurements, user)
     general = person.get("general") if isinstance(person.get("general"), Mapping) else {}
     effective_date = report_date or _text(general.get("调查日期")) or date_type.today().isoformat()
     from .energy_reference import bmr_bounds
