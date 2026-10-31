@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from xml.sax.saxutils import escape
-from ..energy_reference import energy_reference_text, energy_calculation_lines
+from ..energy_reference import energy_reference_text, energy_summary_lines, energy_display_text
 from ..report_checks import energy_summary
 from .measurements import body_composition_table
 from ..measurements import resting_metabolism_rows, measurement_text
@@ -439,9 +439,9 @@ class NutritionPDFBuilder:
     @staticmethod
     def _format_energy_intake(energy: dict) -> str:
         base = NutritionPDFBuilder._format_energy_reference(energy)
-        base += "<br/>" + "<br/>".join(escape(line) for line in energy_calculation_lines(energy))
+        base += "<br/>" + "<br/>".join(escape(line) for line in energy_summary_lines(energy))
         ea = (energy.get("availability") or {}).get("text", "")
-        return base + ("<br/>" + escape(ea) if ea else "")
+        return base + ("<br/>" + escape(energy_display_text(ea)) if ea else "")
 
     @staticmethod
     def _format_energy_reference(energy: dict) -> str:

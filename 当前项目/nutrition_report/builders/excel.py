@@ -3,7 +3,7 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from pathlib import Path
 import math
 from copy import copy
-from ..energy_reference import energy_reference_text, energy_calculation_lines
+from ..energy_reference import energy_reference_text, energy_summary_lines, energy_display_text
 from ..measurements import body_composition_rows, resting_metabolism_rows
 from .presentation import evaluation_rows, evaluation_warnings, evaluation_context, report_alerts
 
@@ -225,9 +225,9 @@ class NutritionExcelBuilder:
         rows.extend((label, value, unit, '')
                     for label, value, unit in resting_metabolism_rows(data))
 
-        rows.append(('推荐能量计算', '\n'.join(energy_calculation_lines(nutrition.get('energy', {}))), '', ''))
+        rows.append(('能量参考值', '\n'.join(energy_summary_lines(nutrition.get('energy', {}))), '', ''))
         ea = (nutrition.get('energy', {}).get('availability') or {})
-        rows.append(('能量可用性（EA）', ea.get('text', '暂无法计算'), 'kcal/kg FFM/天', ea.get('evaluation', '-')))
+        rows.append(('能量可用性（EA）', energy_display_text(ea.get('text', '暂无法计算')), 'kcal/kg 去脂体重（FFM）/天', energy_display_text(ea.get('evaluation', '-'))))
         rows.append(('能量解读', data.get('energy_guidance', ''), '', ''))
 
         for row_idx, row_data in enumerate(rows, 2):
@@ -236,7 +236,7 @@ class NutritionExcelBuilder:
                 cell.font = cell_font
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                 cell.border = thin_border
-            if row_data[0] == "推荐能量计算":
+            if row_data[0] == "能量参考值":
                 ws.row_dimensions[row_idx].height = 125
 
         note_row = len(rows) + 2

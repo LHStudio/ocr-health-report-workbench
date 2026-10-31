@@ -125,13 +125,18 @@ class TrainingEnergyTest(unittest.TestCase):
                 NutritionPDFBuilder().build(d,p)
                 with fitz.open(p) as pdf:text=''.join(page.get_text() for page in pdf)
                 self.assertIn('2595.6-3171.43',text)
-                self.assertIn('9%',text)
-                self.assertIn('0.91',text)
+                self.assertIn('推荐能量（TDEE）：2595.6-3171.43',text)
+                self.assertIn('非运动性活动产热（NEAT）：630.00',text)
+                self.assertIn('食物热效应（TEF）：233.60–285.43',text)
+                for formula in ('下限：', '上限：', '÷0.91', 'TDEE×9%'):
+                    self.assertNotIn(formula,text)
                 self.assertNotIn('女性EER',text)
             p=Path(tmp)/'report.xlsx';NutritionExcelBuilder().build(d,p)
             w=load_workbook(p);text=' '.join(str(c.value) for s in w for row in s for c in row);w.close()
             self.assertIn('2595.6-3171.43',text)
-            self.assertIn('9%',text)
+            self.assertIn('食物热效应（TEF）：233.60–285.43',text)
+            self.assertNotIn('推荐能量计算',text)
+            self.assertNotIn('÷0.91',text)
 
     def test_manual_energy_preserved_and_inclusive_bounds(self):
         user=dict(projectType='足球',weight=60,bmrMin=1300,bmrMax=1500,trainingPhase='training',athleteType='team',age=22)

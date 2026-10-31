@@ -1,5 +1,39 @@
 """Validate pristine resting bounds; render either resting or net-added reference."""
 import math
+import re
+
+
+def energy_display_text(text):
+    """Expand abbreviations only in the energy presentation, not report data."""
+    text = str(text)
+    for abbr, chinese in [('FFM', '去脂体重'), ('EEE', '运动消耗'), ('EI', '能量摄入'),
+                          ('LEA', '低能量可用性'), ('REE', '静息能量消耗'),
+                          ('BMR', '基础代谢率')]:
+        text = re.sub(rf'(?:{chinese})?(?<![A-Za-z]){abbr}(?![A-Za-z])',
+                      f'{chinese}（{abbr}）', text)
+    return text
+
+
+def energy_summary_lines(energy):
+    """Show existing results without calculation steps or endpoint expansion."""
+    kind = energy.get('reference_type')
+    if kind in {'tdee', 'tdee_pending'}:
+        lines = []
+        if kind == 'tdee':
+            lines.append(f"推荐能量（TDEE）：{energy_reference_text(energy)} kcal/天")
+        if energy.get('neat_kcal') is not None:
+            lines.append(f"非运动性活动产热（NEAT）：{energy['neat_kcal']:.2f} kcal/天")
+        tef = energy.get('tef_kcal')
+        if tef:
+            value = f'{tef[0]:.2f}' if tef[0] == tef[1] else f'{tef[0]:.2f}–{tef[1]:.2f}'
+            lines.append(f'食物热效应（TEF）：{value} kcal/天')
+        if kind == 'tdee_pending':
+            reason = energy_display_text(energy.get('tdee_pending_reason', '缺少计算数据'))
+            lines.append(reason + '；推荐能量（TDEE）与食物热效应（TEF）暂无法计算。')
+        return lines
+    if kind in {'bmr', 'bmr_plus_net'} or energy.get('standard') not in (None, ''):
+        return [f'推荐能量：{energy_reference_text(energy)} kcal/天']
+    return ['推荐能量：缺少有效参考数据，暂无法计算。']
 
 
 def accepted_energy_bounds(energy):
