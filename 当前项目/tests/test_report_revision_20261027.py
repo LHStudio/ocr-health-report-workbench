@@ -22,10 +22,44 @@ class ReportRevisionTest(unittest.TestCase):
 
     def test_severity_boundaries(self):
         for actual, expected in ((0,'严重不足'),(49.99,'严重不足'),(50,'严重不足'),
-            (50.01,'不足'),(99.99,'不足'),(100,'适中'),(120,'适中'),(120.01,'偏多'),(1000,'偏多')):
+            (50.01,'不足'),(89.99,'不足'),(90,'适中'),(99.99,'适中'),(100,'适中'),
+            (120,'适中'),(120.01,'适中'),(132,'适中'),(132.01,'偏多'),(1000,'偏多')):
             self.assertEqual(expected,amount_status(actual,100,120))
         self.assertEqual('-',amount_status(None,100,120))
         self.assertEqual('-',amount_status(float('nan'),100,120))
+
+    def test_athlete_tolerance_preserves_reference_bounds_and_calculations(self):
+        from nutrition_report.athlete import evaluate_athlete
+        service=self.service.nutrition_service
+        report=self.service.build_report_data(self.payload())
+        user=report['user'];nutrition=report['nutrition']
+        original,_=evaluate_athlete(user,deepcopy(nutrition),{},service.athlete_config)
+        for target in original['rows']:
+            key=target['key'];low=target['target_min'];high=target['target_max']
+            if key=='vegetables':continue
+            cases=[(low*.9,'适中'),(low*.9-.01,'不足')]
+            if high is not None:cases.extend([(high*1.1,'适中'),(high*1.1+.01,'偏多')])
+            for value,expected in cases:
+                with self.subTest(key=key,value=value):
+                    n=deepcopy(nutrition)
+                    if key=='calcium':n[key]['value']=value
+                    else:n[key]=value
+                    before=deepcopy(n)
+                    actual,_=evaluate_athlete(user,n,{},service.athlete_config)
+                    row=next(r for r in actual['rows'] if r['key']==key)
+                    self.assertEqual(expected,row['evaluation'])
+                    for field in ['actual','target_min','target_max','target','target_planning']:
+                        self.assertEqual(value if field=='actual' else target[field],row[field])
+                    self.assertEqual(before['energy'],n['energy'])
+
+    def test_scalar_energy_tolerance_is_not_applied_twice(self):
+        service=self.service.nutrition_service
+        for value,expected in [(1799,'不足'),(1800,'适宜'),(2200,'适宜'),(2201,'偏多')]:
+            self.assertEqual(expected,service._eval_energy_against_standard(value,2000))
+        for value,expected in [(89.99,'不足'),(90,'适中'),(110,'适中'),(110.01,'偏多')]:
+            self.assertEqual(expected,amount_status(value,100,100))
+        self.assertEqual('适中',amount_status(900,100,None))
+        self.assertEqual('适中',amount_status(0,None,100))
 
     def test_cooked_conversion_and_source_preservation(self):
         payload=self.payload(); original=deepcopy(payload)

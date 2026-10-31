@@ -52,18 +52,9 @@ def evaluate_athlete(user, nutrition, categories, config):
         if not status:
             if actual is None:
                 status = "无法计算（供能合计为0）"
-            elif mode == "approx":
-                status = amount_status(actual, low, low)
-                gap = actual - low if status != '适中' else 0
-            elif actual < low - 1e-8:
-                status = amount_status(actual, low, None)
-                gap = actual - low
-            elif mode == "range" and actual > high + 1e-8:
-                status = "偏多"
-                gap = actual - high
             else:
-                status = "适中"
-                gap = 0
+                status = amount_status(actual, low, None if mode == 'minimum' else high)
+                gap = actual - low if status in DEFICIT else actual - high if status in EXCESS else 0
         status = status if status in {"不足", "严重不足", "偏多", "适中"} else "-"
         rows.append(dict(key=key, label=label, actual=actual, unit=unit, target=target,
                          gap=gap, machine_evaluation=status, evaluation=status,

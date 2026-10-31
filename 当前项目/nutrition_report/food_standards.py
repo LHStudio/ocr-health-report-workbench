@@ -1,6 +1,6 @@
 """用户2026-10-12新增标准；规则达标计数不是临床风险评分。"""
 import math
-from .report_policy import amount_status
+from .report_policy import amount_status, DEFICIT, EXCESS
 from .food_conversion import staple_equivalents
 from collections import defaultdict
 from .adapter import FOOD_REFERENCE_MAP
@@ -140,12 +140,12 @@ def evaluate_food_standards(payload, food_db, athlete_config=None):
         elif not status:
             if qualitative is not None:
                 status = qualitative(actual)
-            elif lo is not None and actual < lo:
-                status, score, gap = amount_status(actual, lo, hi), 0, actual - lo
-            elif hi is not None and actual > hi:
-                status, score, gap = over_label, 0, actual - hi
             else:
-                status, score, gap = '适中', 1, 0
+                status = amount_status(actual, lo, hi)
+                score = 1 if status == '适中' else 0
+                gap = actual - lo if status in DEFICIT else actual - hi if status in EXCESS else 0
+                if status in EXCESS:
+                    status = over_label
         rows.append(dict(key=key, label=label, actual=round(actual, 4) if actual is not None else None,
                          unit=unit, target=target, gap=round(gap, 4) if gap is not None else None,
                          score=score, machine_evaluation=status, evaluation=status, note=note, target_min=lo, target_max=hi))

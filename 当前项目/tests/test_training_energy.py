@@ -141,10 +141,13 @@ class TrainingEnergyTest(unittest.TestCase):
     def test_manual_energy_preserved_and_inclusive_bounds(self):
         user=dict(projectType='足球',weight=60,bmrMin=1300,bmrMax=1500,trainingPhase='training',athleteType='team',age=22)
         low,high=(1300+432+630)/.91,(1500+756+630)/.91
-        for energy, expected in [(low,'适宜'),(high,'适宜'),(low-1,'不足'),(high+1,'偏多')]:
+        for energy, expected in [(low,'适宜'),(high,'适宜'),(low-1,'适宜'),(high+1,'适宜'),
+                                 (low*.9,'适宜'),(high*1.1,'适宜'),(low*.9-1,'不足'),(high*1.1+1,'偏多')]:
             service=NutritionService(food_db={'fixture':dict(energy=energy,protein=1,carbohydrate=1,fat=1,calcium=1,category='谷类')})
             d=service.build_report_data(dict(user=user,meals=[dict(name='fixture',amount=100)]))
             self.assertEqual(expected,d['nutrition']['energy']['evaluation'])
+            self.assertAlmostEqual(low,d['nutrition']['energy']['standard_min'])
+            self.assertAlmostEqual(high,d['nutrition']['energy']['standard_max'])
         d=service.build_report_data(dict(user=user,meals=[dict(name='fixture',amount=100)],
             autoEvaluation=False,manualEvaluations={'energyEvaluation':'人工保留'}))
         self.assertEqual('人工保留',d['nutrition']['energy']['evaluation'])

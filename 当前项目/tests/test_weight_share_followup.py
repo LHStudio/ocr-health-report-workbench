@@ -48,7 +48,7 @@ class WeightShareTest(unittest.TestCase):
         p['meals'][0]['amount']=825;p['meals'][1]['amount']=25
         rows=self.rules(p,db)
         self.assertEqual('严重不足',rows['beans_energy']['evaluation'])
-        self.assertEqual('偏多',rows['grains_remainder']['evaluation'])
+        self.assertEqual('适中',rows['grains_remainder']['evaluation'])
 
     def test_joint_planner_uses_the_same_equivalent_weight_coefficients(self):
         from nutrition_report.joint_plan import KEYS

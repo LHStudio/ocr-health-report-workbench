@@ -429,7 +429,8 @@ class NutritionService:
         if not math.isfinite(value) or not math.isfinite(standard) or value < 0 or standard <= 0:
             return "-"
 
-        return amount_status(value, standard*under_ratio, standard*over_ratio, '适宜')
+        # The scalar EER rule already includes its 90%-110% judgement band.
+        return amount_status(value, standard*under_ratio, standard*over_ratio, '适宜', tolerance=0)
 
     def _build_category_result_from_foods(self, food_details):
         # 1. 先把配置里的所有分类都初始化为 0

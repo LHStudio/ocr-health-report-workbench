@@ -16,13 +16,14 @@ def finite(value):
         return None
 
 
-def amount_status(actual, low=None, high=None, adequate='适中'):
+def amount_status(actual, low=None, high=None, adequate='适中', *, tolerance=.1):
+    """Apply tolerance only to final judgement; retain original target bounds."""
     actual, low, high = finite(actual), finite(low), finite(high)
     if actual is None or actual < 0 or (low is None and high is None):
         return '-'
-    if low is not None and actual < low - 1e-8:
+    if low is not None and actual < low * (1 - tolerance) - 1e-8:
         return '严重不足' if low > 0 and actual <= low * .5 + 1e-8 else '不足'
-    if high is not None and actual > high + 1e-8:
+    if high is not None and actual > high * (1 + tolerance) + 1e-8:
         return '偏多'
     return adequate
 
@@ -76,7 +77,7 @@ def interpretation_lines(report):
     known = total > 0 and low and high and all(a is not None for a, _, _ in bounds)
     if known:
         shares = [v*f/total for v, f in zip(values, (4,9,4))]
-        balanced = all(s >= a*f/high-1e-8 and (b is None or s <= b*f/low+1e-8)
+        balanced = all(s >= a*f/high*.9-1e-8 and (b is None or s <= b*f/low*1.1+1e-8)
                        for s, (a,b,f) in zip(shares,bounds))
         if balanced:
             second = '三大营养素供能比适宜。'
@@ -91,9 +92,9 @@ def interpretation_lines(report):
                     details.append(label + state)
             if not details:
                 for label, share, (a, b, factor) in zip(('蛋白质', '脂肪', '碳水化合物'), shares, bounds):
-                    if share < a * factor / high - 1e-8:
+                    if share < a * factor / high * .9 - 1e-8:
                         details.append(label + '供能占比不足')
-                    elif b is not None and share > b * factor / low + 1e-8:
+                    elif b is not None and share > b * factor / low * 1.1 + 1e-8:
                         details.append(label + '供能占比偏多')
             second = '三大营养素供能比略有失衡：' + '、'.join(details) + '。'
     else:

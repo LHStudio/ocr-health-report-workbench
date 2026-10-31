@@ -14,8 +14,9 @@ def target_text(low, high, planning=None):
 
 def comparison(actual, low, high):
     if actual is None or low is None:return '-',None,None
-    if actual<low-1e-8:return amount_status(actual, low, high),0,actual-low
-    if high is not None and actual>high+1e-8:return '偏多',0,actual-high
+    status=amount_status(actual, low, high)
+    if status in DEFICIT:return status,0,actual-low
+    if status=='偏多':return status,0,actual-high
     return '适中',1,0
 
 def apply_quantity_priority(nutrition, athlete, standard, foods, food_db, categories, config, merged_meals=None):

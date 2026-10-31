@@ -185,7 +185,7 @@ def check_report_consistency(report):
             add('invalid_numeric', key, f'{row.get("label", key)}存在非有限值或负值，无法据此判断摄入；请核查原始数据。')
         lower, upper = finite_number(row.get('target_min')), finite_number(row.get('target_max'))
         if (row.get('evaluation_basis') == 'personal_target' or key in {'protein', 'carbohydrate', 'fat', 'calcium'}) and actual is not None and (lower is not None or upper is not None):
-            # Exactly the planner's arithmetic epsilon, not a dietary tolerance.
+            # Use the same judgement tolerance without changing planner bounds.
             expected = amount_status(actual, lower, upper)
             if row.get('machine_evaluation') in {'严重不足', '不足', '过少', '偏多', '过多', '适中', '适宜'} and row.get('machine_evaluation') != expected:
                 if automatic:
@@ -233,7 +233,8 @@ def check_report_consistency(report):
     low, ref = accepted_energy_bounds(energy)
     if actual is not None and ref and report.get('assessment_status') != 'needs_review':
         high = ref
-        expected_energy = amount_status(energy.get('exact_value', actual), low, high, '适宜')
+        tolerance = .1 if energy.get('reference_type') in {'bmr', 'bmr_plus_net', 'tdee'} else 0
+        expected_energy = amount_status(energy.get('exact_value', actual), low, high, '适宜', tolerance=tolerance)
         final_energy = {'适中':'适宜', '过少':'不足', '过多':'偏多'}.get(energy.get('evaluation'), energy.get('evaluation'))
         if final_energy != expected_energy:
             if automatic:

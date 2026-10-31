@@ -54,9 +54,33 @@ class FoodStandardsTest(unittest.TestCase):
 
     def test_under_over_and_near_boundary_not_rounded_into_pass(self):
         rows = self.rows(amounts={**self.amounts, '坚果': 9.999, '果': 500.001, '菜': 199.999})
-        self.assertEqual(0, rows['nuts']['score'])
-        self.assertEqual('过多', rows['fruit']['evaluation'])
-        self.assertEqual('不足', rows['vegetables']['evaluation'])
+        self.assertEqual(1, rows['nuts']['score'])
+        self.assertEqual('适中', rows['fruit']['evaluation'])
+        self.assertEqual('严重不足', rows['vegetables']['evaluation'])
+
+    def test_ten_percent_tolerance_preserves_food_targets(self):
+        before=self.rows()
+        for food,key,low,high in [('坚果','nuts',10,None),('奶','milk',400,None),
+                                  ('蛋','eggs',50,None),('果','fruit',200,500),
+                                  ('菜','vegetables',400,None)]:
+            for value,expected in [(low*.9,'适中'),(low*.9-.01,'不足')]+(
+                    [(high*1.1,'适中'),(high*1.1+.01,'偏多')] if high else []):
+                with self.subTest(food=food,value=value):
+                    row=self.rows(amounts={**self.amounts,food:value})[key]
+                    self.assertEqual(expected,row['evaluation'])
+                    self.assertEqual(1 if expected=='适中' else 0,row['score'])
+                    for field in ['target','target_min','target_max']:
+                        self.assertEqual(before[key][field],row[field])
+
+    def test_ratio_tolerance_uses_relative_percent_not_percentage_points(self):
+        for fish,expected in [(27,'适中'),(26.99,'不足')]:
+            row=self.rows(amounts={**self.amounts,'鱼':fish,'牛肉':100-fish})['seafood']
+            self.assertEqual(expected,row['evaluation'])
+            self.assertEqual(30,row['target_min'])
+        for beef,expected in [(77,'适中'),(77.01,'偏多')]:
+            row=self.rows(amounts={**self.amounts,'牛肉':beef,'鱼':100-beef})['livestock_remainder']
+            self.assertEqual(expected,row['evaluation'])
+            self.assertEqual(70,row['target_max'])
 
     def test_completed_questionnaire_blanks_and_explicit_not_eaten_are_zero(self):
         for food_rows, want in (([], 0), ([{'食物名称': '坚果', '是否不吃': '是'}], 0)):
@@ -134,7 +158,9 @@ class FoodStandardsTest(unittest.TestCase):
         self.assertEqual(0, self.rows(amounts={**self.amounts, '鱼': 29.999})['seafood']['score'])
 
     def test_vegetables_400_minimum_and_higher_project_rule(self):
-        self.assertEqual(0, self.rows(amounts={**self.amounts, '菜': 399.99})['vegetables']['score'])
+        self.assertEqual(1, self.rows(amounts={**self.amounts, '菜': 399.99})['vegetables']['score'])
+        self.assertEqual(1, self.rows(amounts={**self.amounts, '菜': 360})['vegetables']['score'])
+        self.assertEqual(0, self.rows(amounts={**self.amounts, '菜': 359.99})['vegetables']['score'])
         self.assertEqual(1, self.rows(amounts={**self.amounts, '菜': 400})['vegetables']['score'])
         self.assertEqual('≥ 400 g/天', self.rows()['vegetables']['target'])
         self.service.athlete_config['types']['strength']['vegetables_g_min'] = 600
